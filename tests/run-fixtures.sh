@@ -83,7 +83,8 @@ for series in "$fixtures"/*/patches/series; do
         typescript)
             if command -v tsc >/dev/null 2>&1; then
                 mkdir "$work/types"
-                tsc --noEmit --target ES2022 --typeRoots "$work/types" "$work/main.ts"
+                (cd "$work" && tsc --noEmit --target ES2022 \
+                    --typeRoots types main.ts)
             fi
             ;;
         python)
@@ -93,7 +94,7 @@ for series in "$fixtures"/*/patches/series; do
             sh -n "$work/main.sh"
             shfmt --diff --posix --indent 4 --case-indent --simplify \
                 "$work/main.sh"
-            shellcheck -x --shell=sh "$work/main.sh"
+            run_if_available shellcheck shellcheck -x --shell=sh "$work/main.sh"
             ;;
         swift)
             run_if_available swiftc swiftc -parse "$work/main.swift"
