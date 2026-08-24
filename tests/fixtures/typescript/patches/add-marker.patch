@@ -1,0 +1,10 @@
+diff --git a/main.ts b/main.ts
+index f40a040..f9e89e4 100644
+--- a/main.ts
++++ b/main.ts
+@@ -1,2 +1,4 @@
+ // This fixture source is licensed under the MIT License.
+-export const fixture = 'upstream';
++export function message(): string { return 'fixture'; }
++
++export const fixture = message();

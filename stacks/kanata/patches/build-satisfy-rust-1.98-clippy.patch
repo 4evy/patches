@@ -1,0 +1,434 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: 4evy <git@evy.pink>
+Date: Thu, 1 Jan 1970 00:00:00 +0000
+Subject: build: satisfy Rust 1.98 Clippy
+
+Adopt the slice chunk APIs and test assertion forms required by current stable
+Clippy. Move test modules after non-test items so the full platform-specific
+lint matrix stays warning-free.
+---
+ keyberon/src/action/switch.rs | 43 ++++++++--------------
+ parser/src/cfg/chord.rs       |  5 ++-
+ parser/src/cfg/deflayer.rs    |  5 ++-
+ parser/src/cfg/layer_opts.rs  |  5 ++-
+ parser/src/cfg/zippychord.rs  | 12 +++----
+ parser/src/keys/mod.rs        | 52 +++++++++++++--------------
+ src/oskbd/macos.rs            | 68 +++++++++++++++++------------------
+ 7 files changed, 85 insertions(+), 105 deletions(-)
+
+diff --git a/keyberon/src/action/switch.rs b/keyberon/src/action/switch.rs
+index 54eb134..673a88e 100644
+--- a/keyberon/src/action/switch.rs
++++ b/keyberon/src/action/switch.rs
+@@ -571,7 +571,7 @@ mod test {
+     where
+         T: Clone,
+     {
+-        s.iter().cloned().collect()
++        s.to_vec()
+     }
+ 
+     // Do not use anymore.
+@@ -588,6 +588,7 @@ mod test {
+         testcfg.evaluate()
+     }
+ 
++    #[derive(Default)]
+     struct SwitchTestCfg {
+         opcodes: Vec<OpCode>,
+         key_codes: Vec<KeyCode>,
+@@ -600,22 +601,6 @@ mod test {
+         callbacks: Vec<&'static (dyn Fn() -> bool + Send + Sync)>,
+     }
+ 
+-    impl Default for SwitchTestCfg {
+-        fn default() -> Self {
+-            Self {
+-                opcodes: vec![],
+-                key_codes: vec![],
+-                inputs: vec![],
+-                historical_keys: vec![],
+-                historical_inputs: vec![],
+-                layers: vec![],
+-                default_layer: 0,
+-                device_history: vec![],
+-                callbacks: vec![],
+-            }
+-        }
+-    }
+-
+     impl SwitchTestCfg {
+         fn new() -> Self {
+             Self::default()
+@@ -948,17 +933,17 @@ mod test {
+         let testcfg = SwitchTestCfg::new()
+             .opcodes(opcodes)
+             .device_history(&[Some(id1)]);
+-        assert_eq!(true, testcfg.evaluate());
++        assert!(testcfg.evaluate());
+ 
+         // Non-matching device ID
+         let testcfg = SwitchTestCfg::new()
+             .opcodes(opcodes)
+             .device_history(&[Some(id2)]);
+-        assert_eq!(false, testcfg.evaluate());
++        assert!(!testcfg.evaluate());
+ 
+         // Empty device history
+         let testcfg = SwitchTestCfg::new().opcodes(opcodes);
+-        assert_eq!(false, testcfg.evaluate());
++        assert!(!testcfg.evaluate());
+     }
+ 
+     #[test]
+@@ -973,21 +958,21 @@ mod test {
+         let testcfg = SwitchTestCfg::new()
+             .opcodes(&[op1, op2])
+             .device_history(&history);
+-        assert_eq!(true, testcfg.evaluate());
++        assert!(testcfg.evaluate());
+ 
+         // Check second most recent (recency 2 → how_far_back 1) is id2
+         let (op1, op2) = OpCode::new_device_history(id2, 1);
+         let testcfg = SwitchTestCfg::new()
+             .opcodes(&[op1, op2])
+             .device_history(&history);
+-        assert_eq!(true, testcfg.evaluate());
++        assert!(testcfg.evaluate());
+ 
+         // Wrong device at recency 1
+         let (op1, op2) = OpCode::new_device_history(id1, 0);
+         let testcfg = SwitchTestCfg::new()
+             .opcodes(&[op1, op2])
+             .device_history(&history);
+-        assert_eq!(false, testcfg.evaluate());
++        assert!(!testcfg.evaluate());
+     }
+ 
+     #[test]
+@@ -1013,14 +998,14 @@ mod test {
+         let testcfg = SwitchTestCfg::new()
+             .opcodes(&[op1, op2])
+             .device_history(&history);
+-        assert_eq!(true, testcfg.evaluate());
++        assert!(testcfg.evaluate());
+ 
+         // Looking for id1 at position 1 (where None is) should NOT match
+         let (op1, op2) = OpCode::new_device_history(id1, 1);
+         let testcfg = SwitchTestCfg::new()
+             .opcodes(&[op1, op2])
+             .device_history(&history);
+-        assert_eq!(false, testcfg.evaluate());
++        assert!(!testcfg.evaluate());
+     }
+ 
+     #[test]
+@@ -1075,22 +1060,22 @@ mod test {
+         let testcfg = SwitchTestCfg::new()
+             .opcodes(&opcode_true)
+             .historical_keys(&hist_keycodes);
+-        assert_eq!(true, testcfg.evaluate());
++        assert!(testcfg.evaluate());
+ 
+         let testcfg = SwitchTestCfg::new()
+             .opcodes(&opcode_true2)
+             .historical_keys(&hist_keycodes);
+-        assert_eq!(true, testcfg.evaluate());
++        assert!(testcfg.evaluate());
+ 
+         let testcfg = SwitchTestCfg::new()
+             .opcodes(&opcode_false)
+             .historical_keys(&hist_keycodes);
+-        assert_eq!(false, testcfg.evaluate());
++        assert!(!testcfg.evaluate());
+ 
+         let testcfg = SwitchTestCfg::new()
+             .opcodes(&opcode_false2)
+             .historical_keys(&hist_keycodes);
+-        assert_eq!(false, testcfg.evaluate());
++        assert!(!testcfg.evaluate());
+     }
+ 
+     #[test]
+diff --git a/parser/src/cfg/chord.rs b/parser/src/cfg/chord.rs
+index 9c88bb7..ecf55d9 100644
+--- a/parser/src/cfg/chord.rs
++++ b/parser/src/cfg/chord.rs
+@@ -18,7 +18,7 @@ pub(crate) fn parse_defchordv2(
+         );
+     }
+ 
+-    let mut chunks = exprs[1..].chunks_exact(5);
++    let (chunks, rem) = exprs[1..].as_chunks::<5>();
+     let mut chords_container = ChordsForKeys::<'static, KanataCustom> {
+         mapping: FxHashMap::default(),
+     };
+@@ -26,7 +26,7 @@ pub(crate) fn parse_defchordv2(
+     let mut all_participating_key_sets = FxHashSet::default();
+ 
+     let all_chords = chunks
+-        .by_ref()
++        .iter()
+         .flat_map(|chunk| match chunk[0] {
+             // Match a line like
+             // (include filename.txt) () 100 all-released (layer1 layer2)
+@@ -80,7 +80,6 @@ pub(crate) fn parse_defchordv2(
+                 .push(s.a.sref(chord.clone()));
+         }
+     }
+-    let rem = chunks.remainder();
+     if !rem.is_empty() {
+         bail_expr!(
+             rem.last().unwrap(),
+diff --git a/parser/src/cfg/deflayer.rs b/parser/src/cfg/deflayer.rs
+index 5aad47e..2e806c4 100644
+--- a/parser/src/cfg/deflayer.rs
++++ b/parser/src/cfg/deflayer.rs
+@@ -142,12 +142,12 @@ pub(crate) fn parse_layers(
+             }
+             LayerExprs::CustomMapping(layer) => {
+                 // Parse actions as input output pairs
+-                let mut pairs = layer[2..].chunks_exact(2);
++                let (pairs, rem) = layer[2..].as_chunks::<2>();
+                 let mut layer_mapped_keys = HashSet::default();
+                 let mut defsrc_anykey_used = false;
+                 let mut unmapped_anykey_used = false;
+                 let mut both_anykey_used = false;
+-                for pair in pairs.by_ref() {
++                for pair in pairs {
+                     let input = &pair[0];
+                     let action = &pair[1];
+ 
+@@ -220,7 +220,6 @@ pub(crate) fn parse_layers(
+                         layers_cfg[layer_level][0][usize::from(input_key)] = *action;
+                     }
+                 }
+-                let rem = pairs.remainder();
+                 if !rem.is_empty() {
+                     bail_expr!(&rem[0], "input must by followed by an action");
+                 }
+diff --git a/parser/src/cfg/layer_opts.rs b/parser/src/cfg/layer_opts.rs
+index 5584794..2c05d84 100644
+--- a/parser/src/cfg/layer_opts.rs
++++ b/parser/src/cfg/layer_opts.rs
+@@ -6,8 +6,8 @@ pub(crate) type LayerIcons = HashMap<String, Option<String>>;
+ 
+ pub fn parse_layer_opts(list: &[SExpr]) -> Result<HashMap<String, String>> {
+     let mut layer_opts: HashMap<String, String> = HashMap::default();
+-    let mut opts = list.chunks_exact(2);
+-    for kv in opts.by_ref() {
++    let (opts, rem) = list.as_chunks::<2>();
++    for kv in opts {
+         let key_expr = &kv[0];
+         let val_expr = &kv[1];
+         // Read k-v pairs from the configuration
+@@ -41,7 +41,6 @@ pub fn parse_layer_opts(list: &[SExpr]) -> Result<HashMap<String, String>> {
+         })?;
+         layer_opts.insert(opt_key.to_owned(), opt_val.to_owned());
+     }
+-    let rem = opts.remainder();
+     if !rem.is_empty() {
+         bail_expr!(&rem[0], "This option is missing a value.");
+     }
+diff --git a/parser/src/cfg/zippychord.rs b/parser/src/cfg/zippychord.rs
+index 5fd7762..011491a 100644
+--- a/parser/src/cfg/zippychord.rs
++++ b/parser/src/cfg/zippychord.rs
+@@ -335,8 +335,8 @@ mod inner {
+         let mut smart_space_punctuation_val_expr = None;
+ 
+         let mut user_cfg_char_to_output: HashMap<char, Vec<ZchOutput>> = HashMap::default();
+-        let mut pairs = exprs[2..].chunks_exact(2);
+-        for pair in pairs.by_ref() {
++        let (pairs, rem) = exprs[2..].as_chunks::<2>();
++        for pair in pairs {
+             let config_name = &pair[0];
+             let config_value = &pair[1];
+ 
+@@ -411,7 +411,7 @@ mod inner {
+                         );
+                     }
+                     key_name_mappings_seen = true;
+-                    let mut mappings = config_value
++                    let (mappings, rem) = config_value
+                         .list(s.vars())
+                         .ok_or_else(|| {
+                             anyhow_expr!(
+@@ -419,9 +419,9 @@ mod inner {
+                                 "{KEY_NAME_MAPPINGS} must be followed by a list"
+                             )
+                         })?
+-                        .chunks_exact(2);
++                        .as_chunks::<2>();
+ 
+-                    for mapping_pair in mappings.by_ref() {
++                    for mapping_pair in mappings {
+                         let input = mapping_pair[0]
+                             .atom(None)
+                             .ok_or_else(|| {
+@@ -512,7 +512,6 @@ mod inner {
+                         }
+                     }
+ 
+-                    let rem = mappings.remainder();
+                     if !rem.is_empty() {
+                         bail_expr!(&rem[0], "zippy input is missing its output mapping");
+                     }
+@@ -521,7 +520,6 @@ mod inner {
+             }
+         }
+ 
+-        let rem = pairs.remainder();
+         if !rem.is_empty() {
+             bail_expr!(&rem[0], "zippy config name is missing its value");
+         }
+diff --git a/parser/src/keys/mod.rs b/parser/src/keys/mod.rs
+index af41ed6..3345759 100644
+--- a/parser/src/keys/mod.rs
++++ b/parser/src/keys/mod.rs
+@@ -1227,32 +1227,6 @@ fn parser_key_max_lt_keyberon_key_max() {
+     assert!(u16::from(OsCode::KEY_MAX) < KEY_MAX);
+ }
+ 
+-#[cfg(test)]
+-#[cfg(any(target_os = "macos", target_os = "unknown"))]
+-mod macos_system_key_names {
+-    use super::{OsCode, str_to_oscode};
+-
+-    #[test]
+-    fn spotlight_launchpad_missionctrl_resolve() {
+-        assert_eq!(str_to_oscode("spotlight"), Some(OsCode::KEY_633));
+-        assert_eq!(str_to_oscode("launchpad"), Some(OsCode::KEY_634));
+-        assert_eq!(str_to_oscode("missionctrl"), Some(OsCode::KEY_635));
+-    }
+-
+-    #[test]
+-    fn names_round_trip_in_a_parsed_config() {
+-        // A minimal .kbd that references all three names in defsrc must parse cleanly.
+-        // new_from_str is the public parser entry point used throughout parser/src/cfg/tests.rs.
+-        let cfg = "(defsrc spotlight launchpad missionctrl)\n(deflayer base _ _ _)\n";
+-        let parsed = crate::cfg::new_from_str(cfg, Default::default());
+-        assert!(
+-            parsed.is_ok(),
+-            "config with new macos key names failed to parse: {:?}",
+-            parsed.as_ref().err()
+-        );
+-    }
+-}
+-
+ impl TryFrom<usize> for OsCode {
+     type Error = ();
+     fn try_from(item: usize) -> Result<Self, Self::Error> {
+@@ -1309,3 +1283,29 @@ impl From<&KeyCode> for OsCode {
+         (*item).into()
+     }
+ }
++
++#[cfg(test)]
++#[cfg(any(target_os = "macos", target_os = "unknown"))]
++mod macos_system_key_names {
++    use super::{OsCode, str_to_oscode};
++
++    #[test]
++    fn spotlight_launchpad_missionctrl_resolve() {
++        assert_eq!(str_to_oscode("spotlight"), Some(OsCode::KEY_633));
++        assert_eq!(str_to_oscode("launchpad"), Some(OsCode::KEY_634));
++        assert_eq!(str_to_oscode("missionctrl"), Some(OsCode::KEY_635));
++    }
++
++    #[test]
++    fn names_round_trip_in_a_parsed_config() {
++        // A minimal .kbd that references all three names in defsrc must parse cleanly.
++        // new_from_str is the public parser entry point used throughout parser/src/cfg/tests.rs.
++        let cfg = "(defsrc spotlight launchpad missionctrl)\n(deflayer base _ _ _)\n";
++        let parsed = crate::cfg::new_from_str(cfg, Default::default());
++        assert!(
++            parsed.is_ok(),
++            "config with new macos key names failed to parse: {:?}",
++            parsed.as_ref().err()
++        );
++    }
++}
+diff --git a/src/oskbd/macos.rs b/src/oskbd/macos.rs
+index de598d5..d0e1751 100644
+--- a/src/oskbd/macos.rs
++++ b/src/oskbd/macos.rs
+@@ -933,40 +933,6 @@ fn validate_and_register_devices(include_names: &[String]) -> Vec<String> {
+         .collect()
+ }
+ 
+-#[cfg(test)]
+-mod device_name_tests {
+-    use super::sanitize_device_name;
+-
+-    #[test]
+-    fn valid_device_name_is_unchanged() {
+-        assert_eq!(
+-            sanitize_device_name("Apple Internal Keyboard"),
+-            "Apple Internal Keyboard"
+-        );
+-    }
+-
+-    #[test]
+-    fn device_name_is_truncated_at_first_nul() {
+-        assert_eq!(
+-            sanitize_device_name("Keyboard\0ignored\0suffix"),
+-            "Keyboard"
+-        );
+-    }
+-
+-    #[test]
+-    fn device_name_can_become_empty() {
+-        assert_eq!(sanitize_device_name("\0invalid"), "");
+-    }
+-
+-    #[test]
+-    fn unicode_replacement_character_is_preserved() {
+-        assert_eq!(
+-            sanitize_device_name("Keyboard \u{fffd}"),
+-            "Keyboard \u{fffd}"
+-        );
+-    }
+-}
+-
+ impl fmt::Display for InputEvent {
+     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+         use kanata_keyberon::key_code::KeyCode;
+@@ -2277,3 +2243,37 @@ mod mouse_move_tests {
+         );
+     }
+ }
++
++#[cfg(test)]
++mod device_name_tests {
++    use super::sanitize_device_name;
++
++    #[test]
++    fn valid_device_name_is_unchanged() {
++        assert_eq!(
++            sanitize_device_name("Apple Internal Keyboard"),
++            "Apple Internal Keyboard"
++        );
++    }
++
++    #[test]
++    fn device_name_is_truncated_at_first_nul() {
++        assert_eq!(
++            sanitize_device_name("Keyboard\0ignored\0suffix"),
++            "Keyboard"
++        );
++    }
++
++    #[test]
++    fn device_name_can_become_empty() {
++        assert_eq!(sanitize_device_name("\0invalid"), "");
++    }
++
++    #[test]
++    fn unicode_replacement_character_is_preserved() {
++        assert_eq!(
++            sanitize_device_name("Keyboard \u{fffd}"),
++            "Keyboard \u{fffd}"
++        );
++    }
++}

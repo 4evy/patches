@@ -1,0 +1,43 @@
+{
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.formatOnPaste": true,
+  "editor.formatOnSave": true,
+  "editor.insertSpaces": true,
+  "editor.tabSize": 2,
+  "editor.wordWrap": "off",
+  "files.eol": "\n",
+  "files.exclude": {
+    "**/.direnv": true,
+    "**/node_modules": true,
+    "**/result": true,
+    "**/vendor/guix-mirrors": true
+  },
+  "files.insertFinalNewline": true,
+  "files.trimTrailingWhitespace": true,
+  "prettier.requireConfig": true,
+  "js/ts.experimental.useTsgo": false,
+  "search.exclude": {
+    "**/.direnv": true,
+    "**/node_modules": true,
+    "**/result": true,
+    "**/vendor/guix-mirrors": true
+  },
+  "files.watcherExclude": {
+    "**/.direnv/**": true,
+    "**/.git/objects/**": true,
+    "**/node_modules/**": true,
+    "**/result/**": true,
+    "**/vendor/guix-mirrors/**": true
+  },
+  "nix.formatterPath": "nixfmt",
+  "[markdown]": {
+    "editor.wordWrap": "off"
+  },
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[nix]": {
+    "editor.defaultFormatter": "jnoortheen.nix-ide",
+    "editor.formatOnSave": true
+  }
+}

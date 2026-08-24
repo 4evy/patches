@@ -1,0 +1,23 @@
+diff --git a/message.c b/message.c
+index 23e89a3..2f73db2 100644
+--- a/message.c
++++ b/message.c
+@@ -4,3 +4,7 @@
+ const char *message(void) {
+     return "fixture";
+ }
++
++int message_length(void) {
++    return 7;
++}
+diff --git a/message.h b/message.h
+index 5b25c94..7436ccb 100644
+--- a/message.h
++++ b/message.h
+@@ -3,5 +3,6 @@
+ #define MESSAGE_H
+ 
+ const char *message(void);
++int message_length(void);
+ 
+ #endif

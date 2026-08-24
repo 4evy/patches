@@ -1,0 +1,15 @@
+diff --git a/main.c b/main.c
+index de8da6f..4072774 100644
+--- a/main.c
++++ b/main.c
+@@ -2,8 +2,9 @@
+ #include <stdio.h>
+ 
+ #include "message.h"
++#include "extra.h"
+ 
+ int main(void) {
+-    puts(message());
++    printf("%s (%d)\n", message(), extra_value());
+     return 0;
+ }

@@ -1,0 +1,12 @@
+diff --git a/Main.java b/Main.java
+index 4de6a95..ec09fd7 100644
+--- a/Main.java
++++ b/Main.java
+@@ -1,6 +1,6 @@
+ // This fixture source is licensed under the MIT License.
+ class Main {
+-    static String message() { return "fixture"; }
++    static String message() { return "patched with a little sparkle"; }
+     public static void main(String[] args) {
+         System.out.println(message());
+     }

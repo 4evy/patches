@@ -1,0 +1,448 @@
+From 5ef365dc526eb83a1007ab28b135f92d15e65c53 Mon Sep 17 00:00:00 2001
+From: Josh McKinney <joshka@users.noreply.github.com>
+Date: Thu, 1 Jan 1970 00:00:00 +0000
+Subject: git: persist fetched refs in repo view
+
+Store fetched Git refs in the view so one-off fetches can survive
+across operations without becoming Git bookmarks. Include their normal
+lifecycle behavior with view merges, remote rename/remove operations,
+and Git import reachability pinning.
+
+diff --git a/cli/src/commands/operation/mod.rs b/cli/src/commands/operation/mod.rs
+index ee158d940c60edb7fafca1f6b292f9ad72a93e4c..e10c6d9dbe7297d85fe456809a95407f7ad6e526 100644
+--- a/cli/src/commands/operation/mod.rs
++++ b/cli/src/commands/operation/mod.rs
+@@ -112,6 +112,7 @@ pub(crate) fn view_with_desired_portions_restored(
+         remote_views: remote_source.remote_views.clone(),
+         git_refs: current_view.git_refs.clone(),
+         git_heads: current_view.git_heads.clone(),
++        fetched_git_refs: remote_source.fetched_git_refs.clone(),
+         wc_commit_ids: repo_source.wc_commit_ids.clone(),
+     }
+ }
+diff --git a/lib/src/git.rs b/lib/src/git.rs
+index 7c075df5a855fa52ecd045cf26cae0b85269c73a..e47c84d173be806c23ce8f1f584440dbf4136dc7 100644
+--- a/lib/src/git.rs
++++ b/lib/src/git.rs
+@@ -1161,16 +1161,26 @@ fn default_remote_ref_state_for(
+     }
+ }
+ 
+-/// Commits referenced by local branches or tags.
++/// Commits referenced by local branches, tags, or fetched Git refs.
+ ///
+ /// On `import_refs()`, this is similar to collecting commits referenced by
+ /// `view.git_refs()`. Main difference is that local branches can be moved by
+ /// tracking remotes, and such mutation isn't applied to `view.git_refs()` yet.
++///
++/// Fetched Git refs are also local pins. They can intentionally preserve a
++/// review commit after a normal remote bookmark stops reaching it, so
++/// Git-import abandonment must not treat their targets as unreachable.
+ fn pinned_commit_ids(view: &View) -> Vec<CommitId> {
+-    itertools::chain(view.local_bookmarks(), view.local_tags())
+-        .flat_map(|(_, target)| target.added_ids())
+-        .cloned()
+-        .collect()
++    itertools::chain!(
++        view.local_bookmarks().map(|(_, target)| target),
++        view.local_tags().map(|(_, target)| target),
++        view.fetched_git_refs()
++            .values()
++            .flat_map(|refs| refs.values())
++    )
++    .flat_map(|target| target.added_ids())
++    .cloned()
++    .collect()
+ }
+ 
+ /// Commits referenced by untracked remote bookmarks/tags including hidden ones.
+diff --git a/lib/src/op_store.rs b/lib/src/op_store.rs
+index 70f20a90de8904234475ad2f5227986626e63d4c..1c632e11bf9250afd718cf871bd8ff47c3433ed6 100644
+--- a/lib/src/op_store.rs
++++ b/lib/src/op_store.rs
+@@ -253,6 +253,9 @@ pub struct View {
+     pub local_tags: BTreeMap<RefNameBuf, RefTarget>,
+     pub remote_views: BTreeMap<RemoteNameBuf, RemoteView>,
+     pub git_refs: BTreeMap<GitRefNameBuf, RefTarget>,
++    /// User-requested Git refs fetched from remotes outside normal bookmark
++    /// import.
++    pub fetched_git_refs: BTreeMap<RemoteNameBuf, BTreeMap<GitRefNameBuf, RefTarget>>,
+     /// The commit each workspace's Git HEAD points to, keyed by workspace name.
+     // TODO: Do we want to store the current bookmark name too?
+     pub git_heads: BTreeMap<WorkspaceNameBuf, RefTarget>,
+@@ -271,6 +274,7 @@ impl View {
+             local_tags: BTreeMap::new(),
+             remote_views: BTreeMap::new(),
+             git_refs: BTreeMap::new(),
++            fetched_git_refs: BTreeMap::new(),
+             git_heads: BTreeMap::new(),
+             wc_commit_ids: BTreeMap::new(),
+         }
+diff --git a/lib/src/protos/simple_op_store.proto b/lib/src/protos/simple_op_store.proto
+index 6f0eee46efdec9f1debc5db21222747d727da2ee..65f4df3ff9af7d0b3a8987e1f3bf09e0ac50cf09 100644
+--- a/lib/src/protos/simple_op_store.proto
++++ b/lib/src/protos/simple_op_store.proto
+@@ -81,6 +81,12 @@ message GitHead {
+   RefTarget target = 2;
+ }
+ 
++message FetchedGitRef {
++  string remote_name = 1;
++  string ref_name = 2;
++  RefTarget target = 3;
++}
++
+ message RemoteRef {
+   string name = 1;
+   repeated RefTargetTerm target_terms = 2;
+@@ -113,6 +119,7 @@ message View {
+   bool has_git_refs_migrated_to_remote_tags = 12;
+   // Per-workspace Git HEAD targets, keyed by workspace name.
+   repeated GitHead git_heads = 13;
++  repeated FetchedGitRef fetched_git_refs = 14;
+   reserved 10;
+ }
+ 
+diff --git a/lib/src/protos/simple_op_store.rs b/lib/src/protos/simple_op_store.rs
+index 2461e5341f4382a36bf1d386d312aa26bfc1dadd..affe21f91dcc48a98cf6c105cc6dfbf8d886601c 100644
+--- a/lib/src/protos/simple_op_store.rs
++++ b/lib/src/protos/simple_op_store.rs
+@@ -97,6 +97,15 @@ pub struct GitHead {
+     pub target: ::core::option::Option<RefTarget>,
+ }
+ #[derive(Clone, PartialEq, ::prost::Message)]
++pub struct FetchedGitRef {
++    #[prost(string, tag = "1")]
++    pub remote_name: ::prost::alloc::string::String,
++    #[prost(string, tag = "2")]
++    pub ref_name: ::prost::alloc::string::String,
++    #[prost(message, optional, tag = "3")]
++    pub target: ::core::option::Option<RefTarget>,
++}
++#[derive(Clone, PartialEq, ::prost::Message)]
+ pub struct RemoteRef {
+     #[prost(string, tag = "1")]
+     pub name: ::prost::alloc::string::String,
+@@ -150,6 +159,8 @@ pub struct View {
+     /// Per-workspace Git HEAD targets, keyed by workspace name.
+     #[prost(message, repeated, tag = "13")]
+     pub git_heads: ::prost::alloc::vec::Vec<GitHead>,
++    #[prost(message, repeated, tag = "14")]
++    pub fetched_git_refs: ::prost::alloc::vec::Vec<FetchedGitRef>,
+ }
+ #[derive(Clone, PartialEq, ::prost::Message)]
+ pub struct RemoteView {
+diff --git a/lib/src/repo.rs b/lib/src/repo.rs
+index 651e8f2057ff78ccafb4d1633b07d3f5e8faf40f..79a83a6c1112effae17d178aedcd975272393651 100644
+--- a/lib/src/repo.rs
++++ b/lib/src/repo.rs
+@@ -1936,6 +1936,41 @@ impl MutableRepo {
+         Ok(())
+     }
+ 
++    pub fn get_fetched_git_ref(
++        &self,
++        remote_name: &RemoteName,
++        ref_name: &GitRefName,
++    ) -> RefTarget {
++        self.view.get_fetched_git_ref(remote_name, ref_name).clone()
++    }
++
++    pub fn set_fetched_git_ref_target(
++        &mut self,
++        remote_name: &RemoteName,
++        ref_name: &GitRefName,
++        target: RefTarget,
++    ) {
++        for id in target.added_ids() {
++            self.view.add_head(id);
++        }
++        self.view
++            .set_fetched_git_ref_target(remote_name, ref_name, target);
++    }
++
++    async fn merge_fetched_git_ref(
++        &mut self,
++        remote_name: &RemoteName,
++        ref_name: &GitRefName,
++        base_target: &RefTarget,
++        other_target: &RefTarget,
++    ) -> IndexResult<()> {
++        let index = self.index.as_index();
++        let self_target = self.view.get_fetched_git_ref(remote_name, ref_name).clone();
++        let new_target = merge_ref_targets(index, &self_target, base_target, other_target).await?;
++        self.set_fetched_git_ref_target(remote_name, ref_name, new_target);
++        Ok(())
++    }
++
+     pub fn git_head(&self, workspace: &WorkspaceName) -> &RefTarget {
+         self.view.git_head(workspace)
+     }
+@@ -2019,6 +2054,44 @@ impl MutableRepo {
+             self.merge_git_ref(name, base_target, other_target).await?;
+         }
+ 
++        let mut fetched_ref_remotes = BTreeMap::new();
++        for remote_name in base
++            .fetched_git_refs()
++            .keys()
++            .chain(self.view().fetched_git_refs().keys())
++            .chain(other.fetched_git_refs().keys())
++        {
++            fetched_ref_remotes.insert(remote_name.clone(), ());
++        }
++        for remote_name in fetched_ref_remotes.keys() {
++            let empty_refs = BTreeMap::new();
++            let base_refs = base
++                .fetched_git_refs()
++                .get(remote_name)
++                .unwrap_or(&empty_refs);
++            let other_refs = other
++                .fetched_git_refs()
++                .get(remote_name)
++                .unwrap_or(&empty_refs);
++            let changed_fetched_refs = diff_named_ref_targets(
++                base_refs
++                    .iter()
++                    .map(|(name, target)| (name.as_ref(), target)),
++                other_refs
++                    .iter()
++                    .map(|(name, target)| (name.as_ref(), target)),
++            );
++            for (ref_name, (base_target, other_target)) in changed_fetched_refs {
++                self.merge_fetched_git_ref(
++                    remote_name.as_ref(),
++                    ref_name,
++                    base_target,
++                    other_target,
++                )
++                .await?;
++            }
++        }
++
+         let changed_remote_bookmarks =
+             diff_named_remote_refs(base.all_remote_bookmarks(), other.all_remote_bookmarks());
+         for (symbol, (base_ref, other_ref)) in changed_remote_bookmarks {
+diff --git a/lib/src/simple_op_store.rs b/lib/src/simple_op_store.rs
+index 3ce07035cab1ca5e238976bed7aca466a9feef7f..08b4066769a53f42237c9dec699668b6a635701d 100644
+--- a/lib/src/simple_op_store.rs
++++ b/lib/src/simple_op_store.rs
+@@ -584,6 +584,20 @@ fn view_to_proto(view: &View) -> crate::protos::simple_op_store::View {
+         })
+         .collect();
+ 
++    let fetched_git_refs = view
++        .fetched_git_refs
++        .iter()
++        .flat_map(|(remote_name, refs)| {
++            refs.iter().map(
++                |(ref_name, target)| crate::protos::simple_op_store::FetchedGitRef {
++                    remote_name: remote_name.into(),
++                    ref_name: ref_name.into(),
++                    target: ref_target_to_proto(target),
++                },
++            )
++        })
++        .collect();
++
+     #[expect(deprecated)]
+     crate::protos::simple_op_store::View {
+         head_ids,
+@@ -602,6 +616,7 @@ fn view_to_proto(view: &View) -> crate::protos::simple_op_store::View {
+         // New/loaded view should have been migrated to the latest format
+         has_git_refs_migrated_to_remote_tags: true,
+         git_heads,
++        fetched_git_refs,
+     }
+ }
+ 
+@@ -649,6 +664,17 @@ fn view_from_proto(proto: crate::protos::simple_op_store::View) -> Result<View,
+         })
+         .collect();
+ 
++    let mut fetched_git_refs: BTreeMap<RemoteNameBuf, BTreeMap<GitRefNameBuf, RefTarget>> =
++        BTreeMap::new();
++    for fetched_ref in proto.fetched_git_refs {
++        let remote_name: RemoteNameBuf = fetched_ref.remote_name.into();
++        let ref_name: GitRefNameBuf = fetched_ref.ref_name.into();
++        fetched_git_refs
++            .entry(remote_name)
++            .or_default()
++            .insert(ref_name, ref_target_from_proto(fetched_ref.target));
++    }
++
+     // Use legacy remote_views only when new data isn't available (jj < 0.34)
+     if !proto.remote_views.is_empty() {
+         remote_views = remote_views_from_proto(proto.remote_views)?;
+@@ -709,6 +735,7 @@ fn view_from_proto(proto: crate::protos::simple_op_store::View) -> Result<View,
+         local_tags,
+         remote_views,
+         git_refs,
++        fetched_git_refs,
+         git_heads,
+         wc_commit_ids,
+     })
+@@ -1002,6 +1029,7 @@ mod tests {
+             [CommitId::from_hex("fff111")],
+             [CommitId::from_hex("fff222"), CommitId::from_hex("fff333")],
+         );
++        let fetched_git_ref_target = RefTarget::normal(CommitId::from_hex("eee111"));
+         let default_wc_commit_id = CommitId::from_hex("abc111");
+         let test_wc_commit_id = CommitId::from_hex("abc222");
+         View {
+@@ -1031,6 +1059,11 @@ mod tests {
+             git_heads: btreemap! {
+                 WorkspaceName::DEFAULT.to_owned() => RefTarget::normal(CommitId::from_hex("fff111")),
+             },
++            fetched_git_refs: btreemap! {
++                "origin".into() => btreemap! {
++                    "refs/pull/123/head".into() => fetched_git_ref_target,
++                },
++            },
+             wc_commit_ids: btreemap! {
+                 WorkspaceName::DEFAULT.to_owned() => default_wc_commit_id,
+                 "test".into() => test_wc_commit_id,
+@@ -1086,7 +1119,7 @@ mod tests {
+         // Test exact output so we detect regressions in compatibility
+         assert_snapshot!(
+             ViewId::new(blake2b_hash(&create_view()).to_vec()).hex(),
+-            @"b37a61a743f394241cd44e9016cc6f9b68321d7ae0e21e432d9124d08a1b5f98f08f6a1d04534ea0652ea4be74e9c4fb2075bdf00343165b5d380aa196790a14"
++            @"4dea3fe011e1f14db4fec70dda3d36d6326ab7152cbbf1b272d09fc95734341165e338d865127f1cba8564812d2ba481d351ebdfd0232f128399a632717538a0"
+         );
+     }
+ 
+diff --git a/lib/src/view.rs b/lib/src/view.rs
+index db1972f1de164827e54ab50c308258029c3aede9..93c1758534972faaa179752c384fb535219578dc 100644
+--- a/lib/src/view.rs
++++ b/lib/src/view.rs
+@@ -33,6 +33,7 @@ use crate::ref_name::GitRefName;
+ use crate::ref_name::GitRefNameBuf;
+ use crate::ref_name::RefName;
+ use crate::ref_name::RemoteName;
++use crate::ref_name::RemoteNameBuf;
+ use crate::ref_name::RemoteRefSymbol;
+ use crate::ref_name::WorkspaceName;
+ use crate::ref_name::WorkspaceNameBuf;
+@@ -107,6 +108,10 @@ impl View {
+         &self.data.git_refs
+     }
+ 
++    pub fn fetched_git_refs(&self) -> &BTreeMap<RemoteNameBuf, BTreeMap<GitRefNameBuf, RefTarget>> {
++        &self.data.fetched_git_refs
++    }
++
+     pub fn git_head(&self, workspace: &WorkspaceName) -> &RefTarget {
+         self.data.git_heads.get(workspace).flatten()
+     }
+@@ -388,12 +393,21 @@ impl View {
+ 
+     pub fn remove_remote(&mut self, remote_name: &RemoteName) {
+         self.data.remote_views.remove(remote_name);
++        // Fetched Git refs are keyed by remote name and are user-visible as
++        // refs/...@remote, so remote removal must make them disappear too.
++        self.data.fetched_git_refs.remove(remote_name);
+     }
+ 
+     pub fn rename_remote(&mut self, old: &RemoteName, new: &RemoteName) {
+         if let Some(remote_view) = self.data.remote_views.remove(old) {
+             self.data.remote_views.insert(new.to_owned(), remote_view);
+         }
++        // Keep refs/...@remote resolution aligned with the renamed remote.
++        if let Some(fetched_refs) = self.data.fetched_git_refs.remove(old) {
++            self.data
++                .fetched_git_refs
++                .insert(new.to_owned(), fetched_refs);
++        }
+     }
+ 
+     /// Iterates local tag `(name, target)`s in lexicographical order.
+@@ -574,6 +588,67 @@ impl View {
+         }
+     }
+ 
++    pub fn fetched_git_refs_for_remote(
++        &self,
++        remote_name: &RemoteName,
++    ) -> impl Iterator<Item = (&GitRefName, &RefTarget)> + use<'_> {
++        self.data
++            .fetched_git_refs
++            .get(remote_name)
++            .map(|refs| refs.iter().map(|(name, target)| (name.as_ref(), target)))
++            .into_iter()
++            .flatten()
++    }
++
++    pub fn fetched_git_refs_matching(
++        &self,
++        ref_matcher: &StringMatcher,
++        remote_matcher: &StringMatcher,
++    ) -> impl Iterator<Item = (&RemoteName, &GitRefName, &RefTarget)> {
++        remote_matcher
++            .filter_btree_map_as_deref(&self.data.fetched_git_refs)
++            .map(|(remote, refs)| {
++                ref_matcher
++                    .filter_btree_map_as_deref(refs)
++                    .map(move |(name, target)| (remote.as_ref(), name.as_ref(), target))
++            })
++            .kmerge_by(|(remote1, name1, _), (remote2, name2, _)| {
++                (remote1, name1) < (remote2, name2)
++            })
++    }
++
++    pub fn get_fetched_git_ref(
++        &self,
++        remote_name: &RemoteName,
++        ref_name: &GitRefName,
++    ) -> &RefTarget {
++        self.data
++            .fetched_git_refs
++            .get(remote_name)
++            .and_then(|refs| refs.get(ref_name))
++            .flatten()
++    }
++
++    pub fn set_fetched_git_ref_target(
++        &mut self,
++        remote_name: &RemoteName,
++        ref_name: &GitRefName,
++        target: RefTarget,
++    ) {
++        if target.is_present() {
++            self.data
++                .fetched_git_refs
++                .entry(remote_name.to_owned())
++                .or_default()
++                .insert(ref_name.to_owned(), target);
++        } else if let Some(refs) = self.data.fetched_git_refs.get_mut(remote_name) {
++            refs.remove(ref_name);
++            if refs.is_empty() {
++                self.data.fetched_git_refs.remove(remote_name);
++            }
++        }
++    }
++
+     /// Sets Git HEAD for the given workspace to point to the given target. If
+     /// the target is absent, the entry will be removed.
+     pub fn set_git_head_target(&mut self, workspace: &WorkspaceName, target: RefTarget) {
+@@ -607,6 +682,7 @@ impl View {
+             local_tags,
+             remote_views,
+             git_refs,
++            fetched_git_refs,
+             git_heads,
+             wc_commit_ids,
+         } = &self.data;
+@@ -620,6 +696,10 @@ impl View {
+                     .flat_map(|remote_ref| ref_target_ids(&remote_ref.target))
+             }),
+             git_refs.values().flat_map(ref_target_ids),
++            fetched_git_refs
++                .values()
++                .flat_map(|refs| refs.values())
++                .flat_map(ref_target_ids),
+             git_heads.values().flat_map(ref_target_ids),
+             wc_commit_ids.values()
+         )
+-- 
+2.55.0
+

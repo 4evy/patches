@@ -1,0 +1,16 @@
+{
+  "recommendations": [
+    "editorconfig.editorconfig",
+    "esbenp.prettier-vscode",
+    "github.vscode-github-actions",
+    "golang.go",
+    "jnoortheen.nix-ide",
+    "mkhl.shfmt",
+    "ms-azuretools.vscode-docker",
+    "ms-python.python",
+    "nefrob.vscode-just-syntax",
+    "redhat.vscode-yaml",
+    "rust-lang.rust-analyzer",
+    "timonwong.shellcheck"
+  ]
+}

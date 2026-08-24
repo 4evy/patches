@@ -1,0 +1,763 @@
+From 68ccf2a5ec0eb86dcfc7b987edd730c55d1ebf13 Mon Sep 17 00:00:00 2001
+From: 4evy <git@evy.pink>
+Date: Thu, 1 Jan 1970 00:00:00 +0000
+Subject: git fetch: refresh ancestry after shallow boundary
+ changes
+
+Allow regular fetches to deepen an existing shallow repository and add
+the lower-level depth, deepen, and exclusion controls needed by raw-ref
+fetches. Detect changes to the Git shallow boundary, refresh backend
+caches, and rebuild the commit index so newly available ancestors are
+immediately queryable, including after failed fetches
+
+diff --git a/cli/src/command_error.rs b/cli/src/command_error.rs
+index 261898d369688e7eea4f5f9f2702855973652c21..671120d3215d9617fccd17cca696357915177dd8 100644
+--- a/cli/src/command_error.rs
++++ b/cli/src/command_error.rs
+@@ -589,7 +589,10 @@ jj currently does not support partial clones. To use jj with this repository, tr
+                 }
+                 GitFetchError::RejectedUpdates(_)
+                 | GitFetchError::TemporaryRefCleanup { .. }
+-                | GitFetchError::Subprocess(_) => user_error(err),
++                | GitFetchError::Subprocess(_)
++                | GitFetchError::ShallowCommits(_)
++                | GitFetchError::RefreshShallowState(_)
++                | GitFetchError::UnexpectedBackend(_) => user_error(err),
+             }
+         }
+     }
+diff --git a/cli/src/commands/git/fetch.rs b/cli/src/commands/git/fetch.rs
+index 5bb2d823acfbccaa4a951e78a322053f3e6f27a4..5937af902005f8c15836944f64cf0f22b635775e 100644
+--- a/cli/src/commands/git/fetch.rs
++++ b/cli/src/commands/git/fetch.rs
+@@ -13,6 +13,7 @@
+ // limitations under the License.
+ 
+ use std::io;
++use std::num::NonZeroU32;
+ 
+ use clap_complete::ArgValueCandidates;
+ use itertools::Itertools as _;
+@@ -125,6 +126,13 @@ pub struct GitFetchArgs {
+     /// Fetch from all remotes
+     #[arg(long, conflicts_with = "remotes")]
+     all_remotes: bool,
++
++    /// Limit fetching to the specified number of commits from each tip
++    ///
++    /// In an existing shallow repository, this defaults to the
++    /// `git.fetch-depth` setting when configured.
++    #[arg(long)]
++    depth: Option<NonZeroU32>,
+ }
+ 
+ #[tracing::instrument(skip_all)]
+@@ -232,34 +240,51 @@ pub async fn cmd_git_fetch(
+     }
+ 
+     let git_settings = GitSettings::from_settings(tx.settings())?;
++    let depth = super::get_git_fetch_depth(tx.settings(), tx.repo().store(), args.depth)?;
+     let import_options = load_git_import_options(ui, &git_settings, &remote_settings)?;
++    let index_store = tx.repo().base_repo().index_store().clone();
+     let mut git_fetch = GitFetch::new(
+         tx.repo_mut(),
+         git_settings.to_subprocess_options(),
+         &import_options,
+     )?;
+ 
+-    for (remote, expanded) in expansions {
+-        let mut callback = GitSubprocessUi::new(ui);
+-        git_fetch.fetch(remote, expanded, &mut callback, None)?;
++    let fetch_result: Result<_, CommandError> = async {
++        for (remote, expanded) in expansions {
++            let mut callback = GitSubprocessUi::new(ui);
++            git_fetch.fetch(remote, expanded, &mut callback, depth)?;
++        }
++        Ok(git_fetch.import_refs().await?)
+     }
++    .await;
++    let shallow_boundary_changed = git_fetch.shallow_boundary_changed();
++    drop(git_fetch);
++    let result: Result<(), CommandError> = async {
++        let import_stats = fetch_result?;
++        print_git_import_stats(ui, &tx, &import_stats)?;
+ 
+-    let import_stats = git_fetch.import_refs().await?;
+-    print_git_import_stats(ui, &tx, &import_stats)?;
+-
+-    if let Some(bookmark_expr) = &common_bookmark_expr {
+-        warn_if_branches_not_found(ui, &tx, bookmark_expr, &matching_remotes)?;
++        if let Some(bookmark_expr) = &common_bookmark_expr {
++            warn_if_branches_not_found(ui, &tx, bookmark_expr, &matching_remotes)?;
++        }
++        // TODO: warn_if_tags_not_found()
++        tx.finish(
++            ui,
++            format!(
++                "fetch from git remote(s) {}",
++                matching_remotes.iter().map(|n| n.as_symbol()).join(",")
++            ),
++        )
++        .await?;
++        Ok(())
+     }
+-    // TODO: warn_if_tags_not_found()
+-    tx.finish(
++    .await;
++    let reinit_result = super::reinit_index_after_shallow_change(
+         ui,
+-        format!(
+-            "fetch from git remote(s) {}",
+-            matching_remotes.iter().map(|n| n.as_symbol()).join(",")
+-        ),
+-    )
+-    .await?;
+-    Ok(())
++        index_store.as_ref(),
++        shallow_boundary_changed,
++    );
++    result?;
++    reinit_result
+ }
+ 
+ const DEFAULT_REMOTE: &RemoteName = RemoteName::new("origin");
+diff --git a/cli/src/commands/git/mod.rs b/cli/src/commands/git/mod.rs
+index 9e43a2d40217f70e66d1764dfedfd1a1bca2d48b..f03c416e1f23fc75068644002be1a515ea40ad3a 100644
+--- a/cli/src/commands/git/mod.rs
++++ b/cli/src/commands/git/mod.rs
+@@ -24,18 +24,22 @@ mod remote;
+ mod root;
+ 
+ use std::io::Write as _;
++use std::num::NonZeroU32;
+ 
+ use clap::Subcommand;
+ use jj_lib::config::ConfigFile;
++use jj_lib::config::ConfigGetResultExt as _;
+ use jj_lib::config::ConfigLayer;
+ use jj_lib::config::ConfigSource;
+ use jj_lib::git;
+ use jj_lib::git::UnexpectedGitBackendError;
++use jj_lib::index::IndexStore;
+ use jj_lib::ref_name::RemoteName;
+ use jj_lib::ref_name::RemoteNameBuf;
+ use jj_lib::ref_name::RemoteRefSymbol;
+ use jj_lib::ref_name::RemoteRefSymbolBuf;
+ use jj_lib::revset;
++use jj_lib::settings::UserSettings;
+ use jj_lib::store::Store;
+ use r#ref::RefCommand;
+ use r#ref::cmd_git_ref;
+@@ -62,6 +66,7 @@ use self::root::cmd_git_root;
+ use crate::cli_util::CommandHelper;
+ use crate::cli_util::WorkspaceCommandHelper;
+ use crate::command_error::CommandError;
++use crate::command_error::internal_error;
+ use crate::command_error::user_error_with_message;
+ use crate::config::ConfigEnv;
+ use crate::config::RawConfig;
+@@ -113,6 +118,37 @@ pub async fn cmd_git(
+     }
+ }
+ 
++fn reinit_index_after_shallow_change(
++    ui: &Ui,
++    index_store: &dyn IndexStore,
++    shallow_boundary_changed: bool,
++) -> Result<(), CommandError> {
++    if !shallow_boundary_changed {
++        return Ok(());
++    }
++    let default_index_store = index_store
++        .downcast_ref::<jj_lib::default_index::DefaultIndexStore>()
++        .ok_or_else(|| internal_error("cannot rebuild a non-default commit index"))?;
++    default_index_store.reinit().map_err(internal_error)?;
++    writeln!(
++        ui.status(),
++        "Shallow boundary changed; the commit index will be rebuilt."
++    )?;
++    Ok(())
++}
++
++fn get_git_fetch_depth(
++    settings: &UserSettings,
++    store: &Store,
++    requested_depth: Option<NonZeroU32>,
++) -> Result<Option<NonZeroU32>, CommandError> {
++    if requested_depth.is_some() || git::get_git_backend(store)?.git_repo().is_shallow() {
++        Ok(requested_depth.or(settings.get("git.fetch-depth").optional()?))
++    } else {
++        Ok(None)
++    }
++}
++
+ pub fn maybe_add_gitignore(workspace_command: &WorkspaceCommandHelper) -> Result<(), CommandError> {
+     if workspace_command.working_copy_shared_with_git() {
+         std::fs::write(
+diff --git a/cli/src/commands/git/ref/fetch.rs b/cli/src/commands/git/ref/fetch.rs
+index 5d81c7319c48c334e41e7f09f871a5bcadf045ee..9550c494217dd7e4fdb1a34bd5ad74b582ed42c7 100644
+--- a/cli/src/commands/git/ref/fetch.rs
++++ b/cli/src/commands/git/ref/fetch.rs
+@@ -184,7 +184,7 @@ async fn do_fetch(
+     )?;
+ 
+     let mut callback = GitSubprocessUi::new(ui);
+-    let commit_id = git_fetch.fetch_commit(remote_name, source, &mut callback, None)?;
++    let commit_id = git_fetch.fetch_commit(remote_name, source, &mut callback, None, None)?;
+     let commit = import_commit(tx.repo_mut(), commit_id).await?;
+     if let Some(mut formatter) = ui.status_formatter() {
+         write!(formatter, "Fetched {source} as ")?;
+diff --git a/cli/src/config-schema.json b/cli/src/config-schema.json
+index 4ff0790b87577fb71b8e8dd70e04afa9c67ebd65..e379ccd463ec380c50509e748daa0bce86e0047c 100644
+--- a/cli/src/config-schema.json
++++ b/cli/src/config-schema.json
+@@ -514,6 +514,11 @@
+                         }
+                     ]
+                 },
++                "fetch-depth": {
++                    "type": "integer",
++                    "minimum": 1,
++                    "description": "Default depth used by Git fetch commands in an existing shallow repository"
++                },
+                 "private-commits": {
+                     "type": "string",
+                     "description": "Revset of commits to refuse to push to remotes",
+diff --git a/cli/tests/cli-reference@.md.snap b/cli/tests/cli-reference@.md.snap
+index 1043d3d7da0b0b4a58567caa41aab72e3f735429..3d80f813a62d7bcf831241b335bdacf671045517 100644
+--- a/cli/tests/cli-reference@.md.snap
++++ b/cli/tests/cli-reference@.md.snap
+@@ -1766,6 +1766,9 @@ If a working-copy commit gets abandoned, it will be given a new, empty commit. T
+ 
+    [string pattern syntax]: https://docs.jj-vcs.dev/latest/revsets/#string-patterns
+ * `--all-remotes` — Fetch from all remotes
++* `--depth <DEPTH>` — Limit fetching to the specified number of commits from each tip
++
++   In an existing shallow repository, this defaults to the `git.fetch-depth` setting when configured.
+ 
+ 
+ 
+diff --git a/cli/tests/sample-configs/invalid/git.fetch-depth_zero.toml b/cli/tests/sample-configs/invalid/git.fetch-depth_zero.toml
+new file mode 100644
+index 0000000000000000000000000000000000000000..e526a454aa1e09732bd9195f2793e7272235b31d
+--- /dev/null
++++ b/cli/tests/sample-configs/invalid/git.fetch-depth_zero.toml
+@@ -0,0 +1,3 @@
++#:schema ../../../src/config-schema.json
++[git]
++fetch-depth = 0
+diff --git a/cli/tests/sample-configs/valid/git.toml b/cli/tests/sample-configs/valid/git.toml
+index edf0492ad154e3a679e8f7ff3d71ffb7e09999ae..f42fee952ec0a99039368561707bf9931fe4b79a 100644
+--- a/cli/tests/sample-configs/valid/git.toml
++++ b/cli/tests/sample-configs/valid/git.toml
+@@ -2,6 +2,7 @@
+ [git]
+ abandon-unreachable-commits = false
+ fetch = ["origin", "fork"]
++fetch-depth = 42
+ push = "fork"
+ record-synthetic-predecessors = false
+ sign-on-push = true
+diff --git a/cli/tests/test_git_fetch.rs b/cli/tests/test_git_fetch.rs
+index faf4a3ff28ed85321428584dbf36337802171869..bc4402fe8074fc46a8e7e8514e2870a6c13d554d 100644
+--- a/cli/tests/test_git_fetch.rs
++++ b/cli/tests/test_git_fetch.rs
+@@ -3634,6 +3634,51 @@ fn test_git_fetch_tracked_multiple_remotes() {
+     ");
+ }
+ 
++#[test]
++fn test_git_fetch_depth_refreshes_ancestry_and_index() {
++    let test_env = TestEnvironment::default();
++    test_env.add_config("git.fetch-depth = 4");
++    let root_dir = test_env.work_dir("");
++    let source_path = test_env.env_root().join("source");
++    let git_repo = git::init(source_path);
++    for message in ["A", "B", "C", "D", "E"] {
++        add_commit_to_branch(&git_repo, "main", message);
++    }
++    testutils::git::set_symbolic_reference(&git_repo, "HEAD", "refs/heads/main");
++
++    root_dir
++        .run_jj(["git", "clone", "--depth", "1", "source", "repo"])
++        .success();
++    let work_dir = test_env.work_dir("repo");
++    add_commit_to_branch(&git_repo, "main", "F");
++    add_commit_to_branch(&git_repo, "main", "G");
++
++    let output = work_dir.run_jj(["git", "fetch"]);
++    insta::assert_snapshot!(output, @"
++    ------- stderr -------
++    bookmark: main@origin [updated] tracked
++    Shallow boundary changed; the commit index will be rebuilt.
++    [EOF]
++    ");
++    insta::assert_snapshot!(
++        work_dir.run_jj([
++            "log",
++            "--no-graph",
++            "-r",
++            "::main@origin ~ root()",
++            "-T",
++            "description.first_line() ++ '\n'",
++        ]),
++        @"
++    G
++    F
++    E
++    D
++    [EOF]
++    "
++    );
++}
++
+ #[test]
+ fn test_git_fetch_auto_track_bookmarks() {
+     let test_env = TestEnvironment::default();
+diff --git a/lib/src/git.rs b/lib/src/git.rs
+index e47c84d173be806c23ce8f1f584440dbf4136dc7..c3f1b2d4b7a0bd9a7a5179946e2e858ead659de2 100644
+--- a/lib/src/git.rs
++++ b/lib/src/git.rs
+@@ -31,6 +31,7 @@ use bstr::BString;
+ use futures::StreamExt as _;
+ use futures::TryStreamExt as _;
+ use futures::stream;
++use gix::remote::fetch::Shallow;
+ use gix::refspec::Instruction;
+ use itertools::Itertools as _;
+ use thiserror::Error;
+@@ -2758,6 +2759,12 @@ pub enum GitFetchError {
+     RejectedUpdates(Vec<GitRefNameBuf>),
+     #[error(transparent)]
+     Subprocess(#[from] GitSubprocessError),
++    #[error("Failed to read Git shallow commits")]
++    ShallowCommits(#[source] gix::shallow::read::Error),
++    #[error("Failed to refresh Git repository after shallow boundary changed")]
++    RefreshShallowState(#[source] Box<gix::open::Error>),
++    #[error(transparent)]
++    UnexpectedBackend(#[from] UnexpectedGitBackendError),
+ }
+ 
+ #[derive(Error, Debug)]
+@@ -3103,6 +3110,8 @@ pub struct GitFetch<'a> {
+     git_ctx: GitSubprocessContext,
+     import_options: &'a GitImportOptions,
+     fetched: Vec<FetchedRefs>,
++    shallow_commits: Vec<gix::ObjectId>,
++    shallow_boundary_changed: bool,
+ }
+ 
+ impl<'a> GitFetch<'a> {
+@@ -3110,9 +3119,10 @@ impl<'a> GitFetch<'a> {
+         mut_repo: &'a mut MutableRepo,
+         subprocess_options: GitSubprocessOptions,
+         import_options: &'a GitImportOptions,
+-    ) -> Result<Self, UnexpectedGitBackendError> {
++    ) -> Result<Self, GitFetchError> {
+         let git_backend = get_git_backend(mut_repo.store())?;
+         let git_repo = Box::new(git_backend.git_repo());
++        let shallow_commits = read_shallow_commits(&git_repo)?;
+         let git_ctx = GitSubprocessContext::from_git_backend(git_backend, subprocess_options);
+         Ok(GitFetch {
+             mut_repo,
+@@ -3120,9 +3130,68 @@ impl<'a> GitFetch<'a> {
+             git_ctx,
+             import_options,
+             fetched: vec![],
++            shallow_commits,
++            shallow_boundary_changed: false,
+         })
+     }
+ 
++    fn refresh_shallow_state(&mut self) -> Result<(), GitFetchError> {
++        // A Git subprocess may update the shallow file without changing its
++        // modification time, so force gix to drop its file snapshot first.
++        self.git_repo
++            .reload()
++            .map_err(|err| GitFetchError::RefreshShallowState(Box::new(err)))?;
++        let shallow_commits = read_shallow_commits(&self.git_repo)?;
++        if shallow_commits != self.shallow_commits {
++            let git_backend = get_git_backend(self.mut_repo.store())?;
++            git_backend
++                .refresh_shallow_state()
++                .map_err(GitFetchError::RefreshShallowState)?;
++            self.mut_repo.store().clear_caches();
++            self.shallow_commits = shallow_commits;
++            self.shallow_boundary_changed = true;
++        }
++        Ok(())
++    }
++
++    fn spawn_fetch(
++        &mut self,
++        remote_name: &RemoteName,
++        refspecs: &[RefSpec],
++        negative_refspecs: &[NegativeRefSpec],
++        callback: &mut dyn GitSubprocessCallback,
++        depth: Option<NonZeroU32>,
++    ) -> Result<GitFetchStatus, GitFetchError> {
++        self.spawn_fetch_with_options(
++            remote_name,
++            refspecs,
++            negative_refspecs,
++            callback,
++            depth.map_or(Shallow::NoChange, Shallow::DepthAtRemote),
++        )
++    }
++
++    fn spawn_fetch_with_options(
++        &mut self,
++        remote_name: &RemoteName,
++        refspecs: &[RefSpec],
++        negative_refspecs: &[NegativeRefSpec],
++        callback: &mut dyn GitSubprocessCallback,
++        shallow: Shallow,
++    ) -> Result<GitFetchStatus, GitFetchError> {
++        let fetch_result = self.git_ctx.spawn_fetch_with_options(
++            remote_name,
++            refspecs,
++            negative_refspecs,
++            callback,
++            shallow,
++        );
++        // Git may update the shallow boundary even when the overall fetch
++        // exits unsuccessfully, so refresh before propagating either result.
++        self.refresh_shallow_state()?;
++        Ok(fetch_result?)
++    }
++
+     /// Perform a `git fetch` on the local git repo, updating the
+     /// remote-tracking branches in the git repo.
+     ///
+@@ -3161,7 +3230,7 @@ impl<'a> GitFetch<'a> {
+         // even more unfortunately, git errors out one refspec at a time,
+         // meaning that the below cycle runs in O(#failed refspecs)
+         let updates = loop {
+-            let status = self.git_ctx.spawn_fetch(
++            let status = self.spawn_fetch(
+                 remote_name,
+                 &remaining_refspecs,
+                 &negative_refspecs,
+@@ -3210,6 +3279,7 @@ impl<'a> GitFetch<'a> {
+         source: &str,
+         callback: &mut dyn GitSubprocessCallback,
+         depth: Option<NonZeroU32>,
++        shallow_exclude: Option<&str>,
+     ) -> Result<CommitId, GitFetchError> {
+         validate_remote_name(remote_name)?;
+         if <&gix::refs::PartialNameRef>::try_from(source).is_err() {
+@@ -3233,32 +3303,57 @@ impl<'a> GitFetch<'a> {
+         let refspec = RefSpec::forced(source, temporary_ref_name.as_str());
+         let no_negative_refspecs = [];
+         let fetch_result = (|| {
+-            let updates = match self.git_ctx.spawn_fetch(
+-                remote_name,
+-                std::slice::from_ref(&refspec),
+-                &no_negative_refspecs,
+-                callback,
+-                depth,
+-            )? {
+-                GitFetchStatus::Updates(updates) => updates,
+-                GitFetchStatus::NoRemoteRef(_) => {
+-                    return Err(GitFetchError::NoSuchSource {
+-                        remote: remote_name.to_owned(),
+-                        fetch_source: source.to_owned(),
+-                    });
++            let check_status = |status| match status {
++                GitFetchStatus::Updates(updates) if updates.rejected.is_empty() => Ok(()),
++                GitFetchStatus::Updates(updates) => {
++                    let names = updates.rejected.into_iter().map(|(name, _)| name).collect();
++                    Err(GitFetchError::RejectedUpdates(names))
+                 }
++                GitFetchStatus::NoRemoteRef(_) => Err(GitFetchError::NoSuchSource {
++                    remote: remote_name.to_owned(),
++                    fetch_source: source.to_owned(),
++                }),
+             };
+-            if !updates.rejected.is_empty() {
+-                let names = updates.rejected.into_iter().map(|(name, _)| name).collect();
+-                return Err(GitFetchError::RejectedUpdates(names));
++
++            if let Some(excluded_source) = shallow_exclude {
++                let excluded_ref = gix::refs::PartialName::try_from(excluded_source).map_err(|_| {
++                    GitFetchError::InvalidSource {
++                        fetch_source: excluded_source.to_owned(),
++                    }
++                })?;
++                check_status(self.spawn_fetch_with_options(
++                    remote_name,
++                    std::slice::from_ref(&refspec),
++                    &no_negative_refspecs,
++                    callback,
++                    Shallow::Exclude {
++                        remote_refs: vec![excluded_ref],
++                        since_cutoff: None,
++                    },
++                )?)?;
++                check_status(self.spawn_fetch_with_options(
++                    remote_name,
++                    std::slice::from_ref(&refspec),
++                    &no_negative_refspecs,
++                    callback,
++                    Shallow::Deepen(1),
++                )?)?;
++            } else {
++                check_status(self.spawn_fetch(
++                    remote_name,
++                    std::slice::from_ref(&refspec),
++                    &no_negative_refspecs,
++                    callback,
++                    depth,
++                )?)?;
+             }
+ 
+             let reference = self
+                 .git_repo
+                 .find_reference(temporary_ref_name.as_str())
+                 .map_err(|_| GitFetchError::NoSuchSource {
+-                    remote: remote_name.to_owned(),
+-                    fetch_source: source.to_owned(),
++                        remote: remote_name.to_owned(),
++                        fetch_source: source.to_owned(),
+                 })?;
+             let commit_id = resolve_git_ref_to_commit_id(&reference, None).ok_or_else(|| {
+                 GitFetchError::NotACommit {
+@@ -3343,6 +3438,18 @@ impl<'a> GitFetch<'a> {
+ 
+         Ok(import_stats)
+     }
++
++    /// Whether a fetch changed the Git shallow boundary.
++    pub fn shallow_boundary_changed(&self) -> bool {
++        self.shallow_boundary_changed
++    }
++}
++
++fn read_shallow_commits(git_repo: &gix::Repository) -> Result<Vec<gix::ObjectId>, GitFetchError> {
++    Ok(git_repo
++        .shallow_commits()
++        .map_err(GitFetchError::ShallowCommits)?
++        .map_or_else(Vec::new, |commits| commits.iter().copied().collect()))
+ }
+ 
+ #[derive(Error, Debug)]
+diff --git a/lib/src/git_backend.rs b/lib/src/git_backend.rs
+index a09defdc83091f2e228d97507b54c404e9730afb..76a22764dab3523b926cea7d38b8ce79b91cf788 100644
+--- a/lib/src/git_backend.rs
++++ b/lib/src/git_backend.rs
+@@ -44,7 +44,6 @@ use gix::objs::Exists as _;
+ use gix::objs::Write as _;
+ use gix::objs::WriteTo as _;
+ use itertools::Itertools as _;
+-use once_cell::sync::OnceCell as OnceLock;
+ use pollster::FutureExt as _;
+ use prost::Message as _;
+ use smallvec::SmallVec;
+@@ -175,7 +174,7 @@ pub struct GitBackend {
+     root_commit_id: CommitId,
+     root_change_id: ChangeId,
+     empty_tree_id: TreeId,
+-    shallow_root_ids: OnceLock<Vec<CommitId>>,
++    shallow_root_ids: Mutex<Option<Arc<Vec<CommitId>>>>,
+     extra_metadata_store: TableStore,
+     cached_extra_metadata: Mutex<Option<Arc<ReadonlyTable>>>,
+     git_executable: PathBuf,
+@@ -203,7 +202,7 @@ impl GitBackend {
+             root_commit_id,
+             root_change_id,
+             empty_tree_id,
+-            shallow_root_ids: OnceLock::new(),
++            shallow_root_ids: Mutex::new(None),
+             extra_metadata_store,
+             cached_extra_metadata: Mutex::new(None),
+             git_executable: git_settings.executable_path,
+@@ -354,7 +353,7 @@ impl GitBackend {
+ 
+     /// Returns new thread-local instance to access to the underlying Git repo.
+     pub fn git_repo(&self) -> gix::Repository {
+-        self.base_repo.to_thread_local()
++        self.repo.lock().unwrap().clone()
+     }
+ 
+     /// Path to the `.git` directory or the repository itself if it's bare.
+@@ -367,23 +366,35 @@ impl GitBackend {
+         self.base_repo.work_dir()
+     }
+ 
+-    fn shallow_root_ids(&self, git_repo: &gix::Repository) -> BackendResult<&[CommitId]> {
++    fn shallow_root_ids(&self, git_repo: &gix::Repository) -> BackendResult<Arc<Vec<CommitId>>> {
+         // The list of shallow roots is cached by gix, but it's still expensive
+         // to stat file on every read_object() call. Refreshing shallow roots is
+         // also bad for consistency reasons.
+-        self.shallow_root_ids
+-            .get_or_try_init(|| {
+-                let maybe_oids = git_repo
+-                    .shallow_commits()
+-                    .map_err(|err| BackendError::Other(err.into()))?;
+-                let commit_ids = maybe_oids.map_or(vec![], |oids| {
+-                    oids.iter()
+-                        .map(|oid| CommitId::from_bytes(oid.as_bytes()))
+-                        .collect()
+-                });
+-                Ok(commit_ids)
+-            })
+-            .map(AsRef::as_ref)
++        let mut cached = self.shallow_root_ids.lock().unwrap();
++        if let Some(commit_ids) = &*cached {
++            return Ok(commit_ids.clone());
++        }
++        let maybe_oids = git_repo
++            .shallow_commits()
++            .map_err(|err| BackendError::Other(err.into()))?;
++        let commit_ids = Arc::new(maybe_oids.map_or(vec![], |oids| {
++            oids.iter()
++                .map(|oid| CommitId::from_bytes(oid.as_bytes()))
++                .collect()
++        }));
++        *cached = Some(commit_ids.clone());
++        Ok(commit_ids)
++    }
++
++    /// Refreshes state cached before an external Git process changed the
++    /// shallow boundary.
++    pub fn refresh_shallow_state(&self) -> Result<(), Box<gix::open::Error>> {
++        // Keep the lock order consistent with read_commit(): repo, then roots.
++        let mut repo = self.repo.lock().unwrap();
++        let mut shallow_root_ids = self.shallow_root_ids.lock().unwrap();
++        repo.reload().map_err(Box::new)?;
++        *shallow_root_ids = None;
++        Ok(())
+     }
+ 
+     fn cached_extra_metadata_table(&self) -> BackendResult<Arc<ReadonlyTable>> {
+@@ -456,12 +467,13 @@ impl GitBackend {
+         );
+         let (table, table_lock) = self.read_extra_metadata_table_locked()?;
+         let mut mut_table = table.start_mutation();
++        let shallow_root_ids = self.shallow_root_ids(&locked_repo)?;
+         import_extra_metadata_entries_from_heads(
+             &locked_repo,
+             &mut mut_table,
+             &table_lock,
+             &head_ids,
+-            self.shallow_root_ids(&locked_repo)?,
++            &shallow_root_ids,
+         )?;
+         self.save_extra_metadata_table(mut_table, &table_lock)
+     }
+diff --git a/lib/src/git_subprocess.rs b/lib/src/git_subprocess.rs
+index b96210bb5a9980e18d2aad5421c98da0aa202c07..7b702b49be86d386ca6192aa84df4ac0d0900492 100644
+--- a/lib/src/git_subprocess.rs
++++ b/lib/src/git_subprocess.rs
+@@ -15,7 +15,6 @@
+ use std::io;
+ use std::io::BufReader;
+ use std::io::Read;
+-use std::num::NonZeroU32;
+ use std::path::PathBuf;
+ use std::process::Child;
+ use std::process::Command;
+@@ -25,6 +24,7 @@ use std::thread;
+ 
+ use bstr::BStr;
+ use bstr::ByteSlice as _;
++use gix::remote::fetch::Shallow;
+ use itertools::Itertools as _;
+ use thiserror::Error;
+ 
+@@ -161,17 +161,17 @@ impl GitSubprocessContext {
+         })
+     }
+ 
+-    /// Perform a git fetch
++    /// Perform a Git fetch with shallow-history controls.
+     ///
+-    /// [`GitFetchStatus::NoRemoteRef`] is returned if ref doesn't exist. Note
++    /// [`GitFetchStatus::NoRemoteRef`] is returned if a ref doesn't exist. Note
+     /// that `git` only returns one failed ref at a time.
+-    pub(crate) fn spawn_fetch(
++    pub(crate) fn spawn_fetch_with_options(
+         &self,
+         remote_name: &RemoteName,
+         refspecs: &[RefSpec],
+         negative_refspecs: &[NegativeRefSpec],
+         callback: &mut dyn GitSubprocessCallback,
+-        depth: Option<NonZeroU32>,
++        shallow: Shallow,
+     ) -> Result<GitFetchStatus, GitSubprocessError> {
+         if refspecs.is_empty() {
+             return Ok(GitFetchStatus::Updates(GitRefUpdates::default()));
+@@ -184,8 +184,28 @@ impl GitSubprocessContext {
+         if callback.needs_progress() {
+             command.arg("--progress");
+         }
+-        if let Some(d) = depth {
+-            command.arg(format!("--depth={d}"));
++        match shallow {
++            Shallow::NoChange => {}
++            Shallow::DepthAtRemote(depth) => {
++                command.arg(format!("--depth={depth}"));
++            }
++            Shallow::Deepen(depth) => {
++                command.arg(format!("--deepen={depth}"));
++            }
++            Shallow::Since { cutoff } => {
++                command.arg(format!("--shallow-since={cutoff}"));
++            }
++            Shallow::Exclude {
++                remote_refs,
++                since_cutoff,
++            } => {
++                if let Some(cutoff) = since_cutoff {
++                    command.arg(format!("--shallow-since={cutoff}"));
++                }
++                for remote_ref in remote_refs {
++                    command.arg(format!("--shallow-exclude={remote_ref}"));
++                }
++            }
+         }
+         // Tags should be fetched explicitly by the refspecs
+         command.arg("--no-tags");
+diff --git a/lib/src/store.rs b/lib/src/store.rs
+index ecda0f69e063d8ab2805102c70972f5680fc47dc..3be56080279e5ef1ea25593af7c0946e760a9138 100644
+--- a/lib/src/store.rs
++++ b/lib/src/store.rs
+@@ -256,7 +256,7 @@ impl Store {
+         self.backend.gc(index, keep_newer)
+     }
+ 
+-    /// Clear cached objects. Mainly intended for testing.
++    /// Clears cached objects.
+     pub fn clear_caches(&self) {
+         self.commit_cache.lock().unwrap().clear();
+         self.tree_cache.lock().unwrap().clear();
+diff --git a/lib/tests/test_git.rs b/lib/tests/test_git.rs
+index e02277dbafe7ff9a0aa8af25bcdf3399372ed530..01857db0548ad9a50a98588764616414cf6d2081 100644
+--- a/lib/tests/test_git.rs
++++ b/lib/tests/test_git.rs
+@@ -6670,8 +6670,20 @@ fn test_shallow_commits_lack_parents() -> TestResult {
+         "shallow commits have the root commit as a parent"
+     );
+ 
+-    // deepen the shallow clone
+-    let repo = make_shallow(&repo, vec![a]);
++    // Deepen the shallow clone without changing the file's mtime. This forces
++    // refresh_shallow_state() to drop gix's mtime-based shallow-file cache.
++    let shallow_file = get_git_backend(&repo).git_repo().shallow_file();
++    let modified = fs::metadata(&shallow_file)?.modified()?;
++    let mut buf = Vec::<u8>::new();
++    writeln!(buf, "{a}").unwrap();
++    fs::write(&shallow_file, buf)?;
++    fs::File::options()
++        .write(true)
++        .open(&shallow_file)?
++        .set_times(fs::FileTimes::new().set_modified(modified))?;
++    assert_eq!(fs::metadata(&shallow_file)?.modified()?, modified);
++    get_git_backend(&repo).refresh_shallow_state()?;
++    repo.store().clear_caches();
+ 
+     let mut tx = repo.start_transaction();
+     git::import_refs(tx.repo_mut(), &import_options).block_on()?;
+-- 
+2.55.0
+

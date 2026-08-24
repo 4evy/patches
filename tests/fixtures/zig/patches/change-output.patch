@@ -1,0 +1,11 @@
+diff --git a/main.zig b/main.zig
+index ed5d81c..8ba1b98 100644
+--- a/main.zig
++++ b/main.zig
+@@ -5,5 +5,5 @@ pub fn main() void {
+ }
+ 
+ fn message() []const u8 {
+-    return "fixture";
++    return "patched with a little sparkle";
+ }

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://raw.githubusercontent.com/4evy/patches/master/schema/stack-v1.schema.json",
+  "manifestVersion": 1,
+  "id": "demo",
+  "source": {
+    "vcs": "git",
+    "canonical": "https://example.invalid/demo.git",
+    "revision": "0123456789012345678901234567890123456789",
+    "endpoints": [
+      {
+        "url": "https://example.invalid/demo.git",
+        "role": "primary",
+        "priority": 0
+      }
+    ]
+  }
+}

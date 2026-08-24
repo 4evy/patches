@@ -1,0 +1,13 @@
+diff --git a/main.c b/main.c
+index 9f7e25f..5e89ab8 100644
+--- a/main.c
++++ b/main.c
+@@ -1,7 +1,7 @@
+ /* This fixture source is licensed under the MIT License. */
+ #include <stdio.h>
+ 
+-static const char *message(void) { return "fixture"; }
++static const char *message(void) { return "patched with a little sparkle"; }
+ 
+ int main(void) {
+     puts(message());

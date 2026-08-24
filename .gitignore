@@ -1,0 +1,90 @@
+# macOS metadata and filesystem artifacts
+.DS_Store
+.localized
+__MACOSX/
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.com.apple.timemachine.supported
+.PKInstallSandboxManager
+.PKInstallSandboxManager-SystemSoftware
+.hotfiles.btree
+.vol
+.file
+.disk_label*
+lost+found
+.HFS+ Private Directory Data?
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+Desktop DB
+Desktop DF
+TheFindByContentFolder
+TheVolumeSettingsFolder
+.FBCIndex
+.FBCSemaphoreFile
+.FBCLockFolder
+.quota.group
+.quota.user
+.quota.ops.group
+.quota.ops.user
+Backups.backupdb
+.MobileBackups
+.MobileBackups.trash
+MobileBackups.trash
+tmbootpicker.efi
+
+# Linux desktop, filesystem, and process artifacts
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+nohup.out
+
+# Local environment and editor state
+.direnv/
+.lycheecache
+.pre-commit-config.yaml
+.envrc.local
+.env
+.env.*
+!.env.example
+!.envrc.example
+*.swp
+*.swo
+*~
+
+# Dependency directories and language tooling
+.bundle/
+vendor/bundle/
+vendor/guix-mirrors/
+node_modules/
+.npm/
+__pycache__/
+.pytest_cache/
+.venv/
+
+# Build output and caches
+dist/
+.astro/
+.wrangler/
+coverage/
+*.tsbuildinfo
+/result
+result-*
+*.log
+
+# Quilt working metadata and patch rejects
+.pc/
+*.rej
+*.orig

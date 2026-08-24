@@ -1,0 +1,36 @@
+name: Renovate
+
+on:
+  schedule:
+    - cron: '0 3 1-31/4 * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: renovate-master
+  cancel-in-progress: false
+
+jobs:
+  update:
+    name: Update dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write # Push Renovate updates directly to master.
+    steps:
+      - name: Check out master
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: master
+          persist-credentials: false
+
+      - name: Run Renovate
+        uses: renovatebot/github-action@e09d604f8f803bb527bd8321ed5be06c460b8682 # v46.2.2
+        with:
+          configurationFile: .github/renovate.json
+        env:
+          LOG_LEVEL: info
+          RENOVATE_REPOSITORIES: ${{ github.repository }}
+          RENOVATE_TOKEN: ${{ secrets.GITHUB_TOKEN }}

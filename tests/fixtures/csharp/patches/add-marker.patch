@@ -1,0 +1,16 @@
+diff --git a/Program.cs b/Program.cs
+index 65e6703..299c69b 100644
+--- a/Program.cs
++++ b/Program.cs
+@@ -3,8 +3,10 @@ using System;
+ 
+ class Program
+ {
++    static string Message() => "fixture";
++
+     static void Main()
+     {
+-        Console.WriteLine("fixture");
++        Console.WriteLine(Message());
+     }
+ }

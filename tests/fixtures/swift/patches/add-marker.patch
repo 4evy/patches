@@ -1,0 +1,10 @@
+diff --git a/main.swift b/main.swift
+index 0e870dd..97f6286 100644
+--- a/main.swift
++++ b/main.swift
+@@ -1,2 +1,4 @@
+ // This fixture source is licensed under the MIT License.
+-print("fixture")
++func message() -> String { "fixture" }
++
++print(message())

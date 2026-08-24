@@ -1,0 +1,13 @@
+diff --git a/main.go b/main.go
+index f72dd37..f2940cb 100644
+--- a/main.go
++++ b/main.go
+@@ -3,7 +3,7 @@ package main
+ 
+ import "fmt"
+ 
+-func message() string { return "fixture" }
++func message() string { return "patched with a little sparkle" }
+ 
+ func main() {
+     fmt.Println(message())
