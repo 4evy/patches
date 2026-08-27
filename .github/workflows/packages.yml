@@ -1,0 +1,361 @@
+name: Patched packages
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: sh
+
+jobs:
+  build:
+    name: Build ${{ matrix.stack }} packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    container: debian:13@sha256:34cd9e9fd437c0a095ec39cb2e73422c9f30821b0d0848ed74fd0d43bae4d958
+    strategy:
+      fail-fast: false
+      matrix:
+        stack: [ghostty, jj, kanata]
+
+    env:
+      CARGO_INCREMENTAL: 0
+      DEBIAN_FRONTEND: noninteractive
+
+    steps:
+      - name: Install system build and packaging tools
+        run: |
+          apt-get update
+          apt-get install --yes --no-install-recommends \
+            blueprint-compiler \
+            build-essential \
+            ca-certificates \
+            curl \
+            dpkg-dev \
+            file \
+            gettext \
+            git \
+            jq \
+            libadwaita-1-dev \
+            libbz2-dev \
+            libgtk-4-dev \
+            libgtk4-layer-shell-dev \
+            libonig-dev \
+            libxml2-utils \
+            pandoc \
+            rpm \
+            xz-utils \
+            zip \
+            zstd
+
+      - name: Check out the patch catalog
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check out the pinned upstream and apply its patch queue
+        id: source
+        env:
+          STACK: ${{ matrix.stack }}
+        run: |
+          manifest="$GITHUB_WORKSPACE/stacks/$STACK/stack.json"
+          patches_dir="$GITHUB_WORKSPACE/stacks/$STACK/patches"
+          upstream_url=$(jq --raw-output '.source.canonical' "$manifest")
+          revision=$(jq --raw-output '.source.revision' "$manifest")
+          source_dir="$RUNNER_TEMP/$STACK-source"
+
+          git init "$source_dir"
+          git -C "$source_dir" remote add origin "$upstream_url"
+          git -C "$source_dir" fetch --depth=1 origin "$revision"
+          git -C "$source_dir" checkout --detach FETCH_HEAD
+
+          while read -r patch_file _; do
+            case "$patch_file" in
+              ''|'#'*) continue ;;
+            esac
+            git -C "$source_dir" apply "$patches_dir/$patch_file"
+          done < "$patches_dir/series"
+
+          short_revision=$(printf '%s' "$revision" | cut -c1-12)
+          zig_version=''
+          if [ "$STACK" = ghostty ]; then
+            zig_version=$(sed -n -E \
+              's/^\s*\.?minimum_zig_version\s*=\s*"([^"]+)".*/\1/p' \
+              "$source_dir/build.zig.zon")
+            test -n "$zig_version"
+          fi
+          {
+            echo "SOURCE_DIR=$source_dir"
+            echo "SHORT_REVISION=$short_revision"
+          } >> "$GITHUB_ENV"
+          {
+            echo "revision=$revision"
+            echo "zig-version=$zig_version"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Install Rust
+        if: matrix.stack != 'ghostty'
+        # The Debian job container does not include the runner's rustup binary.
+        # zizmor: ignore[superfluous-actions] A setup action is required inside the container.
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
+        with:
+          toolchain: stable
+
+      - name: Cache Cargo dependencies and build outputs
+        if: matrix.stack != 'ghostty'
+        # Only manual/tag events can reach this job, and the key includes the
+        # immutable upstream revision used for the published binary.
+        # zizmor: ignore[cache-poisoning] No untrusted event can populate this cache.
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: ${{ env.SOURCE_DIR }} -> target
+          key: ${{ steps.source.outputs.revision }}
+          cache-bin: false
+          save-if: ${{ github.event_name == 'workflow_dispatch' }}
+
+      - name: Cache Zig compiler and build outputs
+        if: matrix.stack == 'ghostty'
+        # Only manual/tag events can reach this job, and the key includes the
+        # verified Zig version and immutable upstream revision.
+        # zizmor: ignore[cache-poisoning] No untrusted event can populate this cache.
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ runner.temp }}/zig-${{ steps.source.outputs.zig-version }}
+            ${{ runner.temp }}/zig-global-cache
+            ${{ runner.temp }}/zig-local-cache
+          key: >-
+            zig-v1-${{ runner.os }}-${{ runner.arch }}-${{
+            steps.source.outputs.zig-version }}-${{
+            steps.source.outputs.revision }}
+          restore-keys: |
+            zig-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.source.outputs.zig-version }}-
+
+      - name: Compile release executable without tests
+        env:
+          STACK: ${{ matrix.stack }}
+          ZIG_VERSION: ${{ steps.source.outputs.zig-version }}
+        run: |
+          package_root="$RUNNER_TEMP/package-root"
+          package_binary="$package_root/usr/bin/$STACK"
+          mkdir -p "$package_root/usr/bin"
+
+          case "$STACK" in
+            ghostty)
+              package_version=$(sed -n -E \
+                's/^\s*\.?version\s*=\s*"([^"]+)".*/\1/p' \
+                "$SOURCE_DIR/build.zig.zon")
+              zig_root="$RUNNER_TEMP/zig-$ZIG_VERSION"
+              if [ ! -x "$zig_root/zig" ]; then
+                zig_index=$(curl --fail --location --show-error \
+                  https://ziglang.org/download/index.json)
+                zig_url=$(printf '%s' "$zig_index" | jq --raw-output \
+                  --arg version "$ZIG_VERSION" \
+                  '.[$version]["x86_64-linux"].tarball')
+                zig_sha256=$(printf '%s' "$zig_index" | jq --raw-output \
+                  --arg version "$ZIG_VERSION" \
+                  '.[$version]["x86_64-linux"].shasum')
+                test "$zig_url" != null
+                test "$zig_sha256" != null
+                curl --fail --location --show-error \
+                  --output "$RUNNER_TEMP/zig.tar.xz" \
+                  "$zig_url"
+                printf '%s  %s\n' "$zig_sha256" "$RUNNER_TEMP/zig.tar.xz" | \
+                  sha256sum --check --strict
+                mkdir -p "$zig_root"
+                tar --extract --file "$RUNNER_TEMP/zig.tar.xz" \
+                  --strip-components=1 --directory "$zig_root"
+              fi
+              export PATH="$zig_root:$PATH"
+              export ZIG_GLOBAL_CACHE_DIR="$RUNNER_TEMP/zig-global-cache"
+              export ZIG_LOCAL_CACHE_DIR="$RUNNER_TEMP/zig-local-cache"
+
+              cd "$SOURCE_DIR"
+              while IFS= read -r dependency_url; do
+                zig fetch "$dependency_url"
+              done < build.zig.zon.txt
+              DESTDIR="$package_root" zig build \
+                --prefix /usr \
+                --system "$SOURCE_DIR/zig-pkg" \
+                -fno-sys=harfbuzz \
+                -fno-sys=freetype \
+                -fno-sys=libpng \
+                -fno-sys=zlib \
+                -Doptimize=ReleaseFast \
+                -Dcpu=baseline
+              ;;
+            jj|kanata)
+              cd "$SOURCE_DIR"
+              package_version=$(cargo metadata --locked --no-deps \
+                --format-version 1 | jq --raw-output --arg stack "$STACK" \
+                '
+                  .packages[]
+                  | select(any(.targets[];
+                      (.name == $stack) and (.kind | index("bin"))))
+                  | .version
+                ')
+              cargo build --locked --release --bin "$STACK"
+              install -m 0755 "target/release/$STACK" "$package_binary"
+              ;;
+          esac
+
+          # No branch invokes `zig build test`, `cargo test`, or an
+          # install check; this workflow is strictly a release compilation.
+          test -n "$package_version"
+          test -x "$package_binary"
+          install -m 0755 "$package_binary" \
+            "$RUNNER_TEMP/$STACK-$SHORT_REVISION-linux-x86_64"
+          {
+            echo "PACKAGE_ROOT=$package_root"
+            echo "PACKAGE_VERSION=$package_version"
+          } >> "$GITHUB_ENV"
+
+      - name: Create binary, tar.gz, zip, deb, and rpm artifacts
+        env:
+          STACK: ${{ matrix.stack }}
+        run: |
+          artifact_base="$STACK-$PACKAGE_VERSION-$SHORT_REVISION-linux-x86_64"
+          native_version=$(printf '%s' "$PACKAGE_VERSION" | \
+            sed 's/-/~/; s/-/./g')
+          test -n "$native_version"
+          binary_artifact="dist/$artifact_base"
+          deb_artifact="dist/4evy-${STACK}_${native_version}+git."
+          deb_artifact="${deb_artifact}${SHORT_REVISION}_amd64.deb"
+          rpm_artifact="dist/4evy-$STACK-$native_version-0.git"
+          rpm_artifact="${rpm_artifact}${SHORT_REVISION}.x86_64.rpm"
+          mkdir -p dist
+          install -m 0755 \
+            "$RUNNER_TEMP/$STACK-$SHORT_REVISION-linux-x86_64" \
+            "$binary_artifact"
+          tar --create --gzip --file "dist/$artifact_base.tar.gz" \
+            --directory "$PACKAGE_ROOT" .
+          (cd "$PACKAGE_ROOT" && zip -q -r -y \
+            "$GITHUB_WORKSPACE/dist/$artifact_base.zip" .)
+
+          deb_root="$RUNNER_TEMP/deb-root"
+          cp -a "$PACKAGE_ROOT" "$deb_root"
+          mkdir -p "$deb_root/DEBIAN"
+          shlibdeps_root="$RUNNER_TEMP/shlibdeps"
+          mkdir -p "$shlibdeps_root/debian"
+          cat > "$shlibdeps_root/debian/control" <<EOF
+          Source: 4evy-$STACK
+          Section: utils
+          Priority: optional
+          Maintainer: 4evy <packages@4evy.dev>
+
+          Package: 4evy-$STACK
+          Architecture: any
+          Description: $STACK with the 4evy patch stack
+          EOF
+          deb_dependencies=$(cd "$shlibdeps_root" && \
+            dpkg-shlibdeps -O -e"$PACKAGE_ROOT/usr/bin/$STACK" | \
+            sed -n 's/^shlibs:Depends=//p')
+          test -n "$deb_dependencies"
+          installed_size=$(du -sk "$deb_root" | cut -f1)
+          cat > "$deb_root/DEBIAN/control" <<EOF
+          Package: 4evy-$STACK
+          Version: $native_version+git.$SHORT_REVISION
+          Section: utils
+          Priority: optional
+          Architecture: amd64
+          Maintainer: 4evy <packages@4evy.dev>
+          Depends: $deb_dependencies
+          Installed-Size: $installed_size
+          Description: $STACK with the 4evy patch stack
+           Built from the immutable upstream revision recorded by the patch catalog.
+          EOF
+          dpkg-deb --root-owner-group --build "$deb_root" \
+            "$deb_artifact"
+
+          rpm_top="$RUNNER_TEMP/rpmbuild"
+          for directory in BUILD BUILDROOT RPMS SOURCES SPECS SRPMS; do
+            mkdir -p "$rpm_top/$directory"
+          done
+          file_list="$RUNNER_TEMP/rpm-files"
+          find "$PACKAGE_ROOT" \( -type f -o -type l \) \
+            -printf '/%P\n' | LC_ALL=C sort | \
+            sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/%/%%/g' \
+              -e 's/^/"/' -e 's/$/"/' > "$file_list"
+          spec="$rpm_top/SPECS/4evy-$STACK.spec"
+          cat > "$spec" <<EOF
+          %define __brp_compress %{nil}
+          %define __brp_strip_static_archive %{nil}
+          Name: 4evy-$STACK
+          Version: $native_version
+          Release: 0.git$SHORT_REVISION
+          Summary: $STACK with the 4evy patch stack
+          License: Upstream
+          BuildArch: x86_64
+
+          %description
+          $STACK built from its catalog revision with the ordered 4evy patch queue.
+
+          %install
+          mkdir -p %{buildroot}
+          cp -a "$PACKAGE_ROOT"/. %{buildroot}/
+
+          %files -f $file_list
+          EOF
+          rpmbuild --define "_topdir $rpm_top" -bb "$spec"
+          find "$rpm_top/RPMS" -type f -name '*.rpm' \
+            -exec cp {} "$rpm_artifact" \;
+
+          test -x "$binary_artifact"
+          test -f "dist/$artifact_base.tar.gz"
+          test -f "dist/$artifact_base.zip"
+          test -f "$deb_artifact"
+          test -f "$rpm_artifact"
+
+      - name: Upload ${{ matrix.stack }} artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name:
+            '${{ matrix.stack }}-${{ env.SHORT_REVISION }}-linux-x86_64'
+          if-no-files-found: error
+          path: dist/*
+          compression-level: 0
+          retention-days: 14
+
+  release:
+    name: Publish package assets
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      attestations: write # Publish signed provenance for release artifacts.
+      contents: write # Create the release and upload its assets.
+      id-token: write # Mint the OIDC identity used to sign attestations.
+    steps:
+      - name: Download all stack artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          merge-multiple: true
+          path: dist
+
+      - name: Create release checksums
+        run: |
+          cd dist
+          sha256sum -- ./* | LC_ALL=C sort --key=2 > SHA256SUMS
+
+      - name: Attest package artifacts
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: dist/*
+
+      - name: Create the GitHub release and attach package assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || \
+            gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes
+          gh release upload "$GITHUB_REF_NAME" --clobber dist/*

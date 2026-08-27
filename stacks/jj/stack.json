@@ -1,0 +1,22 @@
+{
+  "$schema": "https://raw.githubusercontent.com/4evy/patches/master/schema/stack-v1.schema.json",
+  "manifestVersion": 1,
+  "id": "jj",
+  "source": {
+    "vcs": "git",
+    "canonical": "https://github.com/jj-vcs/jj.git",
+    "revision": "9dd95ff075db7bfdfedaecaa99565e2971994f0d",
+    "trackingRef": "refs/heads/main",
+    "endpoints": [
+      {
+        "url": "https://github.com/jj-vcs/jj.git",
+        "role": "primary",
+        "priority": 0
+      }
+    ],
+    "checkout": {
+      "submodules": false,
+      "lfs": false
+    }
+  }
+}

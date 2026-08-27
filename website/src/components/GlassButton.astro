@@ -1,0 +1,46 @@
+---
+interface Props {
+  href?: string;
+  variant?: 'primary' | 'quiet';
+  class?: string;
+}
+
+const {
+  href,
+  variant = 'primary',
+  class: className = '',
+} = Astro.props;
+---
+
+{
+  href ? (
+    variant === 'primary' ? (
+      <a
+        href={href}
+        class:list={[
+          'inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-[var(--accent-dark)] bg-linear-to-b from-[var(--accent-hi)] via-[var(--accent)] to-[var(--accent-dark)] px-4 py-2 text-sm font-bold !text-[#fffafb] no-underline shadow-[inset_0_1px_0_rgb(255_255_255_/_0.48),inset_0_-1px_0_rgb(0_0_0_/_0.2),0_2px_4px_var(--shadow-deep)] transition duration-150 hover:brightness-110 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)] active:translate-y-px active:shadow-[inset_0_2px_4px_rgb(0_0_0_/_0.3)]',
+          className,
+        ]}
+      >
+        <slot />
+      </a>
+    ) : (
+      <a
+        href={href}
+        class:list={[
+          'inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-[var(--border)] bg-linear-to-b from-[var(--highlight)] to-[var(--raised)] px-4 py-2 text-sm font-bold text-[var(--accent-dark)] no-underline shadow-[inset_0_1px_0_var(--highlight),0_1px_2px_var(--shadow)] transition duration-150 hover:border-[var(--accent-hi)] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)]',
+          className,
+        ]}
+      >
+        <slot />
+      </a>
+    )
+  ) : (
+    <button
+      type="button"
+      class="inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-[var(--accent-dark)] bg-linear-to-b from-[var(--accent-hi)] via-[var(--accent)] to-[var(--accent-dark)] px-4 py-2 text-sm font-bold !text-[#fffafb] no-underline shadow-[inset_0_1px_0_rgb(255_255_255_/_0.48),inset_0_-1px_0_rgb(0_0_0_/_0.2),0_2px_4px_var(--shadow-deep)] transition duration-150 hover:brightness-110 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[var(--focus)] active:translate-y-px active:shadow-[inset_0_2px_4px_rgb(0_0_0_/_0.3)]"
+    >
+      <slot />
+    </button>
+  )
+}

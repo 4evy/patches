@@ -1,0 +1,15 @@
+diff --git a/main.cpp b/main.cpp
+index eac4cb7..feb70ee 100644
+--- a/main.cpp
++++ b/main.cpp
+@@ -1,6 +1,9 @@
+ // This fixture source is licensed under the MIT License.
+ #include <iostream>
++#include <string>
++
++std::string message() { return "fixture"; }
+ 
+ int main() {
+-    std::cout << "fixture\n";
++    std::cout << message() << "\n";
+ }

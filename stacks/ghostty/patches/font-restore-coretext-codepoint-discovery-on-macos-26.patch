@@ -1,0 +1,165 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: 4evy <git@evy.pink>
+Date: Thu, 1 Jan 1970 00:00:00 +0000
+Subject: font: restore CoreText codepoint discovery on macOS 26
+
+CoreText returns no collection matches on macOS 26 when a descriptor includes
+kCTFontCharacterSetAttribute. This breaks configured codepoint overrides and
+crashes the codepoint discovery test.
+
+Leave the character set out of the query and filter matching descriptors with
+CTFontGetGlyphsForCharacters instead. Cover both present and missing
+codepoints without force-unwrapping the iterator.
+---
+ src/font/discovery.zig | 98 ++++++++++++++++++++++++++----------------
+ 1 file changed, 61 insertions(+), 37 deletions(-)
+
+diff --git a/src/font/discovery.zig b/src/font/discovery.zig
+index 1847693a6..11175b74b 100644
+--- a/src/font/discovery.zig
++++ b/src/font/discovery.zig
+@@ -183,19 +183,6 @@ pub const Descriptor = struct {
+             );
+         }
+ 
+-        // Codepoint support
+-        if (self.codepoint > 0) {
+-            const cs = try macos.foundation.CharacterSet.createWithCharactersInRange(.{
+-                .location = self.codepoint,
+-                .length = 1,
+-            });
+-            defer cs.release();
+-            attrs.setValue(
+-                macos.text.FontAttribute.character_set.key(),
+-                cs,
+-            );
+-        }
+-
+         // Set our size attribute if set
+         if (self.size > 0) {
+             const size32: i32 = @intFromFloat(@round(self.size));
+@@ -387,7 +374,7 @@ pub const CoreText = struct {
+         defer list.release();
+ 
+         // Sort our descriptors
+-        const zig_list = try copyMatchingDescriptors(alloc, list);
++        const zig_list = try copyMatchingDescriptors(alloc, list, &desc);
+         errdefer alloc.free(zig_list);
+         sortMatchingDescriptors(&desc, zig_list);
+ 
+@@ -617,17 +604,51 @@ pub const CoreText = struct {
+     fn copyMatchingDescriptors(
+         alloc: Allocator,
+         list: *macos.foundation.Array,
++        desc: *const Descriptor,
+     ) ![]*macos.text.FontDescriptor {
+         var result = try alloc.alloc(*macos.text.FontDescriptor, list.getCount());
+-        errdefer alloc.free(result);
+-        for (0..result.len) |i| {
+-            result[i] = list.getValueAtIndex(macos.text.FontDescriptor, i);
++        var result_len: usize = 0;
++        errdefer {
++            for (result[0..result_len]) |font_desc| font_desc.release();
++            alloc.free(result);
++        }
++        for (0..list.getCount()) |i| {
++            const font_desc = list.getValueAtIndex(macos.text.FontDescriptor, i);
++
++            // CoreText no longer returns collection matches when a character
++            // set attribute is present on macOS 26. Filter it ourselves so
++            // configured codepoint overrides keep working.
++            if (desc.codepoint > 0) {
++                const font = macos.text.Font.createWithFontDescriptor(
++                    font_desc,
++                    12,
++                ) catch continue;
++                defer font.release();
++                if (!fontHasCodepoint(font, desc.codepoint)) continue;
++            }
+ 
+             // We need to retain because once the list is freed it will
+             // release all its members.
+-            result[i].retain();
++            font_desc.retain();
++            result[result_len] = font_desc;
++            result_len += 1;
+         }
+-        return result;
++        return try alloc.realloc(result, result_len);
++    }
++
++    fn fontHasCodepoint(font: *macos.text.Font, codepoint: u32) bool {
++        var unichars: [2]u16 = undefined;
++        const pair = macos.foundation.stringGetSurrogatePairForLongCharacter(
++            codepoint,
++            &unichars,
++        );
++        const len: usize = if (pair) 2 else 1;
++
++        var glyphs = [2]macos.graphics.Glyph{ 0, 0 };
++        return font.getGlyphsForCharacters(
++            unichars[0..len],
++            glyphs[0..len],
++        );
+     }
+ 
+     fn sortMatchingDescriptors(
+@@ -712,20 +733,7 @@ pub const CoreText = struct {
+             // If we're searching for a codepoint, then we
+             // prioritize fonts that have that codepoint.
+             if (desc.codepoint > 0) {
+-                // Turn UTF-32 into UTF-16 for CT API
+-                var unichars: [2]u16 = undefined;
+-                const pair = macos.foundation.stringGetSurrogatePairForLongCharacter(
+-                    desc.codepoint,
+-                    &unichars,
+-                );
+-                const len: usize = if (pair) 2 else 1;
+-
+-                // Get our glyphs
+-                var glyphs = [2]macos.graphics.Glyph{ 0, 0 };
+-                self.codepoint = font.getGlyphsForCharacters(
+-                    unichars[0..len],
+-                    glyphs[0..len],
+-                );
++                self.codepoint = fontHasCodepoint(font, desc.codepoint);
+             }
+ 
+             // Get our symbolic traits for the descriptor so we can
+@@ -1297,16 +1305,32 @@ test "coretext codepoint" {
+ 
+     var ct = CoreText.init(lib);
+     defer ct.deinit();
+-    var it = try ct.discover(alloc, .{ .codepoint = 'A', .size = 12 });
++    var it = try ct.discover(alloc, .{
++        .family = "Monaco",
++        .codepoint = 'A',
++        .size = 12,
++    });
+     defer it.deinit();
+ 
+-    // The first result should have the codepoint. Later ones may not
+-    // because fontconfig returns all fonts sorted.
+-    const face = (try it.next()).?;
++    // The matched font should contain the requested codepoint.
++    var face = (try it.next()) orelse return error.TestFontNotFound;
++    defer face.deinit();
+     try testing.expect(face.hasCodepoint('A', null));
+ 
+     // Should have other codepoints too
+     try testing.expect(face.hasCodepoint('B', null));
++
++    var missing = try ct.discover(alloc, .{
++        .family = "Monaco",
++        .codepoint = 0x10FFFF,
++        .size = 12,
++    });
++    defer missing.deinit();
++    if (try missing.next()) |unexpected_| {
++        var unexpected = unexpected_;
++        defer unexpected.deinit();
++        return error.TestUnexpectedResult;
++    }
+ }
+ 
+ test "coretext sorting" {

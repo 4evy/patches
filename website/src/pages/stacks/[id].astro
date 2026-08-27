@@ -1,0 +1,169 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import GlassButton from '../../components/GlassButton.astro';
+import GlassPanel from '../../components/GlassPanel.astro';
+import { loadCatalog } from '../../lib/catalog.ts';
+import type { Stack } from '../../types.ts';
+import {
+  ExternalLink,
+  GitCommitHorizontal,
+  GitFork,
+} from '@lucide/astro';
+
+export async function getStaticPaths() {
+  const catalog = await loadCatalog();
+  return catalog.stacks.map((stack) => ({
+    params: { id: stack.id },
+    props: { stack },
+  }));
+}
+
+const { stack } = Astro.props as { stack: Stack };
+const base = import.meta.env.BASE_URL;
+const repositoryUrl = `https://github.com/4evy/patches/tree/master/stacks/${encodeURIComponent(stack.id)}`;
+const seriesUrl = `${repositoryUrl}/patches/series`;
+const upstreamUrl = stack.manifest.source.canonical.replace(
+  /\.git$/,
+  '',
+);
+const revisionUrl = `${upstreamUrl}/commit/${stack.manifest.source.revision}`;
+
+function repositoryName(canonical: string) {
+  try {
+    return new URL(canonical).pathname
+      .replace(/^\//, '')
+      .replace(/\.git$/, '');
+  } catch {
+    return canonical;
+  }
+}
+
+function patchTitle(filename: string) {
+  const basename = filename.split('/').at(-1) ?? filename;
+  const title = basename
+    .replace(/\.patch$/, '')
+    .replace(/^(?:\d{4}|[a-f\d]{7,})-/, '')
+    .replaceAll('-', ' ');
+  return title.charAt(0).toUpperCase() + title.slice(1);
+}
+
+function encodePath(path: string) {
+  return path.split('/').map(encodeURIComponent).join('/');
+}
+---
+
+<Layout
+  title={`${stack.id} patch stack · 4evy patches`}
+  description={`An ordered queue of ${stack.patches.length} patches for ${stack.id}, pinned to upstream revision ${stack.manifest.source.revision}.`}
+>
+  <main id="main-content" class="stack-page page-shell">
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+      <ol>
+        <li><a href={base}>Patch stacks</a></li>
+        <li aria-current="page">{stack.id}</li>
+      </ol>
+    </nav>
+
+    <header class="stack-hero">
+      <h1>{stack.id}</h1>
+      <p class="lede">
+        {stack.patches.length}{' '}
+        {stack.patches.length === 1 ? 'change' : 'changes'} for{' '}
+        <a href={upstreamUrl}
+          >{repositoryName(stack.manifest.source.canonical)}</a
+        >.
+      </p>
+      <p class="hero-actions">
+        <GlassButton href={repositoryUrl} variant="quiet">
+          Browse source <ExternalLink aria-hidden="true" size={15} />
+        </GlassButton>
+        <GlassButton href={upstreamUrl} variant="quiet">
+          Visit upstream <ExternalLink aria-hidden="true" size={15} />
+        </GlassButton>
+      </p>
+    </header>
+
+    <section aria-labelledby="stack-details-title">
+      <h2 id="stack-details-title" class="visually-hidden">
+        Stack details
+      </h2>
+      <GlassPanel class="stack-details">
+        <dl>
+          <div>
+            <dt>
+              <GitCommitHorizontal aria-hidden="true" size={18} />
+              Patch count
+            </dt>
+            <dd>{stack.patches.length}</dd>
+          </div>
+          <div>
+            <dt>
+              <GitFork aria-hidden="true" size={18} />
+              Version control
+            </dt>
+            <dd>
+              <code>{stack.manifest.source.vcs}</code>
+            </dd>
+          </div>
+          <div class="revision-detail">
+            <dt>Upstream revision</dt>
+            <dd>
+              <a class="revision-link" href={revisionUrl}>
+                <code>{stack.manifest.source.revision}</code>
+                <ExternalLink aria-hidden="true" size={14} />
+                <span class="visually-hidden">View upstream commit</span
+                >
+              </a>
+            </dd>
+          </div>
+        </dl>
+      </GlassPanel>
+    </section>
+
+    <section class="series" aria-labelledby="series-title">
+      <header class="section-heading">
+        <h2 id="series-title">Patch series</h2>
+        <p>
+          Ordered as applied. Every patch is available to read here.
+        </p>
+        <p class="series-source">
+          <GlassButton href={seriesUrl} variant="quiet">
+            View series file
+            <ExternalLink aria-hidden="true" size={15} />
+          </GlassButton>
+        </p>
+      </header>
+
+      <ol class="series-list">
+        {
+          stack.patches.map((patch, index) => {
+            const parts = patch.split('/');
+            const filename = parts.at(-1) ?? patch;
+            const directory = parts.slice(0, -1).join('/');
+
+            return (
+              <li>
+                <span class="series-number" aria-hidden="true">
+                  {String(index + 1).padStart(2, '0')}
+                </span>
+                <p>
+                  <strong>{patchTitle(patch)}</strong>
+                  <a
+                    class="patch-path"
+                    href={`${base}stacks/${stack.id}/patches/${encodePath(patch)}/`}
+                  >
+                    {directory && (
+                      <span class="patch-directory">{directory}/</span>
+                    )}
+                    <code>{filename}</code>
+                    <span class="visually-hidden"> (view patch)</span>
+                  </a>
+                </p>
+              </li>
+            );
+          })
+        }
+      </ol>
+    </section>
+  </main>
+</Layout>

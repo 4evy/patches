@@ -1,0 +1,12 @@
+diff --git a/main.sh b/main.sh
+index 78e4c42..7519bc5 100644
+--- a/main.sh
++++ b/main.sh
+@@ -1,4 +1,6 @@
+ #!/bin/sh
+ # shellcheck shell=sh
+ # This fixture source is licensed under the MIT License.
+-printf '%s\n' fixture
++message() { printf '%s\n' fixture; }
++
++message

@@ -1,0 +1,110 @@
+name: Guix
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: sh
+
+jobs:
+  integration:
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.author_association == 'OWNER' ||
+      github.event.pull_request.author_association == 'MEMBER' ||
+      github.event.pull_request.author_association == 'COLLABORATOR' ||
+      github.event.pull_request.user.id == 49699333 ||
+      github.event.pull_request.user.id == 29139614 ||
+      github.event.pull_request.user.id == 41898282
+    name: Guix integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      GUIX_ARCHIVE: guix-binary-20260504.x86_64-linux.tar.xz
+      GUIX_ARCHIVE_SHA256: 43417615a7e01edc8ed5d54625110bf12c68f7dedd7575265f3d5dc2bdb496a5
+      GUIX_ARCHIVE_URL: >-
+        https://github.com/metacall/guix/releases/download/v20260504/guix-binary-20260504.x86_64-linux.tar.xz
+      GUIX_SUBSTITUTE_URLS: >-
+        https://ci.guix.gnu.org:443 https://bordeaux.guix.gnu.org:443
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Ubuntu 24.04 packages Guix 1.4, which predates packages used by these
+      # modules. Install a pinned CI binary release from GitHub instead of
+      # bootstrapping Guix through another package manager.
+      - name: Install Guix
+        run: |
+          archive="${RUNNER_TEMP}/${GUIX_ARCHIVE}"
+          curl --connect-timeout 15 --fail --location --max-time 300 \
+            --retry 3 --retry-all-errors --show-error \
+            "$GUIX_ARCHIVE_URL" --output "$archive"
+          printf '%s  %s\n' "$GUIX_ARCHIVE_SHA256" "$archive" | sha256sum --check
+          sudo tar --extract --xz --file="$archive" --directory=/
+          sudo ln --symbolic \
+            /var/guix/profiles/per-user/root/current-guix/bin/guix \
+            /usr/local/bin/guix
+          guix --version
+
+      - name: Evaluate Guix integration
+        run: |
+          guix repl \
+            -L packaging/guix -L guix -- tests/guix-check.scm
+          guix repl \
+            -L packaging/guix -L guix -- guix/four-evy/manifest.scm
+          guix repl \
+            -L guix -- guix/four-evy/channels.scm
+
+      - name: Check Guix Scheme syntax
+        run: |
+          for file in \
+            packaging/guix/brew-patches.scm \
+            guix/four-evy/*.scm \
+            tests/guix-check.scm
+          do
+            guix repl -L packaging/guix -L guix -- "$file" >/dev/null
+          done
+
+      - name: Build and exercise the Guix package
+        run: |
+          guix_root=/var/guix/profiles/per-user/root/current-guix
+          guix_socket=/var/guix/daemon-socket/socket
+          daemon_log="${RUNNER_TEMP}/guix-daemon.log"
+          max_start_attempts=100
+          sudo mkdir --parents "$(dirname "$guix_socket")"
+          sudo sh -c \
+            '"$1" --disable-chroot --build-users-group= \
+              --substitute-urls="$2" >"$3" 2>&1' \
+            sh "${guix_root}/bin/guix-daemon" \
+            "$GUIX_SUBSTITUTE_URLS" "$daemon_log" &
+          attempt=0
+          while test "$attempt" -lt "$max_start_attempts"; do
+            if test -S "$guix_socket"; then
+              break
+            fi
+            attempt=$((attempt + 1))
+            sleep 0.1
+          done
+          if ! test -S "$guix_socket"; then
+            cat "$daemon_log"
+            exit 1
+          fi
+          for key in ci.guix.gnu.org.pub bordeaux.guix.gnu.org.pub; do
+            sudo sh -c '"$1" archive --authorize < "$2"' sh \
+              /usr/local/bin/guix "$guix_root/share/guix/$key"
+          done
+          result=$(guix build -L packaging/guix brew-patches)
+          test "$("${result}/bin/brew-patches" validate)" = \
+            "Validated 3 stacks."

@@ -1,0 +1,107 @@
+---
+import Layout from '../../../../layouts/Layout.astro';
+import GlassButton from '../../../../components/GlassButton.astro';
+import PatchViewer from '../../../../components/PatchViewer.astro';
+import { loadCatalog, loadPatch } from '../../../../lib/catalog.ts';
+import type { Stack } from '../../../../types.ts';
+import { ExternalLink } from '@lucide/astro';
+
+interface Props {
+  stack: Stack;
+  patchPath: string;
+  content: string;
+}
+
+export async function getStaticPaths() {
+  const catalog = await loadCatalog();
+  const routes: Array<{
+    params: { id: string; patch: string };
+    props: Props;
+  }> = [];
+
+  for (const stack of catalog.stacks) {
+    for (const patchPath of stack.patches) {
+      const content = await loadPatch(stack, patchPath);
+      if (content === undefined) {
+        throw new Error(
+          `Could not load patch ${stack.id}/${patchPath}`,
+        );
+      }
+      routes.push({
+        params: { id: stack.id, patch: patchPath },
+        props: { stack, patchPath, content },
+      });
+    }
+  }
+
+  return routes;
+}
+
+const { stack, patchPath, content } = Astro.props as Props;
+const base = import.meta.env.BASE_URL;
+const pathParts = patchPath.split('/');
+const filename = pathParts.at(-1) ?? patchPath;
+const encodedPath = pathParts.map(encodeURIComponent).join('/');
+const sourceUrl =
+  'https://github.com/4evy/patches/blob/master/stacks/' +
+  encodeURIComponent(stack.id) +
+  '/patches/' +
+  encodedPath;
+const rawUrl =
+  'https://raw.githubusercontent.com/4evy/patches/master/stacks/' +
+  encodeURIComponent(stack.id) +
+  '/patches/' +
+  encodedPath;
+---
+
+<Layout
+  title={'Patch · ' + stack.id + ' · 4evy patches'}
+  description={'Patch source for ' +
+    patchPath +
+    ' in the ' +
+    stack.id +
+    ' stack.'}
+>
+  <main id="main-content" class="patch-page page-shell">
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+      <ol>
+        <li><a href={base}>Patch stacks</a></li>
+        <li>
+          <a href={base + 'stacks/' + stack.id + '/'}>{stack.id}</a>
+        </li>
+        {
+          pathParts.map((part, index) => (
+            <li
+              aria-current={
+                index === pathParts.length - 1 ? 'page' : undefined
+              }
+            >
+              <code>{part}</code>
+            </li>
+          ))
+        }
+      </ol>
+    </nav>
+
+    <header class="patch-header">
+      <p class="eyebrow">Patch file</p>
+      <h1>{filename}</h1>
+      <p class="patch-location">
+        <code>{'patches/' + patchPath}</code>
+      </p>
+      <p class="hero-actions">
+        <GlassButton
+          href={base + 'stacks/' + stack.id + '/'}
+          variant="quiet"
+        >
+          Back to series
+        </GlassButton>
+        <GlassButton href={sourceUrl} variant="quiet">
+          View source <ExternalLink aria-hidden="true" size={15} />
+        </GlassButton>
+      </p>
+    </header>
+
+    <PatchViewer content={content} rawUrl={rawUrl} />
+  </main>
+</Layout>

@@ -1,0 +1,821 @@
+From 2a9d3540740ebdfa5b918236d3457bce4945dcf0 Mon Sep 17 00:00:00 2001
+From: 4evy <git@evy.pink>
+Date: Thu, 1 Jan 1970 00:00:00 +0000
+Subject: cli: git: add raw ref push command
+
+Code review systems and other Git applications accept commits through
+application-specific refs such as `refs/for/main`
+
+Add `jj git ref push` to send one revision to a fully qualified ref on a
+named remote without creating or tracking a bookmark
+
+Require one explicit update policy: `--force`, `--expected-at`, or
+`--expected-absent`. This prevents the command from defaulting to an
+unguarded update
+
+This plumbing command pushes the selected Git commit as stored. It skips
+the eligibility checks and `git.sign-on-push` behavior of `jj git push`
+
+Closes #4388
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index abf5627e6ff15146d638d02e302df6658990c8b8..52caa9db72925c345e35e5989338186e2457262a 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -34,6 +34,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+   configured remote. The fetched commit becomes visible without creating a
+   bookmark or remote-tracking ref.
+ 
++* `jj git ref push` can push one revision to a fully qualified Git ref. Each
++  push must be unconditional, require the ref to be absent, or require it to
++  point to an expected object ID.
++
+ ### Fixed bugs
+ 
+ * The default pager flags now include `-K` (`--quit-on-intr`), so pressing
+diff --git a/cli/src/commands/git/push.rs b/cli/src/commands/git/push.rs
+index ac3445654887e621d9382dc6814cafece4d5fd5e..b778f55b7b2a9603a0f4bd4fc389a21a0a554097 100644
+--- a/cli/src/commands/git/push.rs
++++ b/cli/src/commands/git/push.rs
+@@ -959,7 +959,7 @@ async fn print_commits_ready_to_push(
+     Ok(())
+ }
+ 
+-fn get_default_push_remote(
++pub(super) fn get_default_push_remote(
+     ui: &Ui,
+     workspace_command: &WorkspaceCommandHelper,
+ ) -> Result<RemoteNameBuf, CommandError> {
+diff --git a/cli/src/commands/git/ref/mod.rs b/cli/src/commands/git/ref/mod.rs
+index 6735e67925d0463f13f5ba2acbfb3986b5d1debf..ce9771feaaee603e2b20908b7d3c3c30234dddf6 100644
+--- a/cli/src/commands/git/ref/mod.rs
++++ b/cli/src/commands/git/ref/mod.rs
+@@ -13,11 +13,14 @@
+ // limitations under the License.
+ 
+ mod fetch;
++mod push;
+ 
+ use clap::Subcommand;
+ 
+ use self::fetch::GitRefFetchArgs;
+ use self::fetch::cmd_git_ref_fetch;
++use self::push::GitRefPushArgs;
++use self::push::cmd_git_ref_push;
+ use crate::cli_util::CommandHelper;
+ use crate::command_error::CommandError;
+ use crate::ui::Ui;
+@@ -26,6 +29,7 @@ use crate::ui::Ui;
+ #[derive(Subcommand, Clone, Debug)]
+ pub enum RefCommand {
+     Fetch(GitRefFetchArgs),
++    Push(GitRefPushArgs),
+ }
+ 
+ pub async fn cmd_git_ref(
+@@ -35,5 +39,6 @@ pub async fn cmd_git_ref(
+ ) -> Result<(), CommandError> {
+     match subcommand {
+         RefCommand::Fetch(args) => cmd_git_ref_fetch(ui, command, args).await,
++        RefCommand::Push(args) => cmd_git_ref_push(ui, command, args).await,
+     }
+ }
+diff --git a/cli/src/commands/git/ref/push.rs b/cli/src/commands/git/ref/push.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..c4fa0d3eb0647c560516da33eb2f7fb1b399740b
+--- /dev/null
++++ b/cli/src/commands/git/ref/push.rs
+@@ -0,0 +1,204 @@
++// Copyright 2026 The Jujutsu Authors
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++// https://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++use std::io::Write as _;
++
++use clap::ArgGroup;
++use clap_complete::ArgValueCandidates;
++use jj_lib::git;
++use jj_lib::git::GitPushOptions;
++use jj_lib::git::GitRefUpdate;
++use jj_lib::git::GitSettings;
++use jj_lib::merge::Diff;
++use jj_lib::object_id::ObjectId as _;
++use jj_lib::ref_name::GitRefNameBuf;
++use jj_lib::ref_name::RemoteNameBuf;
++use jj_lib::repo::Repo as _;
++
++use crate::cli_util::CommandHelper;
++use crate::cli_util::RevisionArg;
++use crate::command_error::CommandError;
++use crate::command_error::user_error;
++use crate::commands::git::push::get_default_push_remote;
++use crate::complete;
++use crate::git_util::GitSubprocessUi;
++use crate::git_util::print_git_ref_push_stats;
++use crate::ui::Ui;
++
++/// Push one revision to a raw Git ref on a remote
++///
++/// This low-level command is intended for application-specific refs such as
++/// Gerrit's `refs/for/main`. It does not create or track a bookmark.
++///
++/// Each invocation must choose whether to push unconditionally, require the ref
++/// to be absent, or require it to point to an expected object ID.
++///
++/// Unlike `jj git push`, this command does not check for private commits,
++/// missing descriptions or identities, or conflicts. It also does not use
++/// `git.sign-on-push`; it pushes the selected Git commit as stored.
++#[derive(clap::Args, Clone, Debug)]
++#[command(group(
++    ArgGroup::new("safety")
++        .required(true)
++        .multiple(false)
++        .args(["force", "expected_at", "expected_absent"])
++))]
++pub struct GitRefPushArgs {
++    /// The remote to push to (only named remotes are supported)
++    ///
++    /// This defaults to the `git.push` setting. If that is not configured, the
++    /// only remote or the remote named "origin" is used.
++    #[arg(
++        long,
++        value_name = "REMOTE",
++        add = ArgValueCandidates::new(complete::git_remotes),
++    )]
++    remote: Option<RemoteNameBuf>,
++
++    /// Push without checking the current position of the remote ref
++    #[arg(long)]
++    force: bool,
++
++    /// Push only if the remote ref is currently at this full Git object ID
++    #[arg(long, value_name = "OBJECT_ID")]
++    expected_at: Option<gix::ObjectId>,
++
++    /// Push only if the remote ref does not exist
++    #[arg(long)]
++    expected_absent: bool,
++
++    /// Git push options (can be repeated)
++    #[arg(long, short)]
++    option: Vec<String>,
++
++    /// The revision to push
++    #[arg(value_name = "REVISION")]
++    revision: RevisionArg,
++
++    /// The fully qualified destination ref, such as `refs/for/main`
++    #[arg(value_name = "REF")]
++    ref_name: String,
++}
++
++pub async fn cmd_git_ref_push(
++    ui: &mut Ui,
++    command: &CommandHelper,
++    args: &GitRefPushArgs,
++) -> Result<(), CommandError> {
++    let workspace_command = command.workspace_helper(ui).await?;
++    git::get_git_backend(workspace_command.repo().store())?;
++    let remote = match &args.remote {
++        Some(remote) => remote.clone(),
++        None => get_default_push_remote(ui, &workspace_command)?,
++    };
++
++    if !args.ref_name.starts_with("refs/")
++        || <&gix::refs::FullNameRef>::try_from(args.ref_name.as_str()).is_err()
++    {
++        return Err(user_error(format!(
++            "Invalid fully qualified Git ref name: {}",
++            args.ref_name
++        )));
++    }
++    let full_name = GitRefNameBuf::from(args.ref_name.as_str());
++
++    let commit = workspace_command
++        .resolve_single_rev(ui, &args.revision)
++        .await?;
++    if commit.id() == workspace_command.repo().store().root_commit_id() {
++        return Err(user_error("Cannot push the root commit to Git"));
++    }
++    let new_target = gix::ObjectId::from_bytes_or_panic(commit.id().as_bytes());
++    let expected_target = args.expected_at;
++    if let Some(expected_target) = expected_target
++        && expected_target.kind() != new_target.kind()
++    {
++        return Err(user_error(format!(
++            "Git object ID for --expected-at uses {}, but this repository uses {}",
++            expected_target.kind(),
++            new_target.kind()
++        )));
++    }
++
++    let expected_target_matches_new_target = expected_target == Some(new_target);
++    let update = if args.force {
++        GitRefUpdate::forced(full_name.clone(), Some(new_target))
++    } else {
++        GitRefUpdate::with_lease(
++            full_name.clone(),
++            Diff::new(expected_target, Some(new_target)),
++        )
++    };
++    let git_settings = GitSettings::from_settings(workspace_command.settings())?;
++    let options = GitPushOptions {
++        remote_push_options: args.option.clone(),
++    };
++    let stats = git::push_updates(
++        workspace_command.repo().as_ref(),
++        git_settings.to_subprocess_options(),
++        remote.as_ref(),
++        &[update],
++        &mut GitSubprocessUi::new(ui),
++        &options,
++    )?;
++    print_git_ref_push_stats(ui, &stats)?;
++    if !stats.all_ok() {
++        return Err(user_error(format!(
++            "Failed to push Git ref {}",
++            args.ref_name
++        )));
++    }
++
++    if stats.up_to_date.contains(&full_name) {
++        if !args.force && !expected_target_matches_new_target {
++            let expectation = if args.expected_absent {
++                "not exist".to_owned()
++            } else {
++                format!(
++                    "point to {}",
++                    args.expected_at.expect("safety argument is required")
++                )
++            };
++            return Err(user_error(format!(
++                "Git ref {}@{} already points to {}, but it was expected to {expectation}",
++                args.ref_name,
++                remote.as_symbol(),
++                new_target
++            )));
++        }
++        if let Some(mut formatter) = ui.status_formatter() {
++            write!(
++                formatter,
++                "Git ref {ref_name}@{remote} already points to ",
++                ref_name = args.ref_name,
++                remote = remote.as_symbol()
++            )?;
++            workspace_command.write_commit_summary(formatter.as_mut(), &commit)?;
++            writeln!(formatter)?;
++        }
++        return Ok(());
++    }
++
++    if let Some(mut formatter) = ui.status_formatter() {
++        write!(formatter, "Pushed ")?;
++        workspace_command.write_commit_summary(formatter.as_mut(), &commit)?;
++        writeln!(
++            formatter,
++            " to {ref_name}@{remote}",
++            ref_name = args.ref_name,
++            remote = remote.as_symbol()
++        )?;
++    }
++    Ok(())
++}
+diff --git a/cli/src/git_util.rs b/cli/src/git_util.rs
+index 53e369bd27bfad282fced59630784eda02bca3cb..85835f0bb42ee22d1a943b638a82fd419882f45b 100644
+--- a/cli/src/git_util.rs
++++ b/cli/src/git_util.rs
+@@ -506,6 +506,32 @@ pub fn print_git_export_stats(ui: &Ui, stats: &GitExportStats) -> Result<(), std
+ }
+ 
+ pub fn print_push_stats(ui: &Ui, stats: &GitPushStats) -> io::Result<()> {
++    print_push_stats_with_hints(
++        ui,
++        stats,
++        "Try fetching from the remote, then make the bookmark point to where you want it to be, \
++         and push again.",
++        "Try checking if you have permission to push to all the bookmarks.",
++    )
++}
++
++/// Prints the result of pushing a raw Git ref.
++pub fn print_git_ref_push_stats(ui: &Ui, stats: &GitPushStats) -> io::Result<()> {
++    print_push_stats_with_hints(
++        ui,
++        stats,
++        "Retry with `--expected-at=<OBJECT_ID>` set to the remote ref's current object ID, or use \
++         `--force` to push unconditionally.",
++        "Check that you have permission to push to this Git ref.",
++    )
++}
++
++fn print_push_stats_with_hints(
++    ui: &Ui,
++    stats: &GitPushStats,
++    rejected_hint: &str,
++    remote_rejected_hint: &str,
++) -> io::Result<()> {
+     if !stats.rejected.is_empty() {
+         writeln!(
+             ui.warning_default(),
+@@ -521,11 +547,7 @@ pub fn print_push_stats(ui: &Ui, stats: &GitPushStats) -> io::Result<()> {
+             writeln!(formatter)?;
+         }
+         drop(formatter);
+-        writeln!(
+-            ui.hint_default(),
+-            "Try fetching from the remote, then make the bookmark point to where you want it to \
+-             be, and push again.",
+-        )?;
++        writeln!(ui.hint_default(), "{rejected_hint}")?;
+     }
+     if !stats.remote_rejected.is_empty() {
+         writeln!(
+@@ -542,10 +564,7 @@ pub fn print_push_stats(ui: &Ui, stats: &GitPushStats) -> io::Result<()> {
+             writeln!(formatter)?;
+         }
+         drop(formatter);
+-        writeln!(
+-            ui.hint_default(),
+-            "Try checking if you have permission to push to all the bookmarks."
+-        )?;
++        writeln!(ui.hint_default(), "{remote_rejected_hint}")?;
+     }
+     if !stats.unexported_bookmarks.is_empty() {
+         writeln!(
+diff --git a/cli/tests/cli-reference@.md.snap b/cli/tests/cli-reference@.md.snap
+index fa5a81ff958fe5eb6a057952d634ff1953ee5159..584f28a2a0664de5f36c9b34561b7a4c12471d18 100644
+--- a/cli/tests/cli-reference@.md.snap
++++ b/cli/tests/cli-reference@.md.snap
+@@ -67,6 +67,7 @@ This document contains the help content for the `jj` command-line program.
+ * [`jj git push`↴](#jj-git-push)
+ * [`jj git ref`↴](#jj-git-ref)
+ * [`jj git ref fetch`↴](#jj-git-ref-fetch)
++* [`jj git ref push`↴](#jj-git-ref-push)
+ * [`jj git remote`↴](#jj-git-remote)
+ * [`jj git remote add`↴](#jj-git-remote-add)
+ * [`jj git remote list`↴](#jj-git-remote-list)
+@@ -1902,6 +1903,7 @@ Manage raw Git refs
+ ###### **Subcommands:**
+ 
+ * `fetch` — Fetch one raw ref or full commit ID from a Git remote
++* `push` — Push one revision to a raw Git ref on a remote
+ 
+ 
+ 
+@@ -1909,7 +1911,7 @@ Manage raw Git refs
+ 
+ Fetch one raw ref or full commit ID from a Git remote
+ 
+-The source can be a fully qualified remote ref such as GitHub's `refs/pull/123/head`, or a full Git commit ID (40 hexadecimal characters for SHA-1 repositories or 64 for SHA-256 repositories).
++The source can be a fully qualified remote ref such as GitHub's `refs/pull/123/head`, or a full Git commit ID
+ 
+ **Usage:** `jj git ref fetch [OPTIONS] <REF>`
+ 
+@@ -1925,6 +1927,35 @@ The source can be a fully qualified remote ref such as GitHub's `refs/pull/123/h
+ 
+ 
+ 
++## `jj git ref push`
++
++Push one revision to a raw Git ref on a remote
++
++This low-level command is intended for application-specific refs such as Gerrit's `refs/for/main`. It does not create or track a bookmark.
++
++Each invocation must choose whether to push unconditionally, require the ref to be absent, or require it to point to an expected object ID.
++
++Unlike `jj git push`, this command does not check for private commits, missing descriptions or identities, or conflicts. It also does not use `git.sign-on-push`; it pushes the selected Git commit as stored.
++
++**Usage:** `jj git ref push [OPTIONS] <--force|--expected-at <OBJECT_ID>|--expected-absent> <REVISION> <REF>`
++
++###### **Arguments:**
++
++* `<REVISION>` — The revision to push
++* `<REF>` — The fully qualified destination ref, such as `refs/for/main`
++
++###### **Options:**
++
++* `--remote <REMOTE>` — The remote to push to (only named remotes are supported)
++
++   This defaults to the `git.push` setting. If that is not configured, the only remote or the remote named "origin" is used.
++* `--force` — Push without checking the current position of the remote ref
++* `--expected-at <OBJECT_ID>` — Push only if the remote ref is currently at this full Git object ID
++* `--expected-absent` — Push only if the remote ref does not exist
++* `-o`, `--option <OPTION>` — Git push options (can be repeated)
++
++
++
+ ## `jj git remote`
+ 
+ Manage Git remotes
+diff --git a/cli/tests/test_git_push.rs b/cli/tests/test_git_push.rs
+index 6ddc9dbdc5fa78d1f68c13ccd9409bb013a13812..a4a9da1cb433c920f3e04d04ad385eb016d0191a 100644
+--- a/cli/tests/test_git_push.rs
++++ b/cli/tests/test_git_push.rs
+@@ -63,6 +63,357 @@ fn set_up(test_env: &TestEnvironment) {
+         .success();
+ }
+ 
++fn open_origin_git_repo(test_env: &TestEnvironment) -> gix::Repository {
++    let origin_dir = test_env.work_dir("origin");
++    gix::open(git_repo_dir_for_jj_repo(&origin_dir)).unwrap()
++}
++
++#[test]
++fn test_git_ref_push_safety_modes() {
++    let test_env = TestEnvironment::default();
++    set_up(&test_env);
++    let work_dir = test_env.work_dir("local");
++    work_dir.run_jj(["new", "-m=review 1"]).success();
++
++    let output = work_dir.run_jj([
++        "git",
++        "ref",
++        "push",
++        "--remote=origin",
++        "--expected-absent",
++        "@",
++        "refs/for/main",
++    ]);
++    insta::assert_snapshot!(output, @"
++    ------- stderr -------
++    Pushed vruxwmqv fd099254 (empty) review 1 to refs/for/main@origin
++    [EOF]
++    ");
++    let git_repo = open_origin_git_repo(&test_env);
++    let first_target = git_repo
++        .find_reference("refs/for/main")
++        .unwrap()
++        .id()
++        .detach();
++
++    work_dir.run_jj(["new", "-m=review 2"]).success();
++    let output = work_dir.run_jj([
++        "git",
++        "ref",
++        "push",
++        "--remote=origin",
++        "--expected-absent",
++        "@",
++        "refs/for/main",
++    ]);
++    insta::assert_snapshot!(output, @r"
++    ------- stderr -------
++    Warning: The following references unexpectedly moved on the remote:
++      refs/for/main (reason: stale info)
++    Hint: Retry with `--expected-at=<OBJECT_ID>` set to the remote ref's current object ID, or use `--force` to push unconditionally.
++    Error: Failed to push Git ref refs/for/main
++    [EOF]
++    [exit status: 1]
++    ");
++    assert_eq!(
++        git_repo
++            .find_reference("refs/for/main")
++            .unwrap()
++            .id()
++            .detach(),
++        first_target
++    );
++
++    let output = work_dir.run_jj([
++        "git",
++        "ref",
++        "push",
++        "--remote=origin",
++        &format!("--expected-at={first_target}"),
++        "@",
++        "refs/for/main",
++    ]);
++    insta::assert_snapshot!(output, @"
++    ------- stderr -------
++    Pushed znkkpsqq ca23a1a1 (empty) review 2 to refs/for/main@origin
++    [EOF]
++    ");
++    let second_target = git_repo
++        .find_reference("refs/for/main")
++        .unwrap()
++        .id()
++        .detach();
++    assert_ne!(first_target, second_target);
++
++    // `--force` must update the existing ref without an absent-target lease.
++    work_dir.run_jj(["new", "-m=review 3"]).success();
++    work_dir
++        .run_jj([
++            "git",
++            "ref",
++            "push",
++            "--remote=origin",
++            "--force",
++            "@",
++            "refs/for/main",
++        ])
++        .success();
++    let third_target = work_dir
++        .run_jj(["log", "--no-graph", "-r=@", "-T=commit_id"])
++        .success()
++        .stdout
++        .raw()
++        .to_owned();
++    assert_eq!(
++        git_repo
++            .find_reference("refs/for/main")
++            .unwrap()
++            .id()
++            .to_string(),
++        third_target
++    );
++}
++
++#[test]
++fn test_git_ref_push_up_to_date() {
++    let test_env = TestEnvironment::default();
++    set_up(&test_env);
++    let work_dir = test_env.work_dir("local");
++    work_dir.run_jj(["new", "-m=review"]).success();
++    work_dir
++        .run_jj([
++            "git",
++            "ref",
++            "push",
++            "--remote=origin",
++            "--expected-absent",
++            "@",
++            "refs/for/main",
++        ])
++        .success();
++
++    let git_repo = open_origin_git_repo(&test_env);
++    let target = git_repo
++        .find_reference("refs/for/main")
++        .unwrap()
++        .id()
++        .detach();
++    let stale_target = git_repo
++        .find_reference("refs/heads/bookmark1")
++        .unwrap()
++        .id()
++        .detach();
++    assert_ne!(target, stale_target);
++
++    // Git reports an update to the current target as "up to date" without
++    // checking the lease. The raw ref command must still enforce the explicit
++    // expectation rather than falsely reporting that it pushed the ref.
++    let output = work_dir.run_jj([
++        "git",
++        "ref",
++        "push",
++        "--remote=origin",
++        "--expected-absent",
++        "@",
++        "refs/for/main",
++    ]);
++    insta::assert_snapshot!(output.normalize_stderr_with(|stderr| {
++        stderr.replace(&target.to_string(), "$TARGET")
++    }), @r"
++    ------- stderr -------
++    Error: Git ref refs/for/main@origin already points to $TARGET, but it was expected to not exist
++    [EOF]
++    [exit status: 1]
++    ");
++
++    // A stale expected target must also fail if the destination already points
++    // to the revision being pushed.
++    let output = work_dir.run_jj([
++        "git",
++        "ref",
++        "push",
++        "--remote=origin",
++        &format!("--expected-at={stale_target}"),
++        "@",
++        "refs/for/main",
++    ]);
++    insta::assert_snapshot!(output.normalize_stderr_with(|stderr| {
++        stderr
++            .replace(&target.to_string(), "$TARGET")
++            .replace(&stale_target.to_string(), "$STALE_TARGET")
++    }), @r"
++    ------- stderr -------
++    Error: Git ref refs/for/main@origin already points to $TARGET, but it was expected to point to $STALE_TARGET
++    [EOF]
++    [exit status: 1]
++    ");
++
++    // An up-to-date push is valid if the remote target matches the lease.
++    let output = work_dir.run_jj([
++        "git",
++        "ref",
++        "push",
++        "--remote=origin",
++        &format!("--expected-at={target}"),
++        "@",
++        "refs/for/main",
++    ]);
++    insta::assert_snapshot!(output, @"
++    ------- stderr -------
++    Git ref refs/for/main@origin already points to vruxwmqv 03ae9d30 (empty) review
++    [EOF]
++    ");
++
++    // An unconditional up-to-date push is also a valid no-op.
++    let output = work_dir.run_jj([
++        "git",
++        "ref",
++        "push",
++        "--remote=origin",
++        "--force",
++        "@",
++        "refs/for/main",
++    ]);
++    insta::assert_snapshot!(output, @"
++    ------- stderr -------
++    Git ref refs/for/main@origin already points to vruxwmqv 03ae9d30 (empty) review
++    [EOF]
++    ");
++}
++
++#[test]
++fn test_git_ref_push_validation() {
++    let test_env = TestEnvironment::default();
++    set_up(&test_env);
++    let work_dir = test_env.work_dir("local");
++    work_dir.run_jj(["new", "-m=review"]).success();
++
++    let output = work_dir.run_jj([
++        "git",
++        "ref",
++        "push",
++        "--remote=origin",
++        "--force",
++        "@",
++        "for/main",
++    ]);
++    insta::assert_snapshot!(output, @r"
++    ------- stderr -------
++    Error: Invalid fully qualified Git ref name: for/main
++    [EOF]
++    [exit status: 1]
++    ");
++
++    let output = work_dir.run_jj([
++        "git",
++        "ref",
++        "push",
++        "--remote=origin",
++        "@",
++        "refs/for/main",
++    ]);
++    insta::assert_snapshot!(output, @r"
++    ------- stderr -------
++    error: the following required arguments were not provided:
++      <--force|--expected-at <OBJECT_ID>|--expected-absent>
++
++    Usage: jj git ref push --remote <REMOTE> <--force|--expected-at <OBJECT_ID>|--expected-absent> <REVISION> <REF>
++
++    For more information, try '--help'.
++    [EOF]
++    [exit status: 2]
++    ");
++
++    let output = work_dir.run_jj([
++        "git",
++        "ref",
++        "push",
++        "--remote=origin",
++        "--expected-at=not-an-object-id",
++        "@",
++        "refs/for/main",
++    ]);
++    insta::assert_snapshot!(output, @r"
++    ------- stderr -------
++    error: invalid value 'not-an-object-id' for '--expected-at <OBJECT_ID>': A hash sized 16 hexadecimal characters is invalid
++
++    For more information, try '--help'.
++    [EOF]
++    [exit status: 2]
++    ");
++
++    let sha256_id = "0".repeat(64);
++    let output = work_dir.run_jj([
++        "git",
++        "ref",
++        "push",
++        "--remote=origin",
++        &format!("--expected-at={sha256_id}"),
++        "@",
++        "refs/for/main",
++    ]);
++    insta::assert_snapshot!(output, @r"
++    ------- stderr -------
++    Error: Git object ID for --expected-at uses sha256, but this repository uses sha1
++    [EOF]
++    [exit status: 1]
++    ");
++
++    let output = work_dir.run_jj([
++        "git",
++        "ref",
++        "push",
++        "--remote=origin",
++        "--force",
++        "--expected-absent",
++        "@",
++        "refs/for/main",
++    ]);
++    insta::assert_snapshot!(output, @r"
++    ------- stderr -------
++    error: the argument '--force' cannot be used with '--expected-absent'
++
++    Usage: jj git ref push --remote <REMOTE> <--force|--expected-at <OBJECT_ID>|--expected-absent> <REVISION> <REF>
++
++    For more information, try '--help'.
++    [EOF]
++    [exit status: 2]
++    ");
++
++    let output = work_dir.run_jj([
++        "git",
++        "ref",
++        "push",
++        "--remote=origin",
++        "--force",
++        "root()",
++        "refs/for/main",
++    ]);
++    insta::assert_snapshot!(output, @r"
++    ------- stderr -------
++    Error: Cannot push the root commit to Git
++    [EOF]
++    [exit status: 1]
++    ");
++}
++
++#[test]
++fn test_git_ref_push_requires_git_backend() {
++    let test_env = TestEnvironment::default();
++    test_env
++        .run_jj_in(".", ["debug", "init-simple", "repo"])
++        .success();
++    let work_dir = test_env.work_dir("repo");
++
++    let output = work_dir.run_jj(["git", "ref", "push", "--force", "@", "refs/for/main"]);
++    insta::assert_snapshot!(output, @r"
++    ------- stderr -------
++    Error: The repo is not backed by a Git repo
++    [EOF]
++    [exit status: 1]
++    ");
++}
++
+ #[test]
+ fn test_git_push_nothing() {
+     let test_env = TestEnvironment::default();
+diff --git a/docs/git-compatibility.md b/docs/git-compatibility.md
+index 957d6a45864f53e3d02ca09ff7b2c6afcb9f2f6f..90b359d3746f64eaab5ce8b58b10c0812f56e8c9 100644
+--- a/docs/git-compatibility.md
++++ b/docs/git-compatibility.md
+@@ -97,13 +97,31 @@ into a directory by the same name.
+ By default, the remote repository will be named `origin`. You can use a name of
+ your choice by adding `--remote <remote name>` to the `jj git clone` command.
+ 
+-## Fetching refs that are not branches or tags
++## Fetching and pushing refs that are not branches or tags
+ 
+ Use `jj git ref fetch --remote <remote> <ref-or-commit-id>` to fetch one raw Git
+ ref, such as a GitHub pull request ref, or one full Git commit ID. The fetched
+ commit becomes visible without a name. The command does not create a bookmark
+ or remote-tracking ref.
+ 
++Use `jj git ref push` to push one revision to an application-specific ref such
++as Gerrit's `refs/for/main`. Unlike `jj git push`, this low-level command does
++not create or track a bookmark. It also does not check for private commits,
++missing descriptions or identities, or conflicts, and it does not use
++`git.sign-on-push`. It pushes the selected Git commit as stored. Each invocation
++must choose one of the following update modes:
++
++```shell
++# Unconditional update
++jj git ref push --remote origin --force @ refs/for/main
++
++# Update only at a known remote object ID
++jj git ref push --remote origin --expected-at=<OBJECT_ID> @ refs/reviews/topic
++
++# Create only if the remote ref is absent
++jj git ref push --remote origin --expected-absent @ refs/reviews/topic
++```
++
+ ## <a name="colocated-jujutsugit-repos"></a>Colocated Jujutsu/Git workspaces
+ 
+ A colocated Jujutsu workspace is a hybrid Jujutsu/Git workspace. This is the
+-- 
+2.55.0
+

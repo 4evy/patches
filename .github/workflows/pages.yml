@@ -1,0 +1,82 @@
+name: Publish website
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'stacks/**'
+      - 'website/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tests/website-check.sh'
+      - '.github/workflows/pages.yml'
+  pull_request:
+    paths:
+      - 'stacks/**'
+      - 'website/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tests/website-check.sh'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: sh
+
+jobs:
+  verify:
+    name: Build Pages site
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 26.7.0
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+      - name: Check and build website
+        run: |
+          npm run check
+          npm test
+          npm run build
+      - name: Test generated website
+        run: npm run test:website
+      - name: Configure Pages
+        if: github.ref == 'refs/heads/master'
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - name: Upload Pages artifact
+        if: github.ref == 'refs/heads/master'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: website/dist
+
+  deploy:
+    name: Deploy Pages site
+    if: github.ref == 'refs/heads/master'
+    permissions:
+      pages: write # Publish the prepared Pages artifact.
+      id-token: write # Authenticate the Pages deployment with OIDC.
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: verify
+    timeout-minutes: 10
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0

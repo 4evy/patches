@@ -1,0 +1,56 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "just: format",
+      "type": "shell",
+      "command": "just fmt",
+      "problemMatcher": [],
+      "presentation": {
+        "panel": "shared",
+        "reveal": "always"
+      }
+    },
+    {
+      "label": "just: check",
+      "type": "shell",
+      "command": "just check",
+      "problemMatcher": [],
+      "presentation": {
+        "panel": "shared",
+        "reveal": "always"
+      },
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "just: fixtures",
+      "type": "shell",
+      "command": "just fixtures-check",
+      "problemMatcher": [],
+      "presentation": {
+        "panel": "shared",
+        "reveal": "always"
+      }
+    },
+    {
+      "label": "just: container checks",
+      "type": "shell",
+      "command": "just container-check",
+      "problemMatcher": [],
+      "presentation": {
+        "panel": "shared",
+        "reveal": "always"
+      }
+    },
+    {
+      "label": "just: full validation",
+      "dependsOn": ["just: check", "just: container checks"],
+      "dependsOrder": "parallel",
+      "problemMatcher": [],
+      "group": "test"
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":automergeAll",
+    ":automergeBranch"
+  ],
+  "baseBranchPatterns": ["master"],
+  "automerge": true,
+  "automergeType": "branch",
+  "ignoreTests": true,
+  "prCreation": "approval",
+  "packageRules": [
+    {
+      "description": "Group immutable GitHub Action pin updates",
+      "matchManagers": ["github-actions"],
+      "groupName": "github actions",
+      "minimumReleaseAge": "7 days"
+    }
+  ],
+  "schedule": ["* 3 */4 * *"],
+  "updateNotScheduled": false,
+  "dependencyDashboard": false,
+  "branchConcurrentLimit": 1,
+  "gitAuthor": "Renovate Bot <renovate@4evy.invalid>"
+}

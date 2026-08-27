@@ -1,0 +1,13 @@
+diff --git a/main.py b/main.py
+index 30eef85..9ae60de 100644
+--- a/main.py
++++ b/main.py
+@@ -1,7 +1,7 @@
+ #!/usr/bin/env python3
+ # This fixture source is licensed under the MIT License.
+ def message():
+-    return "fixture"
++    return "patched with a little sparkle"
+ 
+ 
+ print(message())

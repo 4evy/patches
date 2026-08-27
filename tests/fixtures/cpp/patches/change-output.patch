@@ -1,0 +1,13 @@
+diff --git a/main.cpp b/main.cpp
+index feb70ee..c24c21e 100644
+--- a/main.cpp
++++ b/main.cpp
+@@ -2,7 +2,7 @@
+ #include <iostream>
+ #include <string>
+ 
+-std::string message() { return "fixture"; }
++std::string message() { return "patched with a little sparkle"; }
+ 
+ int main() {
+     std::cout << message() << "\n";

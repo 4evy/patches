@@ -1,0 +1,11 @@
+diff --git a/Main.kt b/Main.kt
+index a0317c2..5962ffe 100644
+--- a/Main.kt
++++ b/Main.kt
+@@ -1,5 +1,5 @@
+ // This fixture source is licensed under the MIT License.
+-fun message(): String = "fixture"
++fun message(): String = "patched with a little sparkle"
+ 
+ fun main() {
+     println(message())

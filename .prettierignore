@@ -1,0 +1,8 @@
+.git/
+.rumdl_cache/
+*.patch
+schema/*.json
+result/
+*.nix
+package-lock.json
+website/.astro/

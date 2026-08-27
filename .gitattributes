@@ -1,0 +1,55 @@
+# Keep repository text portable across platforms.
+* text=auto eol=lf
+
+# GitHub Linguist: source languages used by this repository and its fixtures.
+*.astro linguist-language=Astro
+*.c linguist-language=C
+*.h linguist-language=C
+*.cpp linguist-language=C++
+*.cs linguist-language=C#
+*.go linguist-language=Go
+*.java linguist-language=Java
+*.kt linguist-language=Kotlin
+*.lua linguist-language=Lua
+*.mjs linguist-language=JavaScript
+*.nix linguist-language=Nix
+*.py linguist-language=Python
+*.rs linguist-language=Rust
+*.scm linguist-language=Scheme
+*.sh linguist-language=Shell
+*.swift linguist-language=Swift
+*.tpl linguist-language=gotmpl
+*.ts linguist-language=TypeScript
+*.zig linguist-language=Zig
+Dockerfile linguist-language=Dockerfile
+Justfile linguist-language=Just
+PKGBUILD linguist-language=Shell
+cmd/brew-patches.rb linguist-language=Ruby
+
+# GitHub Linguist: data, markup, and configuration formats.
+*.css linguist-language=CSS
+*.json linguist-language=JSON
+*.jsonc linguist-language=jsonc
+*.svg linguist-language=SVG
+*.toml linguist-language=TOML
+*.yaml linguist-language=YAML
+*.yml linguist-language=YAML
+*.dockerignore linguist-language=ignore
+*.gitignore linguist-language=ignore
+*.prettierignore linguist-language=ignore
+
+# Patch stacks are authored artifacts; show them as diffs rather than guessing
+# at the language of the upstream code they modify.
+*.patch linguist-language=Diff
+**/patches/series linguist-language=Diff
+
+# Documentation should be discoverable without affecting language statistics.
+*.md linguist-documentation
+LICENSE linguist-documentation
+NOTICE linguist-documentation
+**/LICENSE* linguist-documentation
+**/NOTICE* linguist-documentation
+
+# Dependency locks are not authored source.
+flake.lock linguist-generated
+package-lock.json linguist-generated

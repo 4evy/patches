@@ -1,0 +1,26 @@
+{
+  "name": "4evy patches",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "features": {
+    "ghcr.io/devcontainers/features/nix:1": {}
+  },
+  "postCreateCommand": "nix develop -c just doctor",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "editorconfig.editorconfig",
+        "esbenp.prettier-vscode",
+        "github.vscode-github-actions",
+        "golang.go",
+        "jnoortheen.nix-ide",
+        "mkhl.shfmt",
+        "ms-azuretools.vscode-docker",
+        "ms-python.python",
+        "nefrob.vscode-just-syntax",
+        "redhat.vscode-yaml",
+        "rust-lang.rust-analyzer",
+        "timonwong.shellcheck"
+      ]
+    }
+  }
+}

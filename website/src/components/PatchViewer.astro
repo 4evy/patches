@@ -1,0 +1,146 @@
+---
+import { Clipboard, Download } from '@lucide/astro';
+
+interface Props {
+  content: string;
+  rawUrl: string;
+}
+
+const { content, rawUrl } = Astro.props;
+
+type LineKind = 'addition' | 'context' | 'hunk' | 'meta' | 'removal';
+
+function lineKind(line: string): LineKind {
+  if (line.startsWith('@@')) return 'hunk';
+  if (
+    line.startsWith('diff --git') ||
+    line.startsWith('index ') ||
+    line.startsWith('--- ') ||
+    line.startsWith('+++ ') ||
+    line.startsWith('new file') ||
+    line.startsWith('deleted file') ||
+    line.startsWith('rename ')
+  ) {
+    return 'meta';
+  }
+  if (line.startsWith('+')) return 'addition';
+  if (line.startsWith('-')) return 'removal';
+  return 'context';
+}
+
+// Patch files can contain terminal control bytes. They are not valid HTML text
+// and have no useful representation in the browser, so omit them when rendering.
+const renderedLines = content
+  .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
+  .replace(/\n$/, '')
+  .split('\n')
+  .map((text, index) => ({
+    kind: lineKind(text),
+    number: index + 1,
+    text,
+  }));
+
+function lineNumberBackgroundClass(kind: LineKind) {
+  if (kind === 'hunk') return 'bg-[var(--diff-hunk)]';
+  if (kind === 'addition') return 'bg-[var(--diff-add)]';
+  if (kind === 'removal') return 'bg-[var(--diff-remove)]';
+  return 'bg-[var(--diff-bg)]';
+}
+---
+
+<section
+  class="mt-4 overflow-hidden rounded-md border border-[var(--diff-border)] bg-[var(--diff-bg)] shadow-[inset_0_1px_0_rgb(255_255_255_/_0.08),0_8px_22px_var(--shadow-deep)]"
+  aria-labelledby="patch-content-title"
+>
+  <header
+    class="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--diff-border)] bg-linear-to-b from-[var(--diff-top)] to-[var(--diff-bottom)] px-3 py-2 text-[var(--diff-text)] shadow-[inset_0_1px_0_rgb(255_255_255_/_0.18)]"
+  >
+    <div>
+      <h2 id="patch-content-title" class="text-xs font-bold">
+        Patch contents
+      </h2>
+      <p
+        id="patch-scroll-hint"
+        class="mt-0.5 text-xs text-[var(--diff-muted)]"
+      >
+        Scroll horizontally to view long lines.
+      </p>
+    </div>
+    <p class="flex items-center gap-1.5">
+      <button
+        class="inline-flex min-h-8 cursor-pointer items-center gap-1.5 rounded border border-[var(--border)] bg-linear-to-b from-[var(--highlight)] to-[var(--raised)] px-2.5 py-1 text-xs font-bold text-[var(--accent-dark)] shadow-[inset_0_1px_0_var(--highlight),0_1px_2px_var(--shadow)] transition hover:brightness-105 active:translate-y-px"
+        type="button"
+        data-copy-patch
+      >
+        <Clipboard aria-hidden="true" size={14} />
+        <span>Copy</span>
+      </button>
+      <span id="copy-status" class="visually-hidden" role="status"
+      ></span>
+      <a
+        class="inline-flex min-h-8 items-center gap-1.5 rounded border border-[var(--border)] bg-linear-to-b from-[var(--highlight)] to-[var(--raised)] px-2.5 py-1 text-xs font-bold !text-[var(--accent-dark)] !no-underline shadow-[inset_0_1px_0_var(--highlight),0_1px_2px_var(--shadow)] transition hover:border-[var(--accent-hi)] hover:brightness-105 active:translate-y-px"
+        href={rawUrl}
+      >
+        <Download aria-hidden="true" size={14} />
+        <span>Raw patch</span>
+      </a>
+    </p>
+  </header>
+  <pre
+    class="m-0 max-h-[min(72vh,54rem)] overflow-auto py-3 font-mono text-xs leading-relaxed text-[var(--diff-text)]"
+    aria-describedby="patch-scroll-hint"
+    tabindex="0"><code class="block w-max min-w-full">{
+    renderedLines.map((line) => (
+      <span class:list={[
+          'flex w-max min-w-full pr-6 whitespace-pre',
+          line.kind === 'hunk' &&
+            'bg-[var(--diff-hunk)] text-[var(--diff-hunk-text)]',
+          line.kind === 'meta' && 'text-[var(--diff-meta)]',
+          line.kind === 'addition' &&
+            'bg-[var(--diff-add)] text-[var(--diff-add-text)]',
+          line.kind === 'removal' &&
+            'bg-[var(--diff-remove)] text-[var(--diff-remove-text)]',
+        ]}>
+        <span class:list={['sticky left-0 inline-block w-16 shrink-0 border-r border-white/10 pr-3 text-right text-[var(--diff-muted)] select-none', lineNumberBackgroundClass(line.kind)]} aria-hidden="true">{line.number}</span>
+        <span class="pl-3" data-patch-line>{line.text}</span>
+      </span>
+    ))
+  }</code></pre>
+</section>
+
+<script>
+  const copyButtons = document.querySelectorAll<HTMLButtonElement>(
+    '[data-copy-patch]',
+  );
+
+  for (const button of copyButtons) {
+    button.addEventListener('click', async () => {
+      const section = button.closest('section');
+      const label = button.querySelector('span');
+      const status =
+        section?.querySelector<HTMLElement>('#copy-status');
+      if (!section || !label || !status) return;
+
+      const lines = section.querySelectorAll<HTMLElement>(
+        '[data-patch-line]',
+      );
+      const patchText = Array.from(
+        lines,
+        (line) => line.textContent ?? '',
+      ).join('\n');
+
+      try {
+        await navigator.clipboard.writeText(patchText);
+        label.textContent = 'Copied';
+        status.textContent = 'Patch copied to clipboard.';
+        window.setTimeout(() => {
+          label.textContent = 'Copy';
+          status.textContent = '';
+        }, 1600);
+      } catch {
+        status.textContent =
+          'Could not copy the patch. Select the text and copy it manually.';
+      }
+    });
+  }
+</script>

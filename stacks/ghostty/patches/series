@@ -1,0 +1,6 @@
+os-quote-literal-shell-command-arguments.patch
+datastruct-support-replacing-split-tree-leaves.patch
+apprt-honor-per-surface-command-wait-behavior.patch
+apprt-edit-scrollback-in-a-terminal-surface.patch
+build-make-package-manifest-sandbox-opt-in.patch
+font-restore-coretext-codepoint-discovery-on-macos-26.patch

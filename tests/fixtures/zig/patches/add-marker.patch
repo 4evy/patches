@@ -1,0 +1,14 @@
+diff --git a/main.zig b/main.zig
+index 1a3341a..ed5d81c 100644
+--- a/main.zig
++++ b/main.zig
+@@ -1,4 +1,9 @@
+ // This fixture source is licensed under the MIT License.
+ pub fn main() void {
++    _ = message();
+     _ = "fixture";
+ }
++
++fn message() []const u8 {
++    return "fixture";
++}

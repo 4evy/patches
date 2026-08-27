@@ -1,0 +1,12 @@
+diff --git a/main.lua b/main.lua
+index d6e9cc5..704e6c2 100644
+--- a/main.lua
++++ b/main.lua
+@@ -1,2 +1,6 @@
+ -- This fixture source is licensed under the MIT License.
+-print("fixture")
++local function message()
++    return "fixture"
++end
++
++print(message())

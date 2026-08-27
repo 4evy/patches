@@ -1,0 +1,133 @@
+name: Security analysis
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: sh
+
+jobs:
+  codeql:
+    name: CodeQL analysis
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.author_association == 'OWNER' ||
+      github.event.pull_request.author_association == 'MEMBER' ||
+      github.event.pull_request.author_association == 'COLLABORATOR' ||
+      github.event.pull_request.user.id == 49699333 ||
+      github.event.pull_request.user.id == 29139614 ||
+      github.event.pull_request.user.id == 41898282
+    permissions:
+      contents: read
+      actions: read # Read workflow metadata for CodeQL analysis.
+      security-events: write # Upload CodeQL results to code scanning.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: github/codeql-action/init@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4.37.8
+        with:
+          languages: actions,javascript-typescript,python
+          queries: security-extended
+      - uses: github/codeql-action/analyze@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4.37.8
+  semgrep:
+    name: Semgrep analysis
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.author_association == 'OWNER' ||
+      github.event.pull_request.author_association == 'MEMBER' ||
+      github.event.pull_request.author_association == 'COLLABORATOR' ||
+      github.event.pull_request.user.id == 49699333 ||
+      github.event.pull_request.user.id == 29139614 ||
+      github.event.pull_request.user.id == 41898282
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container: semgrep/semgrep@sha256:65dcd4408adda7c183a6b4550cb1e9b19f7f627a6fbb7e0559bd466bedc44d7b
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - name: Run Semgrep scan
+        run: semgrep scan --config auto --error
+  scorecard:
+    name: OpenSSF Scorecard
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.author_association == 'OWNER' ||
+      github.event.pull_request.author_association == 'MEMBER' ||
+      github.event.pull_request.author_association == 'COLLABORATOR' ||
+      github.event.pull_request.user.id == 49699333 ||
+      github.event.pull_request.user.id == 29139614 ||
+      github.event.pull_request.user.id == 41898282
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write # Sign the published Scorecard result with OIDC.
+      security-events: write # Upload Scorecard results to code scanning.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc # v2.4.4
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+      - uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4.37.8
+        with:
+          sarif_file: results.sarif
+  zizmor:
+    name: GitHub Actions security audit
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.author_association == 'OWNER' ||
+      github.event.pull_request.author_association == 'MEMBER' ||
+      github.event.pull_request.author_association == 'COLLABORATOR' ||
+      github.event.pull_request.user.id == 49699333 ||
+      github.event.pull_request.user.id == 29139614 ||
+      github.event.pull_request.user.id == 41898282
+    permissions:
+      contents: read
+      actions: read # Inspect referenced action metadata during the audit.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2.2.0
+      - uses: zizmorcore/zizmor-action@3dc1ecc9bcb9e94e9b2c709687979e1298497054 # v0.6.2
+        with:
+          advanced-security: false
+          annotations: true
+          persona: pedantic
+  dependency-review:
+    name: Dependency review
+    if: >-
+      github.event_name == 'pull_request' && (
+        github.event.pull_request.author_association == 'OWNER' ||
+        github.event.pull_request.author_association == 'MEMBER' ||
+        github.event.pull_request.author_association == 'COLLABORATOR'
+      ||
+        github.event.pull_request.user.id == 49699333 ||
+        github.event.pull_request.user.id == 29139614 ||
+        github.event.pull_request.user.id == 41898282
+      )
+    permissions: { contents: read }
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high

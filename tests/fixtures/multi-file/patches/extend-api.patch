@@ -1,0 +1,40 @@
+diff --git a/extra.c b/extra.c
+new file mode 100644
+index 0000000..2325f31
+--- /dev/null
++++ b/extra.c
+@@ -0,0 +1,6 @@
++/* This fixture source is licensed under the MIT License. */
++#include "extra.h"
++
++int extra_value(void) {
++    return 3;
++}
+diff --git a/extra.h b/extra.h
+new file mode 100644
+index 0000000..a8bd3c1
+--- /dev/null
++++ b/extra.h
+@@ -0,0 +1,7 @@
++/* This fixture source is licensed under the MIT License. */
++#ifndef EXTRA_H
++#define EXTRA_H
++
++int extra_value(void);
++
++#endif
+diff --git a/message.c b/message.c
+index 2f73db2..83937f4 100644
+--- a/message.c
++++ b/message.c
+@@ -1,8 +1,9 @@
+ /* This fixture source is licensed under the MIT License. */
+ #include "message.h"
++#include "extra.h"
+ 
+ const char *message(void) {
+-    return "fixture";
++    return extra_value() > 0 ? "patched with a little sparkle" : "fixture";
+ }
+ 
+ int message_length(void) {

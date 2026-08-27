@@ -1,0 +1,24 @@
+{
+  "name": "4evy-patches",
+  "private": true,
+  "packageManager": "npm@11.19.0",
+  "engines": {
+    "node": "26.7.0"
+  },
+  "workspaces": [
+    "website"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace 4evy-patches-site",
+    "check": "npm run check --workspace 4evy-patches-site",
+    "dev": "npm run dev --workspace 4evy-patches-site",
+    "format": "prettier --write . && prettier --plugin=prettier-plugin-astro --plugin=prettier-plugin-tailwindcss --write 'website/**/*.astro'",
+    "format:check": "prettier --check . && prettier --plugin=prettier-plugin-astro --plugin=prettier-plugin-tailwindcss --check 'website/**/*.astro'",
+    "start": "npm run start --workspace 4evy-patches-site",
+    "test": "npm run test --workspace 4evy-patches-site",
+    "test:website": "sh tests/website-check.sh"
+  },
+  "devDependencies": {
+    "prettier": "^3.9.6"
+  }
+}

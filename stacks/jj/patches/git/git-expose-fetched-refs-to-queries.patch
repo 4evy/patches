@@ -1,0 +1,207 @@
+From 7910715e963805fe20449e1a2cf39468f2720dfc Mon Sep 17 00:00:00 2001
+From: Josh McKinney <joshka@users.noreply.github.com>
+Date: Thu, 1 Jan 1970 00:00:00 +0000
+Subject: git: expose fetched refs to queries
+
+Allow stored fetched Git refs to be resolved from revsets and reported
+in operation diffs. This makes the durable state visible before adding
+higher-level CLI management commands.
+
+diff --git a/cli/src/commands/operation/diff.rs b/cli/src/commands/operation/diff.rs
+index 143eb44ec956492b883c494baa68e873c39f94c0..425c92ff9ecd63797308b525086e8950eb641ae8 100644
+--- a/cli/src/commands/operation/diff.rs
++++ b/cli/src/commands/operation/diff.rs
+@@ -12,6 +12,7 @@
+ // See the License for the specific language governing permissions and
+ // limitations under the License.
+ 
++use std::collections::BTreeMap;
+ use std::collections::HashMap;
+ use std::collections::HashSet;
+ use std::slice;
+@@ -31,6 +32,7 @@ use jj_lib::matchers::EverythingMatcher;
+ use jj_lib::op_store::RefTarget;
+ use jj_lib::op_store::RemoteRef;
+ use jj_lib::op_store::RemoteRefState;
++use jj_lib::ref_name::GitRefName;
+ use jj_lib::refs::diff_named_commit_ids;
+ use jj_lib::refs::diff_named_ref_targets;
+ use jj_lib::refs::diff_named_remote_refs;
+@@ -590,6 +592,81 @@ pub async fn show_op_diff(
+         }
+     }
+ 
++    let mut fetched_ref_remotes = BTreeMap::new();
++    for remote_name in from_repo
++        .view()
++        .fetched_git_refs()
++        .keys()
++        .chain(to_repo.view().fetched_git_refs().keys())
++    {
++        fetched_ref_remotes.insert(remote_name.clone(), ());
++    }
++    let empty_fetched_refs = BTreeMap::new();
++    let mut changed_fetched_refs = vec![];
++    for remote_name in fetched_ref_remotes.keys() {
++        let from_refs = from_repo
++            .view()
++            .fetched_git_refs()
++            .get(remote_name)
++            .unwrap_or(&empty_fetched_refs);
++        let to_refs = to_repo
++            .view()
++            .fetched_git_refs()
++            .get(remote_name)
++            .unwrap_or(&empty_fetched_refs);
++        changed_fetched_refs.extend(
++            diff_named_ref_targets(
++                from_refs.iter().map(|(name, target)| {
++                    let name: &GitRefName = name.as_ref();
++                    (name, target)
++                }),
++                to_refs.iter().map(|(name, target)| {
++                    let name: &GitRefName = name.as_ref();
++                    (name, target)
++                }),
++            )
++            .map(|(ref_name, targets)| (remote_name, ref_name, targets)),
++        );
++    }
++    if !changed_fetched_refs.is_empty() {
++        writeln!(formatter)?;
++        with_content_format
++            .write(formatter, async |formatter| {
++                writeln!(formatter, "Changed fetched Git refs:")
++            })
++            .await?;
++        for (remote_name, ref_name, (from_target, to_target)) in changed_fetched_refs {
++            with_content_format
++                .write(formatter, async |formatter| {
++                    writeln!(
++                        formatter,
++                        "{ref_name}@{remote_name}:",
++                        ref_name = ref_name.as_symbol(),
++                        remote_name = remote_name.as_symbol()
++                    )?;
++                    write_ref_target_summary(
++                        formatter,
++                        current_repo,
++                        commit_summary_template,
++                        to_target,
++                        true,
++                        None,
++                    )
++                    .await?;
++                    write_ref_target_summary(
++                        formatter,
++                        current_repo,
++                        commit_summary_template,
++                        from_target,
++                        false,
++                        None,
++                    )
++                    .await
++                })
++                .await?;
++        }
++    }
++
+     Ok(())
+ }
+ 
+diff --git a/lib/src/revset.rs b/lib/src/revset.rs
+index c22504430bdf857d912a16e1bc09e582c0ee8ec8..d29d2b5abdadbff96a82227a9f303f46d5c81d10 100644
+--- a/lib/src/revset.rs
++++ b/lib/src/revset.rs
+@@ -53,6 +53,7 @@ use crate::op_store::LocalRemoteRefTarget;
+ use crate::op_store::RefTarget;
+ use crate::op_store::RemoteRefState;
+ use crate::op_walk;
++use crate::ref_name::GitRefName;
+ use crate::ref_name::RefName;
+ use crate::ref_name::RemoteName;
+ use crate::ref_name::RemoteRefSymbol;
+@@ -160,6 +161,7 @@ pub enum RevsetCommitRef {
+         symbol: RemoteRefSymbolExpression,
+         remote_ref_state: Option<RemoteRefState>,
+     },
++    FetchedGitRefs(RemoteRefSymbolExpression),
+ }
+ 
+ /// String expressions to match `name@remote` bookmarks/tags.
+@@ -464,6 +466,10 @@ impl<St: ExpressionState<CommitRef = RevsetCommitRef>> RevsetExpression<St> {
+             remote_ref_state,
+         }))
+     }
++
++    pub fn fetched_git_refs(symbol: RemoteRefSymbolExpression) -> Arc<Self> {
++        Arc::new(Self::CommitRef(RevsetCommitRef::FetchedGitRefs(symbol)))
++    }
+ }
+ 
+ // Compound expression
+@@ -989,6 +995,10 @@ static BUILTIN_FUNCTION_MAP: LazyLock<HashMap<&str, RevsetFunction>> = LazyLock:
+         let state = None;
+         Ok(RevsetExpression::remote_tags(symbol, state))
+     });
++    map.insert("fetched_git_refs", |diagnostics, function, context| {
++        let symbol = parse_remote_refs_arguments(diagnostics, function, context)?;
++        Ok(RevsetExpression::fetched_git_refs(symbol))
++    });
+     // TODO: Document tracked/untracked_remote_tags() if we add untracked state
+     // to remote tags.
+     map.insert("tracked_remote_tags", |diagnostics, function, context| {
+@@ -2658,6 +2668,12 @@ fn resolve_remote_symbol(
+     if let Some(id) = to_resolved_ref("remote_bookmark", symbol, &remote_ref.target)? {
+         return Ok(id);
+     }
++    let fetched_target = repo
++        .view()
++        .get_fetched_git_ref(symbol.remote, GitRefName::new(symbol.name.as_str()));
++    if let Some(id) = to_resolved_ref("fetched_git_ref", symbol, fetched_target)? {
++        return Ok(id);
++    }
+     Err(make_no_such_symbol_error(repo, symbol.to_string()))
+ }
+ 
+@@ -2703,7 +2719,18 @@ fn make_no_such_symbol_error(repo: &dyn Repo, name: String) -> RevsetResolutionE
+     let include_synced_remotes = name.contains('@');
+     let tag_names = all_formatted_ref_symbols(repo.view().tags(), include_synced_remotes);
+     let bookmark_names = all_formatted_ref_symbols(repo.view().bookmarks(), include_synced_remotes);
+-    let mut candidates = collect_similar(&name, itertools::chain(tag_names, bookmark_names));
++    let fetched_ref_names = repo
++        .view()
++        .fetched_git_refs()
++        .iter()
++        .flat_map(|(remote, refs)| {
++            refs.keys()
++                .map(|ref_name| format_remote_symbol(ref_name.as_str(), remote.as_str()))
++        });
++    let mut candidates = collect_similar(
++        &name,
++        itertools::chain!(tag_names, bookmark_names, fetched_ref_names),
++    );
+     candidates.dedup(); // tags and bookmarks may have duplicate symbols
+     RevsetResolutionError::NoSuchRevision { name, candidates }
+ }
+@@ -3032,6 +3059,17 @@ fn resolve_commit_ref(
+                 .collect();
+             Ok(commit_ids)
+         }
++        RevsetCommitRef::FetchedGitRefs(symbol) => {
++            let name_matcher = symbol.name.to_matcher();
++            let remote_matcher = symbol.remote.to_matcher();
++            let commit_ids = repo
++                .view()
++                .fetched_git_refs_matching(&name_matcher, &remote_matcher)
++                .flat_map(|(_, _, target)| target.added_ids())
++                .cloned()
++                .collect();
++            Ok(commit_ids)
++        }
+     }
+ }
+ 
+-- 
+2.55.0
+

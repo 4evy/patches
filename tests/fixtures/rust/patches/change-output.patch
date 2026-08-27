@@ -1,0 +1,11 @@
+diff --git a/main.rs b/main.rs
+index 5191e38..d5b429d 100644
+--- a/main.rs
++++ b/main.rs
+@@ -1,5 +1,5 @@
+ // This fixture source is licensed under the MIT License.
+-fn message() -> &'static str { "fixture" }
++fn message() -> &'static str { "patched with a little sparkle" }
+ 
+ fn main() {
+     println!("{}", message());
