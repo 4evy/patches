@@ -1,41 +1,41 @@
-From d2ca886e47e695bdfb2a3bfe95f80ae33573571f Mon Sep 17 00:00:00 2001
+From 52d695fe506c49f236a3c3f40935308f941b69ed Mon Sep 17 00:00:00 2001
 From: Josh McKinney <joshka@users.noreply.github.com>
-Date: Thu, 1 Jan 1970 00:00:00 +0000
+Date: Fri, 28 Aug 2026 01:04:00 +0300
 Subject: git: keep fetched ref targets visible
 
 Fetched Git refs are durable labels for the commit imported from the
 remote ref. They are intentionally different from local bookmarks and
-working-copy references: if a user edits or otherwise rewrites the
-fetched change, the fetched ref should continue to name the original
-remote commit rather than follow the local rewrite.
+working-copy references: if a user edits or otherwise rewrites the fetched
+change, the fetched ref should continue to name the original remote commit
+rather than follow the local rewrite.
 
 That distinction exposed a subtle visibility bug. Rewriting the fetched
-commit records the old commit in parent_mapping, and update_heads()
-removes those old commits from the visible heads. Normal jj references
-either move as part of the rewrite machinery or keep the commit
-referenced elsewhere, but fetched Git refs do not follow the rewrite.
-The view could therefore still contain refs/pull/123/head@origin ->
-<old commit> while the old commit was no longer visible. Commands like
-git ref list would report the durable fetched ref, while log/revsets
-would resolve it only as a hidden commit. Undoing a later refetch made
-this especially confusing because the fetched ref entry was restored
-correctly, but its target was no longer connected to the visible graph.
+commit records the old commit in parent_mapping, and update_heads() removes
+those old commits from the visible heads. Normal jj references either move
+as part of the rewrite machinery or keep the commit referenced elsewhere,
+but fetched Git refs do not follow the rewrite. The view could therefore
+still contain refs/pull/123/head@origin -> <old commit> while the old commit
+was no longer visible. Commands like git ref list would report the durable
+fetched ref, while log/revsets would resolve it only as a hidden commit.
+Undoing a later refetch made this especially confusing because the fetched
+ref entry was restored correctly, but its target was no longer connected to
+the visible graph.
 
 Preserve present fetched-ref targets as visibility heads during head
-maintenance, and treat them as references when deciding whether to
-abandon a working-copy commit. This keeps the remote-imported commit
-visible without making fetched refs follow local rewrites.
+maintenance, and treat them as references when deciding whether to abandon a
+working-copy commit. This keeps the remote-imported commit visible without
+making fetched refs follow local rewrites.
 
-Add a regression covering the dogfood case: fetch a pull-request ref,
-edit and locally rewrite that fetched commit, fetch the same ref again,
-undo the second fetch, and verify that the fetched ref still resolves
-to the original non-hidden commit.
+Add a regression covering the dogfood case: fetch a pull-request ref, edit
+and locally rewrite that fetched commit, fetch the same ref again, undo the
+second fetch, and verify that the fetched ref still resolves to the original
+non-hidden commit.
 
 diff --git a/cli/tests/test_git_fetch.rs b/cli/tests/test_git_fetch.rs
-index 2e15694d6a6404cb1c288863940bd0254a637513..faf4a3ff28ed85321428584dbf36337802171869 100644
+index 2ea53e4e062c736e6b82ec78b9a55d572a4de219..5a4456b10cd24ba527ea8752c793b92533caba2c 100644
 --- a/cli/tests/test_git_fetch.rs
 +++ b/cli/tests/test_git_fetch.rs
-@@ -897,6 +897,65 @@ fn test_git_ref_fetch_undo_and_op_restore() {
+@@ -933,6 +933,65 @@ fn test_git_ref_fetch_undo_and_op_restore() {
      ");
  }
  
@@ -138,5 +138,3 @@ index 79a83a6c1112effae17d178aedcd975272393651..ee492b18f76d7f2b3b39a922a83853a1
              )
              .any(|id| id == commit_id)
          };
--- 
-2.55.0

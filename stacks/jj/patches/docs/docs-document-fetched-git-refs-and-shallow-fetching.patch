@@ -1,6 +1,6 @@
-From e8a7634870befa0a2f094d22e109de5f01c7584c Mon Sep 17 00:00:00 2001
+From 37b58b826b92bfb355e31fe8294c140bbc327c57 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Thu, 1 Jan 1970 00:00:00 +0000
+Date: Fri, 28 Aug 2026 01:04:00 +0300
 Subject: docs: document fetched Git refs and shallow fetching
 
 Document durable fetched refs, their revset and template surfaces, and
@@ -8,10 +8,10 @@ shallow-fetch workflows. Add changelog entries for raw-ref fetching,
 configurable depth, and review-stack fetching
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index 52caa9db72925c345e35e5989338186e2457262a..40c58a4af41221ad77f7a44122a15c375283394b 100644
+index 35d897d8fceac37ac18a19f4d0d279b541712be7..c3136d1bd5c62e6adb27c0bce85ff4360c799223 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -105,6 +105,15 @@ None
+@@ -119,6 +119,15 @@ None
  
  ### New features
  
@@ -28,7 +28,7 @@ index 52caa9db72925c345e35e5989338186e2457262a..40c58a4af41221ad77f7a44122a15c37
    point where multiple branches merge.
  
 diff --git a/docs/git-compatibility.md b/docs/git-compatibility.md
-index 90b359d3746f64eaab5ce8b58b10c0812f56e8c9..f36647f9ef4a651d0d4a1252b5278059dc78ae59 100644
+index 99f33a456da40da28a87280c1518acba193d16d1..280d46790f926085e9d4b7ef6e607ef0cad071a3 100644
 --- a/docs/git-compatibility.md
 +++ b/docs/git-compatibility.md
 @@ -60,8 +60,9 @@ a comparison with Git, including how workflows are different, see the
@@ -46,12 +46,12 @@ index 90b359d3746f64eaab5ce8b58b10c0812f56e8c9..f36647f9ef4a651d0d4a1252b5278059
 @@ -100,9 +101,22 @@ your choice by adding `--remote <remote name>` to the `jj git clone` command.
  ## Fetching and pushing refs that are not branches or tags
  
- Use `jj git ref fetch --remote <remote> <ref-or-commit-id>` to fetch one raw Git
--ref, such as a GitHub pull request ref, or one full Git commit ID. The fetched
--commit becomes visible without a name. The command does not create a bookmark
--or remote-tracking ref.
-+ref, such as a GitHub pull request ref, or one full Git commit ID. Fetched refs
-+are stored in Jujutsu's operation history without creating a Git
+ Use `jj git ref fetch --remote <remote> <ref-or-commit-id>...` to fetch raw Git
+-refs, such as GitHub pull request refs, or full Git commit IDs. The fetched
+-commits become visible without names. The command does not create bookmarks or
+-remote-tracking refs.
++refs, such as GitHub pull request refs, or full Git commit IDs. Fetched refs are
++stored in Jujutsu's operation history without creating a Git
 +remote-tracking branch, so they survive ordinary `jj git fetch` commands and
 +can be undone or restored like other Jujutsu state.
 +
@@ -99,6 +99,3 @@ index 740066e73c6ddf0924f901e0230eb6b7a02cc0e1..231eb16805f7dbbfde58317046d80906
  * `.tags() -> List<CommitRef>`: Local and remote tags pointing to the commit. A
    tracked remote tag will be included only if its target is different from the
    local one.
--- 
-2.55.0
-

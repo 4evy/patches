@@ -1,16 +1,12 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From fd6a16cffe4ff34796b4cbe4feed82f6b4c45532 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Thu, 1 Jan 1970 00:00:00 +0000
+Date: Fri, 28 Aug 2026 01:04:00 +0300
 Subject: graphlog: expose revision row rendering
 
-Factor the stateful graph renderer from the writer-backed GraphLog
-adapter. Terminal interfaces can now render one topology row at a time
-while jj log continues to use the same renderer and output.
----
- cli/src/graphlog.rs |  135 ++++++++++++++++++++++++++++++++++++++--------------
- 1 file changed, 100 insertions(+), 35 deletions(-)
+Factor the stateful graph renderer from the writer-backed GraphLog adapter. Terminal interfaces can now render one topology row at a time while jj log continues to use the same renderer and output.
 
 diff --git a/cli/src/graphlog.rs b/cli/src/graphlog.rs
+index 842cedea2d99ac58f23da3994d67ccc0b8d8c5f6..68a83b06f68c60bb85ab065b345dde5c917d47b6 100644
 --- a/cli/src/graphlog.rs
 +++ b/cli/src/graphlog.rs
 @@ -21,7 +21,7 @@ use jj_lib::graph::GraphEdge;
@@ -22,7 +18,7 @@ diff --git a/cli/src/graphlog.rs b/cli/src/graphlog.rs
  use renderdag::Renderer;
  
  pub trait GraphLog<K: Clone + Eq + Hash> {
-@@ -36,8 +36,8 @@ pub trait GraphLog<K: Clone + Eq + Hash>
+@@ -36,8 +36,8 @@ pub trait GraphLog<K: Clone + Eq + Hash> {
      fn width(&self, id: &K, edges: &[GraphEdge<K>]) -> usize;
  }
  
@@ -33,7 +29,7 @@ diff --git a/cli/src/graphlog.rs b/cli/src/graphlog.rs
      writer: &'writer mut dyn Write,
  }
  
-@@ -49,48 +49,67 @@ fn convert_graph_edge_into_ancestor<K: C
+@@ -49,48 +49,67 @@ fn convert_graph_edge_into_ancestor<K: Clone>(e: &GraphEdge<K>) -> Ancestor<K> {
      }
  }
  
@@ -126,7 +122,7 @@ diff --git a/cli/src/graphlog.rs b/cli/src/graphlog.rs
      }
  }
  
-@@ -113,13 +132,59 @@ pub fn get_graphlog<'a, K: Clone + Eq +
+@@ -113,13 +132,59 @@ pub fn get_graphlog<'a, K: Clone + Eq + Hash + 'a>(
      style: GraphStyle,
      formatter: &'a mut dyn Write,
  ) -> Box<dyn GraphLog<K> + 'a> {

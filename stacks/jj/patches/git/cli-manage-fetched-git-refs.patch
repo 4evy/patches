@@ -1,6 +1,6 @@
-From cabd6ae763ed6ae67760f3515518201a11809351 Mon Sep 17 00:00:00 2001
+From e5c62dced4807d0848297a3429811a6cd6c53365 Mon Sep 17 00:00:00 2001
 From: Josh McKinney <joshka@users.noreply.github.com>
-Date: Thu, 1 Jan 1970 00:00:00 +0000
+Date: Fri, 28 Aug 2026 01:04:00 +0300
 Subject: cli: manage fetched Git refs
 
 Record arbitrary fetched refs as durable review refs and add commands to
@@ -11,16 +11,15 @@ bookmark/new/edit conveniences.
 Co-authored-by: 4evy <git@evy.pink>
 
 diff --git a/cli/src/commands/git/ref/fetch.rs b/cli/src/commands/git/ref/fetch.rs
-index ab370eac1146afc61aa922f9d6af20e40b4f85d9..5d81c7319c48c334e41e7f09f871a5bcadf045ee 100644
+index 4d800eba32fbf28e8b933a90d2f3a0a8ba6b0f40..75f37b4300869fcc1ea316aa1918b3bb5bfe2561 100644
 --- a/cli/src/commands/git/ref/fetch.rs
 +++ b/cli/src/commands/git/ref/fetch.rs
-@@ -14,13 +14,17 @@
+@@ -14,12 +14,16 @@
  
  use clap_complete::ArgValueCandidates;
  use itertools::Itertools as _;
 +use jj_lib::commit::Commit;
  use jj_lib::git;
- use jj_lib::git::GitFetch;
  use jj_lib::git::GitSettings;
  use jj_lib::git::import_commit;
 +use jj_lib::op_store::RefTarget;
@@ -32,30 +31,26 @@ index ab370eac1146afc61aa922f9d6af20e40b4f85d9..5d81c7319c48c334e41e7f09f871a5bc
  
  use crate::cli_util::CommandHelper;
  use crate::cli_util::WorkspaceCommandHelper;
-@@ -31,6 +35,7 @@ use crate::commands::git::fetch::get_default_fetch_remotes;
+@@ -29,6 +33,7 @@ use crate::command_error::user_error;
  use crate::complete;
  use crate::git_util::GitSubprocessUi;
- use crate::git_util::load_git_import_options;
+ use crate::git_util::get_default_fetch_remotes;
 +use crate::revset_util::parse_bookmark_name;
  use crate::ui::Ui;
  
- /// Fetch one raw ref or full commit ID from a Git remote
-@@ -38,6 +43,7 @@ use crate::ui::Ui;
- /// The source can be a fully qualified remote ref such as GitHub's
- /// `refs/pull/123/head`, or a full Git commit ID
+ /// Fetch raw refs or full commit IDs from a Git remote
+@@ -36,6 +41,7 @@ use crate::ui::Ui;
+ /// Each source can be a fully qualified remote ref such as GitHub's
+ /// `refs/pull/123/head`, or a full Git commit ID.
  #[derive(clap::Args, Clone, Debug)]
 +#[command(group(clap::ArgGroup::new("working_copy").multiple(false)))]
  pub struct GitRefFetchArgs {
      /// The remote to fetch from (only named remotes are supported)
      ///
-@@ -50,9 +56,26 @@ pub struct GitRefFetchArgs {
-         add = ArgValueCandidates::new(complete::git_remotes),
-     )]
-     remote: Option<RemoteNameBuf>,
-+
-     /// The remote ref or full Git commit ID to fetch
-     #[arg(value_name = "REF")]
-     source: String,
+@@ -51,6 +57,22 @@ pub struct GitRefFetchArgs {
+     /// The remote refs or full Git commit IDs to fetch
+     #[arg(value_name = "REF", num_args = 1.., required = true)]
+     sources: Vec<String>,
 +
 +    /// Create and edit a new empty commit on the fetched ref
 +    #[arg(long, group = "working_copy")]
@@ -75,19 +70,29 @@ index ab370eac1146afc61aa922f9d6af20e40b4f85d9..5d81c7319c48c334e41e7f09f871a5bc
  }
  
  #[tracing::instrument(skip(ui, command))]
-@@ -68,7 +91,51 @@ pub async fn cmd_git_ref_fetch(
+@@ -65,8 +87,61 @@ pub async fn cmd_git_ref_fetch(
+     } else {
          get_default_fetch_remote(ui, &workspace_command)?
      };
++    let has_single_target_option = args.new || args.edit || args.bookmark.is_some();
++    if has_single_target_option && args.sources.len() != 1 {
++        return Err(user_error(
++            "--new, --edit, and --bookmark require exactly one fetch target",
++        ));
++    }
      let mut tx = workspace_command.start_transaction();
--    do_fetch(ui, &mut tx, remote_name.as_ref(), &args.source).await?;
-+    let commit = do_fetch(ui, &mut tx, remote_name.as_ref(), &args.source).await?;
+-    do_fetch(ui, &mut tx, remote_name.as_ref(), &args.sources).await?;
++    let commits = do_fetch(ui, &mut tx, remote_name.as_ref(), &args.sources).await?;
 +
-+    let fetched_ref_name: GitRefNameBuf = args.source.as_str().into();
-+    tx.repo_mut().set_fetched_git_ref_target(
-+        remote_name.as_ref(),
-+        fetched_ref_name.as_ref(),
-+        RefTarget::normal(commit.id().clone()),
-+    );
++    for (source, commit) in args.sources.iter().zip(&commits) {
++        let fetched_ref_name: GitRefNameBuf = source.as_str().into();
++        tx.repo_mut().set_fetched_git_ref_target(
++            remote_name.as_ref(),
++            fetched_ref_name.as_ref(),
++            RefTarget::normal(commit.id().clone()),
++        );
++    }
++    let commit = &commits[0];
 +
 +    if let Some(bookmark_name) = &args.bookmark {
 +        let existing_target = tx.repo().view().get_local_bookmark(bookmark_name);
@@ -109,9 +114,9 @@ index ab370eac1146afc61aa922f9d6af20e40b4f85d9..5d81c7319c48c334e41e7f09f871a5bc
 +        tx.base_workspace_helper()
 +            .check_rewritable([commit.id()])
 +            .await?;
-+        tx.edit(&commit)?;
++        tx.edit(commit)?;
 +    } else if args.new {
-+        let merged_tree = merge_commit_trees(tx.repo(), std::slice::from_ref(&commit)).await?;
++        let merged_tree = merge_commit_trees(tx.repo(), std::slice::from_ref(commit)).await?;
 +        let new_commit = tx
 +            .repo_mut()
 +            .new_commit(vec![commit.id().clone()], merged_tree)
@@ -128,21 +133,32 @@ index ab370eac1146afc61aa922f9d6af20e40b4f85d9..5d81c7319c48c334e41e7f09f871a5bc
      tx.finish(
          ui,
          format!(
-@@ -106,7 +173,7 @@ async fn do_fetch(
+@@ -104,7 +179,7 @@ async fn do_fetch(
      tx: &mut WorkspaceCommandTransaction<'_>,
      remote_name: &RemoteName,
-     source: &str,
+     sources: &[String],
 -) -> Result<(), CommandError> {
-+) -> Result<Commit, CommandError> {
-     let remote_settings = tx.settings().remote_settings()?;
++) -> Result<Vec<Commit>, CommandError> {
      let git_settings = GitSettings::from_settings(tx.settings())?;
-     let import_options = load_git_import_options(ui, &git_settings, &remote_settings)?;
-@@ -125,5 +192,5 @@ async fn do_fetch(
-         writeln!(formatter)?;
+     let sources = sources.iter().map(String::as_str).collect_vec();
+     let mut callback = GitSubprocessUi::new(ui);
+@@ -117,6 +192,7 @@ async fn do_fetch(
+         None,
+     )?;
+ 
++    let mut commits = Vec::with_capacity(commit_ids.len());
+     for (source, commit_id) in sources.into_iter().zip(commit_ids) {
+         let commit = import_commit(tx.repo_mut(), commit_id).await?;
+         if let Some(mut formatter) = ui.status_formatter() {
+@@ -124,7 +200,8 @@ async fn do_fetch(
+             tx.write_commit_summary(formatter.as_mut(), &commit)?;
+             writeln!(formatter)?;
+         }
++        commits.push(commit);
      }
  
 -    Ok(())
-+    Ok(commit)
++    Ok(commits)
  }
 diff --git a/cli/src/commands/git/ref/forget.rs b/cli/src/commands/git/ref/forget.rs
 new file mode 100644
@@ -349,7 +365,7 @@ index ce9771feaaee603e2b20908b7d3c3c30234dddf6..c13a4ca743c129278f77643409a76dac
      }
  }
 diff --git a/cli/tests/cli-reference@.md.snap b/cli/tests/cli-reference@.md.snap
-index 584f28a2a0664de5f36c9b34561b7a4c12471d18..1043d3d7da0b0b4a58567caa41aab72e3f735429 100644
+index d0bf7a04c5df0a5536155ddced7293dceb3b9746..35b864712ae12b5f25adc91daa94c75450d9ae11 100644
 --- a/cli/tests/cli-reference@.md.snap
 +++ b/cli/tests/cli-reference@.md.snap
 @@ -1,5 +1,6 @@
@@ -358,8 +374,8 @@ index 584f28a2a0664de5f36c9b34561b7a4c12471d18..1043d3d7da0b0b4a58567caa41aab72e
 +assertion_line: 45
  description: "AUTO-GENERATED FILE, DO NOT EDIT. This cli reference is generated by a test as an `insta` snapshot. MkDocs includes this snapshot from docs/cli-reference.md."
  ---
- <!-- BEGIN MARKDOWN-->
-@@ -64,6 +65,10 @@ This document contains the help content for the `jj` command-line program.
+ 
+@@ -65,6 +66,10 @@ This document contains the help content for the `jj` command-line program.
  * [`jj git fetch`↴](#jj-git-fetch)
  * [`jj git import`↴](#jj-git-import)
  * [`jj git init`↴](#jj-git-init)
@@ -370,7 +386,7 @@ index 584f28a2a0664de5f36c9b34561b7a4c12471d18..1043d3d7da0b0b4a58567caa41aab72e
  * [`jj git push`↴](#jj-git-push)
  * [`jj git ref`↴](#jj-git-ref)
  * [`jj git ref fetch`↴](#jj-git-ref-fetch)
-@@ -1602,6 +1607,7 @@ See this [comparison], including a [table of commands].
+@@ -1603,6 +1608,7 @@ See this [comparison], including a [table of commands].
  * `fetch` — Fetch from a Git remote
  * `import` — Update repo with changes made in the underlying Git repo
  * `init` — Create a new Git backed repo
@@ -378,7 +394,7 @@ index 584f28a2a0664de5f36c9b34561b7a4c12471d18..1043d3d7da0b0b4a58567caa41aab72e
  * `push` — Push to a Git remote
  * `ref` — Manage raw Git refs
  * `remote` — Manage Git remotes
-@@ -1829,6 +1835,76 @@ Create a new Git backed repo
+@@ -1830,6 +1836,76 @@ Create a new Git backed repo
  
  
  
@@ -456,7 +472,7 @@ index 584f28a2a0664de5f36c9b34561b7a4c12471d18..1043d3d7da0b0b4a58567caa41aab72e
  
  Push to a Git remote
 diff --git a/cli/tests/test_git_fetch.rs b/cli/tests/test_git_fetch.rs
-index 24a9065b50fe755ae36f0845a6124a148048c97a..2e15694d6a6404cb1c288863940bd0254a637513 100644
+index 2c60bd050cf067b2d6b75ffb0f022b71d6673271..2ea53e4e062c736e6b82ec78b9a55d572a4de219 100644
 --- a/cli/tests/test_git_fetch.rs
 +++ b/cli/tests/test_git_fetch.rs
 @@ -43,6 +43,30 @@ fn add_commit_to_branch(git_repo: &gix::Repository, branch: &str, message: &str)
@@ -490,21 +506,7 @@ index 24a9065b50fe755ae36f0845a6124a148048c97a..2e15694d6a6404cb1c288863940bd025
  /// Creates a remote Git repo containing a bookmark with the same name
  fn init_git_remote(test_env: &TestEnvironment, remote: &str) -> gix::Repository {
      let git_repo_path = test_env.env_root().join(remote);
-@@ -164,12 +188,7 @@ fn test_git_ref_fetch_imports_anonymous_head() -> TestResult {
-     );
- 
-     insta::assert_snapshot!(
--        work_dir.run_jj([
--            "git",
--            "ref",
--            "fetch",
--            "refs/pull/123/head",
--        ]),
-+        work_dir.run_jj(["git", "ref", "fetch", "refs/pull/123/head"]),
-         @r"
-     ------- stderr -------
-     Fetched refs/pull/123/head as spovxuoz 84c6f409 pull request 123
-@@ -243,6 +262,857 @@ fn test_git_ref_fetch_invalid_source() {
+@@ -274,6 +298,857 @@ fn test_git_ref_fetch_invalid_source() {
      );
  }
  
@@ -1438,6 +1440,3 @@ index 514fa68d44df73185151bd9b60541f6dc1740974..0013ef51272a876876eb3f97f2fbba02
  #[test]
  fn test_merge_views_git_heads() -> TestResult {
      // Tests merging of git heads (by performing divergent operations). See
--- 
-2.55.0
-

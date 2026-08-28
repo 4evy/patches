@@ -1,6 +1,6 @@
-From daa582353e1ecdce340b8483b0c79e0b4c1ebda2 Mon Sep 17 00:00:00 2001
+From dd34ae58e074d6404f1638cc20623a4a547c9f29 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Thu, 1 Jan 1970 00:00:00 +0000
+Date: Fri, 28 Aug 2026 01:04:00 +0300
 Subject: git ref fetch: support patterns and commit IDs
 
 Accept multiple refs in one atomic operation, expand one-wildcard ref
@@ -9,10 +9,10 @@ anonymously. Keep list/forget name handling consistent and document the
 batch behavior
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index 40c58a4af41221ad77f7a44122a15c375283394b..5fad1d9029b5000d815d3d2eb7dbc2b3e4d692e2 100644
+index c3136d1bd5c62e6adb27c0bce85ff4360c799223..28ac97822f95f70dc6fcaf77cbe55526bf9c18f1 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -105,9 +105,10 @@ None
+@@ -119,9 +119,10 @@ None
  
  ### New features
  
@@ -26,10 +26,10 @@ index 40c58a4af41221ad77f7a44122a15c375283394b..5fad1d9029b5000d815d3d2eb7dbc2b3
  * `jj git fetch` now supports `--depth` in existing repositories, with
    `git.fetch-depth` as the default for subsequent fetches in shallow
 diff --git a/cli/src/cli_util.rs b/cli/src/cli_util.rs
-index dec8aab9da73a4a5b279e683d13a8fdba4a53f73..226e739413cb672116c5a0fe3e253d24f671bb02 100644
+index d716ef7a108f6c275bb20a765412d45fd68d9512..360d1d6d4edaeb3aeea28eb965c310ed8e312b01 100644
 --- a/cli/src/cli_util.rs
 +++ b/cli/src/cli_util.rs
-@@ -2032,6 +2032,15 @@ to the current parents may contain changes from multiple commits.
+@@ -2041,6 +2041,15 @@ to the current parents may contain changes from multiple commits.
          to_rewrite_expr: &Arc<ResolvedRevsetExpression>,
      ) -> Result<(), CommandError> {
          let repo = self.repo().as_ref();
@@ -45,7 +45,7 @@ index dec8aab9da73a4a5b279e683d13a8fdba4a53f73..226e739413cb672116c5a0fe3e253d24
          let immutable_expr = self.env.resolve_immutable_expression(repo)?;
          let Some(commit_id) = immutable_expr
              .intersection(to_rewrite_expr)
-@@ -2766,6 +2775,18 @@ impl WorkspaceCommandTransaction<'_> {
+@@ -2787,6 +2796,18 @@ impl WorkspaceCommandTransaction<'_> {
          self.tx.repo_mut()
      }
  
@@ -64,115 +64,11 @@ index dec8aab9da73a4a5b279e683d13a8fdba4a53f73..226e739413cb672116c5a0fe3e253d24
      pub fn check_out(&mut self, commit: &Commit) -> Result<Commit, CheckOutCommitError> {
          let name = self.helper.workspace_name().to_owned();
          self.id_prefix_context.take(); // invalidate
-diff --git a/cli/src/commands/git/fetch.rs b/cli/src/commands/git/fetch.rs
-index 5937af902005f8c15836944f64cf0f22b635775e..5a9f580b8e4de73574e8a58698eb5e7612568fc3 100644
---- a/cli/src/commands/git/fetch.rs
-+++ b/cli/src/commands/git/fetch.rs
-@@ -17,7 +17,6 @@ use std::num::NonZeroU32;
- 
- use clap_complete::ArgValueCandidates;
- use itertools::Itertools as _;
--use jj_lib::config::ConfigGetResultExt as _;
- use jj_lib::git;
- use jj_lib::git::GitFetch;
- use jj_lib::git::GitFetchRefExpression;
-@@ -38,7 +37,6 @@ use crate::cli_util::WorkspaceCommandTransaction;
- use crate::command_error::CommandError;
- use crate::command_error::cli_error;
- use crate::command_error::user_error;
--use crate::commands::git::get_single_remote;
- use crate::complete;
- use crate::git_util::GitSubprocessUi;
- use crate::git_util::load_git_import_options;
-@@ -287,31 +285,12 @@ pub async fn cmd_git_fetch(
-     reinit_result
- }
- 
--const DEFAULT_REMOTE: &RemoteName = RemoteName::new("origin");
--
- pub(super) fn get_default_fetch_remotes(
-     ui: &Ui,
-     workspace_command: &WorkspaceCommandHelper,
- ) -> Result<StringExpression, CommandError> {
--    const KEY: &str = "git.fetch";
--    let settings = workspace_command.settings();
--    if let Ok(remotes) = settings.get::<Vec<String>>(KEY) {
--        parse_union_name_patterns(ui, &remotes)
--    } else if let Some(remote) = settings.get_string(KEY).optional()? {
--        parse_union_name_patterns(ui, [&remote])
--    } else if let Some(remote) = get_single_remote(workspace_command.repo().store())? {
--        // if nothing was explicitly configured, try to guess
--        if remote != DEFAULT_REMOTE {
--            writeln!(
--                ui.hint_default(),
--                "Fetching from the only existing remote: {remote}",
--                remote = remote.as_symbol()
--            )?;
--        }
--        Ok(StringExpression::exact(remote))
--    } else {
--        Ok(StringExpression::exact(DEFAULT_REMOTE))
--    }
-+    let remote_patterns = super::get_default_fetch_remote_patterns(ui, workspace_command)?;
-+    parse_union_name_patterns(ui, remote_patterns)
- }
- 
- fn warn_if_branches_not_found(
-diff --git a/cli/src/commands/git/mod.rs b/cli/src/commands/git/mod.rs
-index f03c416e1f23fc75068644002be1a515ea40ad3a..0eaf3a943e8fab3383101cb7737034aa5e03b222 100644
---- a/cli/src/commands/git/mod.rs
-+++ b/cli/src/commands/git/mod.rs
-@@ -38,6 +38,7 @@ use jj_lib::ref_name::RemoteName;
- use jj_lib::ref_name::RemoteNameBuf;
- use jj_lib::ref_name::RemoteRefSymbol;
- use jj_lib::ref_name::RemoteRefSymbolBuf;
-+use jj_lib::repo::Repo as _;
- use jj_lib::revset;
- use jj_lib::settings::UserSettings;
- use jj_lib::store::Store;
-@@ -149,6 +150,29 @@ fn get_git_fetch_depth(
-     }
- }
- 
-+fn get_default_fetch_remote_patterns(
-+    ui: &Ui,
-+    workspace_command: &WorkspaceCommandHelper,
-+) -> Result<Vec<String>, CommandError> {
-+    let settings = workspace_command.settings();
-+    if let Ok(remotes) = settings.get::<Vec<String>>("git.fetch") {
-+        Ok(remotes)
-+    } else if let Some(remote) = settings.get_string("git.fetch").optional()? {
-+        Ok(vec![remote])
-+    } else if let Some(remote) = get_single_remote(workspace_command.repo().store())? {
-+        if remote != RemoteName::new("origin") {
-+            writeln!(
-+                ui.hint_default(),
-+                "Fetching from the only existing remote: {remote}",
-+                remote = remote.as_symbol()
-+            )?;
-+        }
-+        Ok(vec![remote.into_string()])
-+    } else {
-+        Ok(vec!["origin".to_owned()])
-+    }
-+}
-+
- pub fn maybe_add_gitignore(workspace_command: &WorkspaceCommandHelper) -> Result<(), CommandError> {
-     if workspace_command.working_copy_shared_with_git() {
-         std::fs::write(
 diff --git a/cli/src/commands/git/ref/fetch.rs b/cli/src/commands/git/ref/fetch.rs
-index fb2e655961d8bb93df898b48ae3704ea2d83def4..7d3fbb24ce7ab642f068e492fd6337984734bfb8 100644
+index 16eb5b982f44a67064991fe6a8e999b763acc317..72dffd4a4b6c427065b84b305822addbbd0efcb9 100644
 --- a/cli/src/commands/git/ref/fetch.rs
 +++ b/cli/src/commands/git/ref/fetch.rs
-@@ -17,7 +17,6 @@ use std::num::NonZeroU32;
- use clap_complete::ArgValueCandidates;
- use itertools::Itertools as _;
- use jj_lib::commit::Commit;
--use jj_lib::config::ConfigGetResultExt as _;
- use jj_lib::git;
- use jj_lib::git::GitFetch;
- use jj_lib::git::GitSettings;
-@@ -30,6 +29,8 @@ use jj_lib::ref_name::RemoteNameBuf;
+@@ -28,6 +28,8 @@ use jj_lib::ref_name::RemoteNameBuf;
  use jj_lib::repo::Repo as _;
  use jj_lib::rewrite::merge_commit_trees;
  
@@ -181,45 +77,34 @@ index fb2e655961d8bb93df898b48ae3704ea2d83def4..7d3fbb24ce7ab642f068e492fd633798
  use crate::cli_util::CommandHelper;
  use crate::cli_util::WorkspaceCommandHelper;
  use crate::cli_util::WorkspaceCommandTransaction;
-@@ -42,10 +43,11 @@ use crate::git_util::load_git_import_options;
+@@ -39,10 +41,11 @@ use crate::git_util::get_default_fetch_remotes;
  use crate::revset_util::parse_bookmark_name;
  use crate::ui::Ui;
  
--/// Fetch one raw ref or full commit ID from a Git remote
+-/// Fetch raw refs or full commit IDs from a Git remote
 +/// Fetch refs or commits from a Git remote
  ///
--/// The source can be a fully qualified remote ref such as GitHub's
--/// `refs/pull/123/head`, or a full Git commit ID
+-/// Each source can be a fully qualified remote ref such as GitHub's
+-/// `refs/pull/123/head`, or a full Git commit ID.
 +/// A source can be a fully qualified remote ref such as GitHub's
 +/// `refs/pull/123/head`, a ref pattern containing one `*`, or a full Git commit
 +/// ID.
  #[derive(clap::Args, Clone, Debug)]
  #[command(group(clap::ArgGroup::new("working_copy").multiple(false)))]
  pub struct GitRefFetchArgs {
-@@ -55,15 +57,18 @@ pub struct GitRefFetchArgs {
-     /// one remote. If that is not configured, the only remote or the remote
-     /// named "origin" is used.
-     #[arg(
--        long = "remote",
-+        long,
-         value_name = "REMOTE",
-         add = ArgValueCandidates::new(complete::git_remotes),
+@@ -58,7 +61,10 @@ pub struct GitRefFetchArgs {
      )]
      remote: Option<RemoteNameBuf>,
  
--    /// The remote ref or full Git commit ID to fetch
--    #[arg(value_name = "REF")]
--    source: String,
+-    /// The remote refs or full Git commit IDs to fetch
 +    /// Refs, ref patterns, or full Git commit IDs to fetch
 +    ///
 +    /// Ref names may be fully qualified (`refs/pull/123/head`) or omit the
 +    /// leading `refs/` (`pull/123/head`). A ref pattern may contain one `*`.
-+    #[arg(value_name = "REF", required = true, num_args = 1..)]
-+    sources: Vec<String>,
+     #[arg(value_name = "REF", num_args = 1.., required = true)]
+     sources: Vec<String>,
  
-     /// Create and edit a new empty commit on the fetched ref
-     #[arg(long, group = "working_copy")]
-@@ -95,6 +100,46 @@ pub struct GitRefFetchArgs {
+@@ -92,6 +98,46 @@ pub struct GitRefFetchArgs {
      shallow_exclude: Option<String>,
  }
  
@@ -266,52 +151,36 @@ index fb2e655961d8bb93df898b48ae3704ea2d83def4..7d3fbb24ce7ab642f068e492fd633798
  #[tracing::instrument(skip(ui, command))]
  pub async fn cmd_git_ref_fetch(
      ui: &mut Ui,
-@@ -108,41 +153,54 @@ pub async fn cmd_git_ref_fetch(
+@@ -104,14 +150,20 @@ pub async fn cmd_git_ref_fetch(
+     } else {
          get_default_fetch_remote(ui, &workspace_command)?
      };
-     let git_repo = get_git_backend(workspace_command.repo().store())?.git_repo();
--    let is_shallow = git_repo.is_shallow();
--    if args.shallow_exclude.is_some() && !is_shallow {
++    let git_repo = get_git_backend(workspace_command.repo().store())?.git_repo();
 +    let fetch_sources = args
 +        .sources
 +        .iter()
 +        .map(|value| parse_fetch_source(value, git_repo.object_hash()))
 +        .collect::<Result<Vec<_>, _>>()?;
-+    let has_single_target_option = args.new || args.edit || args.bookmark.is_some();
+     let has_single_target_option = args.new || args.edit || args.bookmark.is_some();
+-    if has_single_target_option && args.sources.len() != 1 {
 +    if has_single_target_option
 +        && (fetch_sources.len() != 1 || matches!(&fetch_sources[0], ParsedFetchSource::Pattern(_)))
 +    {
-+        return Err(user_error(
-+            "--new, --edit, and --bookmark require exactly one non-pattern fetch target",
-+        ));
-+    }
-+    if args.shallow_exclude.is_some() && !git_repo.is_shallow() {
          return Err(user_error(
-             "--shallow-exclude is only supported in an existing shallow repository",
+-            "--new, --edit, and --bookmark require exactly one fetch target",
++            "--new, --edit, and --bookmark require exactly one non-pattern fetch target",
          ));
      }
--    let depth = if args.depth.is_some() || is_shallow {
--        args.depth.or(workspace_command
--            .settings()
--            .get("git.fetch-depth")
--            .optional()?)
--    } else {
--        None
--    };
-+    let depth = super::super::get_git_fetch_depth(
-+        workspace_command.settings(),
-+        workspace_command.repo().store(),
-+        args.depth,
-+    )?;
- 
-     let mut tx = workspace_command.start_transaction();
-     let index_store = tx.repo().base_repo().index_store().clone();
--    let fetched_ref_name: GitRefNameBuf = args.source.as_str().into();
-     let (fetch_result, shallow_boundary_changed) = do_fetch(
+-
+-    let git_repo = get_git_backend(workspace_command.repo().store())?.git_repo();
+     if args.shallow_exclude.is_some() && !git_repo.is_shallow() {
+         return Err(user_error(
+             "--shallow-exclude is only supported in an existing shallow repository",
+@@ -129,23 +181,24 @@ pub async fn cmd_git_ref_fetch(
          ui,
          &mut tx,
          remote_name.as_ref(),
--        &args.source,
+-        &args.sources,
 +        &fetch_sources,
          depth,
          args.shallow_exclude.as_deref(),
@@ -319,12 +188,14 @@ index fb2e655961d8bb93df898b48ae3704ea2d83def4..7d3fbb24ce7ab642f068e492fd633798
      .await;
  
      let result: Result<(), CommandError> = async {
--        let commit = fetch_result?;
--        tx.repo_mut().set_fetched_git_ref_target(
--            remote_name.as_ref(),
--            fetched_ref_name.as_ref(),
--            RefTarget::normal(commit.id().clone()),
--        );
+-        let commits = fetch_result?;
+-        for (source, commit) in args.sources.iter().zip(&commits) {
+-            let fetched_ref_name: GitRefNameBuf = source.as_str().into();
+-            tx.repo_mut().set_fetched_git_ref_target(
+-                remote_name.as_ref(),
+-                fetched_ref_name.as_ref(),
+-                RefTarget::normal(commit.id().clone()),
+-            );
 +        let fetched_targets = fetch_result?;
 +        for target in &fetched_targets {
 +            if let Some(ref_name) = &target.ref_name {
@@ -334,135 +205,153 @@ index fb2e655961d8bb93df898b48ae3704ea2d83def4..7d3fbb24ce7ab642f068e492fd633798
 +                    RefTarget::normal(target.commit.id().clone()),
 +                );
 +            }
-+        }
+         }
+-        let commit = &commits[0];
 +        let commit = &fetched_targets[0].commit;
  
          if let Some(bookmark_name) = &args.bookmark {
              let existing_target = tx.repo().view().get_local_bookmark(bookmark_name);
-@@ -161,12 +219,10 @@ pub async fn cmd_git_ref_fetch(
+@@ -164,9 +217,7 @@ pub async fn cmd_git_ref_fetch(
          }
  
          if args.edit {
 -            tx.base_workspace_helper()
 -                .check_rewritable([commit.id()])
 -                .await?;
--            tx.edit(&commit)?;
 +            tx.check_rewritable([commit.id()]).await?;
-+            tx.edit(commit)?;
+             tx.edit(commit)?;
          } else if args.new {
--            let merged_tree = merge_commit_trees(tx.repo(), std::slice::from_ref(&commit)).await?;
-+            let merged_tree = merge_commit_trees(tx.repo(), std::slice::from_ref(commit)).await?;
-             let new_commit = tx
-                 .repo_mut()
-                 .new_commit(vec![commit.id().clone()], merged_tree)
-@@ -183,8 +239,8 @@ pub async fn cmd_git_ref_fetch(
-         tx.finish(
-             ui,
-             format!(
--                "fetch ref or commit ID {} from git remote {}",
--                args.source,
-+                "fetch refs or commit IDs {} from git remote {}",
-+                args.sources.iter().join(", "),
-                 remote_name.as_symbol()
-             ),
-         )
-@@ -225,10 +281,10 @@ async fn do_fetch(
+             let merged_tree = merge_commit_trees(tx.repo(), std::slice::from_ref(commit)).await?;
+@@ -228,39 +279,113 @@ async fn do_fetch(
      ui: &mut Ui,
      tx: &mut WorkspaceCommandTransaction<'_>,
      remote_name: &RemoteName,
--    source: &str,
+-    sources: &[String],
 +    sources: &[ParsedFetchSource],
      depth: Option<NonZeroU32>,
      shallow_exclude: Option<&str>,
--) -> (Result<Commit, CommandError>, bool) {
+-) -> (Result<Vec<Commit>, CommandError>, bool) {
 +) -> (Result<Vec<FetchedTarget>, CommandError>, bool) {
-     let setup = (|| {
-         let remote_settings = tx.settings().remote_settings()?;
-         let git_settings = GitSettings::from_settings(tx.settings())?;
-@@ -249,24 +305,71 @@ async fn do_fetch(
+     let git_settings = match GitSettings::from_settings(tx.settings()) {
+         Ok(settings) => settings,
+         Err(err) => return (Err(err.into()), false),
      };
- 
+-    let sources = sources.iter().map(String::as_str).collect_vec();
      let mut callback = GitSubprocessUi::new(ui);
--    let fetch_result = git_fetch.fetch_commit(
+-    let (fetch_result, shallow_boundary_changed) = git::fetch_commits_with_options(
+-        tx.repo().store(),
+-        git_settings.to_subprocess_options(),
 -        remote_name,
--        source,
+-        &sources,
 -        &mut callback,
 -        depth,
 -        shallow_exclude,
 -    );
-+    let fetch_result: Result<Vec<_>, CommandError> = (|| {
-+        let mut fetched_ids = Vec::new();
-+        for source in sources {
-+            match source {
-+                ParsedFetchSource::Ref(ref_name) => {
-+                    let commit_id = git_fetch.fetch_commit(
-+                        remote_name,
-+                        ref_name.as_str(),
-+                        &mut callback,
-+                        depth,
-+                        shallow_exclude,
-+                    )?;
-+                    fetched_ids.push((
-+                        Some(ref_name.clone()),
-+                        ref_name.as_str().to_owned(),
-+                        commit_id,
-+                    ));
-+                }
-+                ParsedFetchSource::Pattern(pattern) => {
-+                    let matches = git_fetch.fetch_ref_pattern(
-+                        remote_name,
-+                        pattern,
-+                        &mut callback,
-+                        depth,
-+                        shallow_exclude,
-+                    )?;
-+                    fetched_ids.extend(matches.into_iter().map(|(ref_name, commit_id)| {
-+                        (
-+                            Some(ref_name.clone()),
-+                            ref_name.as_str().to_owned(),
-+                            commit_id,
-+                        )
-+                    }));
-+                }
-+                ParsedFetchSource::Object(object_id) => {
-+                    let commit_id = git_fetch.fetch_commit(
-+                        remote_name,
-+                        object_id,
-+                        &mut callback,
-+                        depth,
-+                        shallow_exclude,
-+                    )?;
-+                    fetched_ids.push((None, object_id.clone(), commit_id));
-+                }
++    let mut fetched_by_source = vec![Vec::new(); sources.len()];
++    let exact_sources = sources
++        .iter()
++        .enumerate()
++        .filter_map(|(index, source)| match source {
++            ParsedFetchSource::Ref(ref_name) => {
++                Some((index, Some(ref_name.clone()), ref_name.as_str()))
++            }
++            ParsedFetchSource::Object(object_id) => Some((index, None, object_id.as_str())),
++            ParsedFetchSource::Pattern(_) => None,
++        })
++        .collect_vec();
++    let mut shallow_boundary_changed = false;
++    if !exact_sources.is_empty() {
++        if depth.is_some() || shallow_exclude.is_some() {
++            for (index, ref_name, source) in exact_sources {
++                let (fetch_result, changed) = git::fetch_commits_with_options(
++                    tx.repo().store(),
++                    git_settings.to_subprocess_options(),
++                    remote_name,
++                    &[source],
++                    &mut callback,
++                    depth,
++                    shallow_exclude,
++                );
++                shallow_boundary_changed |= changed;
++                let commit_id = match fetch_result {
++                    Ok(mut ids) => ids.pop().expect("one source should return one commit"),
++                    Err(err) => return (Err(err.into()), shallow_boundary_changed),
++                };
++                fetched_by_source[index].push((ref_name, source.to_owned(), commit_id));
++            }
++        } else {
++            let source_names = exact_sources
++                .iter()
++                .map(|(_, _, source)| *source)
++                .collect_vec();
++            let (fetch_result, changed) = git::fetch_commits_with_options(
++                tx.repo().store(),
++                git_settings.to_subprocess_options(),
++                remote_name,
++                &source_names,
++                &mut callback,
++                depth,
++                shallow_exclude,
++            );
++            shallow_boundary_changed |= changed;
++            let commit_ids = match fetch_result {
++                Ok(ids) => ids,
++                Err(err) => return (Err(err.into()), shallow_boundary_changed),
++            };
++            for ((index, ref_name, source), commit_id) in exact_sources.into_iter().zip(commit_ids)
++            {
++                fetched_by_source[index].push((ref_name, source.to_owned(), commit_id));
 +            }
 +        }
-+        fetched_ids.sort_by(|left, right| left.1.cmp(&right.1));
-+        fetched_ids.dedup_by(|left, right| left.1 == right.1);
-+        Ok(fetched_ids)
-+    })();
-     let shallow_boundary_changed = git_fetch.shallow_boundary_changed();
-     drop(git_fetch);
--    let result: Result<Commit, CommandError> = async {
--        let commit_id = fetch_result?;
--        let commit = import_commit(tx.repo_mut(), commit_id).await?;
--        if let Some(mut formatter) = ui.status_formatter() {
--            write!(formatter, "Fetched {source} as ")?;
--            tx.write_commit_summary(formatter.as_mut(), &commit)?;
--            writeln!(formatter)?;
++    }
++
++    for (index, source) in sources.iter().enumerate() {
++        let ParsedFetchSource::Pattern(pattern) = source else {
++            continue;
++        };
++        let (fetch_result, changed) = git::fetch_ref_pattern_with_options(
++            tx.repo().store(),
++            git_settings.to_subprocess_options(),
++            remote_name,
++            pattern,
++            &mut callback,
++            depth,
++            shallow_exclude,
++        );
++        shallow_boundary_changed |= changed;
++        let targets = match fetch_result {
++            Ok(targets) => targets,
++            Err(err) => return (Err(err.into()), shallow_boundary_changed),
++        };
++        fetched_by_source[index].extend(targets.into_iter().map(|(ref_name, commit_id)| {
++            let display_source = ref_name.as_str().to_owned();
++            (Some(ref_name), display_source, commit_id)
++        }));
++    }
+ 
+-    let result: Result<Vec<Commit>, CommandError> = async {
+-        let commit_ids = fetch_result?;
+-        let mut commits = Vec::with_capacity(commit_ids.len());
+-        for (source, commit_id) in sources.into_iter().zip(commit_ids) {
 +    let result: Result<Vec<FetchedTarget>, CommandError> = async {
-+        let fetched_ids = fetch_result?;
-+        let mut targets = Vec::with_capacity(fetched_ids.len());
-+        for (ref_name, source, commit_id) in fetched_ids {
-+            let commit = import_commit(tx.repo_mut(), commit_id).await?;
-+            if let Some(mut formatter) = ui.status_formatter() {
-+                write!(formatter, "Fetched {source} as ")?;
-+                tx.write_commit_summary(formatter.as_mut(), &commit)?;
-+                writeln!(formatter)?;
-+            }
-+            targets.push(FetchedTarget { ref_name, commit });
++        let fetched_ids = fetched_by_source
++            .into_iter()
++            .flatten()
++            .unique_by(|target| target.1.clone());
++        let mut fetched_targets = Vec::new();
++        for (ref_name, display_source, commit_id) in fetched_ids {
+             let commit = import_commit(tx.repo_mut(), commit_id).await?;
+             if let Some(mut formatter) = ui.status_formatter() {
+-                write!(formatter, "Fetched {source} as ")?;
++                write!(formatter, "Fetched {display_source} as ")?;
+                 tx.write_commit_summary(formatter.as_mut(), &commit)?;
+                 writeln!(formatter)?;
+             }
+-            commits.push(commit);
++            fetched_targets.push(FetchedTarget { ref_name, commit });
          }
--        Ok(commit)
-+        Ok(targets)
+-        Ok(commits)
++        Ok(fetched_targets)
      }
      .await;
      (result, shallow_boundary_changed)
@@ -629,20 +518,17 @@ index c13a4ca743c129278f77643409a76dac86e52bdc..532feeaf01ec58d98ca53f683490df36
      ui: &mut Ui,
      command: &CommandHelper,
 diff --git a/cli/tests/cli-reference@.md.snap b/cli/tests/cli-reference@.md.snap
-index eccf944017697567362a43c1b783fa57d9675cd8..c88b566490cab6cb000d96621d7bbcd9a5ed094f 100644
+index ac123ce89028bb6f2e16e0d3e820ff5d0b3a676a..4a649082e4b56694e25ae1d4f4ed56f3e5f1f134 100644
 --- a/cli/tests/cli-reference@.md.snap
 +++ b/cli/tests/cli-reference@.md.snap
-@@ -1,8 +1,8 @@
+@@ -1,6 +1,5 @@
  ---
  source: cli/tests/test_generate_md_cli_help.rs
 -assertion_line: 45
  description: "AUTO-GENERATED FILE, DO NOT EDIT. This cli reference is generated by a test as an `insta` snapshot. MkDocs includes this snapshot from docs/cli-reference.md."
  ---
-+
- <!-- BEGIN MARKDOWN-->
  
- # Command-Line Help for `jj`
-@@ -65,13 +65,11 @@ This document contains the help content for the `jj` command-line program.
+@@ -66,13 +65,11 @@ This document contains the help content for the `jj` command-line program.
  * [`jj git fetch`↴](#jj-git-fetch)
  * [`jj git import`↴](#jj-git-import)
  * [`jj git init`↴](#jj-git-init)
@@ -658,7 +544,7 @@ index eccf944017697567362a43c1b783fa57d9675cd8..c88b566490cab6cb000d96621d7bbcd9
  * [`jj git ref push`↴](#jj-git-ref-push)
  * [`jj git remote`↴](#jj-git-remote)
  * [`jj git remote add`↴](#jj-git-remote-add)
-@@ -1607,7 +1605,6 @@ See this [comparison], including a [table of commands].
+@@ -1608,7 +1605,6 @@ See this [comparison], including a [table of commands].
  * `fetch` — Fetch from a Git remote
  * `import` — Update repo with changes made in the underlying Git repo
  * `init` — Create a new Git backed repo
@@ -666,7 +552,7 @@ index eccf944017697567362a43c1b783fa57d9675cd8..c88b566490cab6cb000d96621d7bbcd9
  * `push` — Push to a Git remote
  * `ref` — Manage raw Git refs
  * `remote` — Manage Git remotes
-@@ -1838,82 +1835,6 @@ Create a new Git backed repo
+@@ -1839,82 +1835,6 @@ Create a new Git backed repo
  
  
  
@@ -749,11 +635,11 @@ index eccf944017697567362a43c1b783fa57d9675cd8..c88b566490cab6cb000d96621d7bbcd9
  ## `jj git push`
  
  Push to a Git remote
-@@ -1987,28 +1908,74 @@ Manage raw Git refs
+@@ -1988,28 +1908,74 @@ Manage raw Git refs
  
  ###### **Subcommands:**
  
--* `fetch` — Fetch one raw ref or full commit ID from a Git remote
+-* `fetch` — Fetch raw refs or full commit IDs from a Git remote
 +* `fetch` — Fetch refs or commits from a Git remote
 +* `forget` — Forget a fetched Git ref
 +* `list` — List fetched Git refs
@@ -763,18 +649,17 @@ index eccf944017697567362a43c1b783fa57d9675cd8..c88b566490cab6cb000d96621d7bbcd9
  
  ## `jj git ref fetch`
  
--Fetch one raw ref or full commit ID from a Git remote
+-Fetch raw refs or full commit IDs from a Git remote
 +Fetch refs or commits from a Git remote
  
--The source can be a fully qualified remote ref such as GitHub's `refs/pull/123/head`, or a full Git commit ID
+-Each source can be a fully qualified remote ref such as GitHub's `refs/pull/123/head`, or a full Git commit ID.
 +A source can be a fully qualified remote ref such as GitHub's `refs/pull/123/head`, a ref pattern containing one `*`, or a full Git commit ID.
  
--**Usage:** `jj git ref fetch [OPTIONS] <REF>`
-+**Usage:** `jj git ref fetch [OPTIONS] <REF>...`
+ **Usage:** `jj git ref fetch [OPTIONS] <REF>...`
  
  ###### **Arguments:**
  
--* `<REF>` — The remote ref or full Git commit ID to fetch
+-* `<REF>` — The remote refs or full Git commit IDs to fetch
 +* `<REF>` — Refs, ref patterns, or full Git commit IDs to fetch
 +
 +   Ref names may be fully qualified (`refs/pull/123/head`) or omit the leading `refs/` (`pull/123/head`). A ref pattern may contain one `*`.
@@ -851,7 +736,7 @@ index 24091e60f71c4971ce14a64cd96e5211b3582bed..78d960efd15e95d12e3691f510c51701
      ");
  }
 diff --git a/cli/tests/test_completion.rs b/cli/tests/test_completion.rs
-index 99ce6f1ee07a464a4b9e7044894a079fa8690ff3..42bab82add62109cd7aeb89f15bda48032a203bc 100644
+index 0fa26b817a3e2a70e5818309352d6d88e4119e05..71ef03f18145d76b5fde1edcc295b0035a51387c 100644
 --- a/cli/tests/test_completion.rs
 +++ b/cli/tests/test_completion.rs
 @@ -1325,57 +1325,57 @@ fn test_operations() {
@@ -1402,10 +1287,10 @@ index 670150991a87a0914f28be252f68d25189597106..89091ca6e00dcefb559444c199c6ed8b
      ");
  
 diff --git a/cli/tests/test_git_fetch.rs b/cli/tests/test_git_fetch.rs
-index 7e073feb5469551c7655c3c2e071e35b35e22ea0..9d7dce98c56fa4e5c8775cfe355f83ec3379782b 100644
+index f21f27512646b84deec763a82697d68d1d78e4e0..1351d652113950ef64d1a758c7514eb318a3cc17 100644
 --- a/cli/tests/test_git_fetch.rs
 +++ b/cli/tests/test_git_fetch.rs
-@@ -255,7 +255,7 @@ fn test_git_ref_fetch_invalid_source() {
+@@ -291,7 +291,7 @@ fn test_git_ref_fetch_invalid_source() {
          ]),
          @r"
      ------- stderr -------
@@ -1414,7 +1299,7 @@ index 7e073feb5469551c7655c3c2e071e35b35e22ea0..9d7dce98c56fa4e5c8775cfe355f83ec
      [EOF]
      [exit status: 1]
      "
-@@ -393,6 +393,188 @@ fn test_git_ref_fetch_shallow_stack_with_parent() {
+@@ -429,6 +429,188 @@ fn test_git_ref_fetch_shallow_stack_with_parent() {
      );
  }
  
@@ -1603,7 +1488,7 @@ index 7e073feb5469551c7655c3c2e071e35b35e22ea0..9d7dce98c56fa4e5c8775cfe355f83ec
  #[test]
  fn test_git_ref_fetch_default_remote_from_config_glob() {
      let test_env = TestEnvironment::default();
-@@ -416,7 +598,7 @@ fn test_git_ref_fetch_default_remote_from_config_glob() {
+@@ -452,7 +634,7 @@ fn test_git_ref_fetch_default_remote_from_config_glob() {
  }
  
  #[test]
@@ -1612,7 +1497,7 @@ index 7e073feb5469551c7655c3c2e071e35b35e22ea0..9d7dce98c56fa4e5c8775cfe355f83ec
      let test_env = TestEnvironment::default();
      test_env.add_config(r#"git.fetch = ["upstream", "origin"]"#);
      test_env.run_jj_in(".", ["git", "init", "repo"]).success();
-@@ -425,20 +607,43 @@ fn test_git_ref_fetch_default_remote_from_config_list() {
+@@ -461,20 +643,43 @@ fn test_git_ref_fetch_default_remote_from_config_list() {
      let git_repo = add_git_remote(&test_env, &work_dir, "upstream");
      add_commit_to_ref(&git_repo, "refs/pull/123/head", "pr123", "pull request 123");
  
@@ -1660,7 +1545,7 @@ index 7e073feb5469551c7655c3c2e071e35b35e22ea0..9d7dce98c56fa4e5c8775cfe355f83ec
  #[test]
  fn test_git_ref_fetch_non_commit_ref_deletes_temporary_ref() -> TestResult {
      let test_env = TestEnvironment::default();
-@@ -463,7 +668,7 @@ fn test_git_ref_fetch_non_commit_ref_deletes_temporary_ref() -> TestResult {
+@@ -499,7 +704,7 @@ fn test_git_ref_fetch_non_commit_ref_deletes_temporary_ref() -> TestResult {
      ]);
      insta::assert_snapshot!(output, @r"
      ------- stderr -------
@@ -1669,7 +1554,7 @@ index 7e073feb5469551c7655c3c2e071e35b35e22ea0..9d7dce98c56fa4e5c8775cfe355f83ec
      [EOF]
      [exit status: 1]
      ");
-@@ -482,7 +687,7 @@ fn test_git_ref_fetch_non_commit_ref_deletes_temporary_ref() -> TestResult {
+@@ -518,7 +723,7 @@ fn test_git_ref_fetch_non_commit_ref_deletes_temporary_ref() -> TestResult {
  }
  
  #[test]
@@ -1678,7 +1563,7 @@ index 7e073feb5469551c7655c3c2e071e35b35e22ea0..9d7dce98c56fa4e5c8775cfe355f83ec
      let test_env = TestEnvironment::default();
      test_env.run_jj_in(".", ["git", "init", "repo"]).success();
      let work_dir = test_env.work_dir("repo");
-@@ -490,21 +695,17 @@ fn test_git_ref_fetch_wildcard_ref_rejected_before_fetch() -> TestResult {
+@@ -526,21 +731,17 @@ fn test_git_ref_fetch_wildcard_ref_rejected_before_fetch() -> TestResult {
      add_commit_to_ref(&git_repo, "refs/pull/123/head", "pr123", "pull request 123");
      add_commit_to_ref(&git_repo, "refs/pull/456/head", "pr456", "pull request 456");
  
@@ -1708,7 +1593,7 @@ index 7e073feb5469551c7655c3c2e071e35b35e22ea0..9d7dce98c56fa4e5c8775cfe355f83ec
      ");
  
      let git_root_output = work_dir.run_jj(["git", "root"]).success();
-@@ -519,6 +720,112 @@ fn test_git_ref_fetch_wildcard_ref_rejected_before_fetch() -> TestResult {
+@@ -555,6 +756,112 @@ fn test_git_ref_fetch_wildcard_ref_rejected_before_fetch() -> TestResult {
      Ok(())
  }
  
@@ -1731,8 +1616,8 @@ index 7e073feb5469551c7655c3c2e071e35b35e22ea0..9d7dce98c56fa4e5c8775cfe355f83ec
 +    ]);
 +    insta::assert_snapshot!(output, @r"
 +    ------- stderr -------
-+    Fetched refs/pull/123/head as spovxuoz 84c6f409 pull request 123
 +    Fetched refs/pull/456/head as mtrqwrwx 88d135c9 pull request 456
++    Fetched refs/pull/123/head as spovxuoz 84c6f409 pull request 123
 +    [EOF]
 +    ");
 +
@@ -1821,7 +1706,7 @@ index 7e073feb5469551c7655c3c2e071e35b35e22ea0..9d7dce98c56fa4e5c8775cfe355f83ec
  #[test]
  fn test_git_ref_fetch_invalid_ref_rejected_before_fetch() {
      let test_env = TestEnvironment::default();
-@@ -542,6 +849,26 @@ fn test_git_ref_fetch_invalid_ref_rejected_before_fetch() {
+@@ -578,6 +885,26 @@ fn test_git_ref_fetch_invalid_ref_rejected_before_fetch() {
      ");
  }
  
@@ -1848,7 +1733,7 @@ index 7e073feb5469551c7655c3c2e071e35b35e22ea0..9d7dce98c56fa4e5c8775cfe355f83ec
  #[test]
  fn test_git_ref_fetch_rejects_incompatible_remote_name_before_fetch() -> TestResult {
      let test_env = TestEnvironment::default();
-@@ -606,7 +933,7 @@ fn test_git_ref_fetch_default_remote_from_config_glob_multiple_matches() {
+@@ -642,7 +969,7 @@ fn test_git_ref_fetch_default_remote_from_config_glob_multiple_matches() {
      let output = work_dir.run_jj(["git", "ref", "fetch", "refs/pull/123/head"]);
      insta::assert_snapshot!(output, @r"
      ------- stderr -------
@@ -1857,7 +1742,7 @@ index 7e073feb5469551c7655c3c2e071e35b35e22ea0..9d7dce98c56fa4e5c8775cfe355f83ec
      Hint: Use `--remote` to select one remote for `jj git ref fetch`.
      [EOF]
      [exit status: 1]
-@@ -784,7 +1111,7 @@ fn test_git_ref_fetch_pins_commits_during_normal_fetch() {
+@@ -820,7 +1147,7 @@ fn test_git_ref_fetch_pins_commits_during_normal_fetch() {
  }
  
  #[test]
@@ -1866,7 +1751,7 @@ index 7e073feb5469551c7655c3c2e071e35b35e22ea0..9d7dce98c56fa4e5c8775cfe355f83ec
      let test_env = TestEnvironment::default();
      test_env.run_jj_in(".", ["git", "init", "repo"]).success();
      let work_dir = test_env.work_dir("repo");
-@@ -831,6 +1158,191 @@ fn test_git_ref_fetch_bookmark_new_edit_and_forget() {
+@@ -867,6 +1194,191 @@ fn test_git_ref_fetch_bookmark_new_edit_and_forget() {
      ");
  }
  
@@ -2058,7 +1943,7 @@ index 7e073feb5469551c7655c3c2e071e35b35e22ea0..9d7dce98c56fa4e5c8775cfe355f83ec
  #[test]
  fn test_git_ref_fetch_operation_diff() {
      let test_env = TestEnvironment::default();
-@@ -856,7 +1368,7 @@ fn test_git_ref_fetch_operation_diff() {
+@@ -892,7 +1404,7 @@ fn test_git_ref_fetch_operation_diff() {
          .success();
      insta::assert_snapshot!(work_dir.run_jj(["op", "diff", "--from", "@-", "--to", "@"]), @"
      From operation: 83cb949b8aa2 (2001-02-03 08:05:08) add git remote origin
@@ -2067,7 +1952,7 @@ index 7e073feb5469551c7655c3c2e071e35b35e22ea0..9d7dce98c56fa4e5c8775cfe355f83ec
  
      Changed commits:
      ○  + vrvtsttm b182bf31 pull request 123 v1
-@@ -885,8 +1397,8 @@ fn test_git_ref_fetch_operation_diff() {
+@@ -921,8 +1433,8 @@ fn test_git_ref_fetch_operation_diff() {
          ])
          .success();
      insta::assert_snapshot!(work_dir.run_jj(["op", "diff", "--from", "@-", "--to", "@"]), @r"
@@ -2078,7 +1963,7 @@ index 7e073feb5469551c7655c3c2e071e35b35e22ea0..9d7dce98c56fa4e5c8775cfe355f83ec
  
      Changed commits:
      ○  + zttwxqyv 0b54cc6a pull request 123 v2
-@@ -909,8 +1421,8 @@ fn test_git_ref_fetch_operation_diff() {
+@@ -945,8 +1457,8 @@ fn test_git_ref_fetch_operation_diff() {
          ])
          .success();
      insta::assert_snapshot!(work_dir.run_jj(["op", "diff", "--from", "@-", "--to", "@"]), @r"
@@ -2089,7 +1974,7 @@ index 7e073feb5469551c7655c3c2e071e35b35e22ea0..9d7dce98c56fa4e5c8775cfe355f83ec
  
      Changed fetched Git refs:
      refs/pull/123/head@origin:
-@@ -2734,7 +3246,7 @@ fn test_fetch_undo_what() {
+@@ -2770,7 +3282,7 @@ fn test_fetch_undo_what() {
      ]);
      insta::assert_snapshot!(output, @"
      ------- stderr -------
@@ -2098,7 +1983,7 @@ index 7e073feb5469551c7655c3c2e071e35b35e22ea0..9d7dce98c56fa4e5c8775cfe355f83ec
      [EOF]
      ");
      insta::assert_snapshot!(get_bookmark_output(&work_dir), @"
-@@ -3281,12 +3793,12 @@ fn test_git_fetch_remotely_rewritten() {
+@@ -3317,12 +3829,12 @@ fn test_git_fetch_remotely_rewritten() {
      insta::assert_snapshot!(output, @"
      ◆  kkmpptxz test.user@example.com 2001-02-03 08:05:14 book@origin 3ee37bc8
      │  (empty) bookmarked
@@ -3719,10 +3604,10 @@ index 4925459b310ef83197e689d470e70aec5ba49fd6..4cfd30e8328d124304f4515fd156de24
      ");
      Ok(())
 diff --git a/cli/tests/test_squash_command.rs b/cli/tests/test_squash_command.rs
-index 1b3466180674d44218e2935d0e180b3d57636866..7cf325f48f2cff0c4eb5aa4f328af9f5bfe0a481 100644
+index 7c88eab50c2d23fdf22bd9354dee5943e59e8a55..624ffdc7ec37616b493d6b00b50fa4e78baa1b26 100644
 --- a/cli/tests/test_squash_command.rs
 +++ b/cli/tests/test_squash_command.rs
-@@ -2222,7 +2222,7 @@ fn test_squash_to_new_commit() -> TestResult {
+@@ -2271,7 +2271,7 @@ fn test_squash_to_new_commit() -> TestResult {
      insta::assert_snapshot!(output, @"
      ○  nsrwusvy test.user@example.com 2001-02-03 08:05:42 c2183685
         (empty) (no description set)
@@ -3731,7 +3616,7 @@ index 1b3466180674d44218e2935d0e180b3d57636866..7cf325f48f2cff0c4eb5aa4f328af9f5
      [EOF]
      ");
  
-@@ -2266,7 +2266,7 @@ fn test_squash_to_new_commit() -> TestResult {
+@@ -2315,7 +2315,7 @@ fn test_squash_to_new_commit() -> TestResult {
      insta::assert_snapshot!(output, @"
      ○  wtlqussy test.user@example.com 2001-02-03 08:05:46 7eff41c8
         (empty) (no description set)
@@ -3740,7 +3625,7 @@ index 1b3466180674d44218e2935d0e180b3d57636866..7cf325f48f2cff0c4eb5aa4f328af9f5
      [EOF]
      ");
  
-@@ -2313,10 +2313,10 @@ fn test_squash_to_new_commit() -> TestResult {
+@@ -2362,10 +2362,10 @@ fn test_squash_to_new_commit() -> TestResult {
      insta::assert_snapshot!(output, @"
      ○  pyoswmwk test.user@example.com 2001-02-03 08:05:50 991d0644
      │  (empty) (no description set)
@@ -3849,16 +3734,16 @@ index b847af5e3453cd9111629bb00c860fb7f342fa31..f02ad0b6e6cc14bed1030a19538c168f
      ○  000000000000 root()
      [EOF]
 diff --git a/docs/git-compatibility.md b/docs/git-compatibility.md
-index f36647f9ef4a651d0d4a1252b5278059dc78ae59..98edab9549c6c2189458dc5c5c1e5ec7a5e328a5 100644
+index 280d46790f926085e9d4b7ef6e607ef0cad071a3..98edab9549c6c2189458dc5c5c1e5ec7a5e328a5 100644
 --- a/docs/git-compatibility.md
 +++ b/docs/git-compatibility.md
 @@ -100,17 +100,28 @@ your choice by adding `--remote <remote name>` to the `jj git clone` command.
  
  ## Fetching and pushing refs that are not branches or tags
  
--Use `jj git ref fetch --remote <remote> <ref-or-commit-id>` to fetch one raw Git
--ref, such as a GitHub pull request ref, or one full Git commit ID. Fetched refs
--are stored in Jujutsu's operation history without creating a Git
+-Use `jj git ref fetch --remote <remote> <ref-or-commit-id>...` to fetch raw Git
+-refs, such as GitHub pull request refs, or full Git commit IDs. Fetched refs are
+-stored in Jujutsu's operation history without creating a Git
 -remote-tracking branch, so they survive ordinary `jj git fetch` commands and
 -can be undone or restored like other Jujutsu state.
 +Use `jj git ref fetch --remote <remote> <ref>...` to fetch one or more raw Git
@@ -3887,203 +3772,206 @@ index f36647f9ef4a651d0d4a1252b5278059dc78ae59..98edab9549c6c2189458dc5c5c1e5ec7
  In an existing shallow repository, the `git.fetch-depth` setting supplies the
  default depth for both `jj git fetch` and `jj git ref fetch`.
 diff --git a/lib/src/git.rs b/lib/src/git.rs
-index 0b50b1a813ef298bfdbe2843a4bdbcc05e539f24..8c9137cc6ae39ebfe364ea10ebca319bb1cb75bc 100644
+index 0073cc21d9eabbbb9fcb8b5e7c03293deec7d34d..54a6e59cdc70853a4b0719a204fc8e0efaf17878 100644
 --- a/lib/src/git.rs
 +++ b/lib/src/git.rs
-@@ -3316,11 +3316,12 @@ impl<'a> GitFetch<'a> {
-             };
+@@ -3583,6 +3583,158 @@ pub fn fetch_commits_with_options(
+     (result, shallow_boundary_changed)
+ }
  
-             if let Some(excluded_source) = shallow_exclude {
--                let excluded_ref = gix::refs::PartialName::try_from(excluded_source).map_err(|_| {
--                    GitFetchError::InvalidSource {
--                        fetch_source: excluded_source.to_owned(),
--                    }
--                })?;
-+                let excluded_ref =
-+                    gix::refs::PartialName::try_from(excluded_source).map_err(|_| {
-+                        GitFetchError::InvalidSource {
-+                            fetch_source: excluded_source.to_owned(),
-+                        }
-+                    })?;
-                 check_status(self.spawn_fetch_with_options(
-                     remote_name,
-                     std::slice::from_ref(&refspec),
-@@ -3352,8 +3353,8 @@ impl<'a> GitFetch<'a> {
-                 .git_repo
-                 .find_reference(temporary_ref_name.as_str())
-                 .map_err(|_| GitFetchError::NoSuchSource {
--                        remote: remote_name.to_owned(),
--                        fetch_source: source.to_owned(),
-+                    remote: remote_name.to_owned(),
-+                    fetch_source: source.to_owned(),
-                 })?;
-             let commit_id = resolve_git_ref_to_commit_id(&reference, None).ok_or_else(|| {
-                 GitFetchError::NotACommit {
-@@ -3371,6 +3372,129 @@ impl<'a> GitFetch<'a> {
-         }
-     }
- 
-+    /// Fetches all refs matching a fully-qualified ref pattern and resolves
-+    /// their targets to commits.
-+    #[tracing::instrument(skip(self, callback))]
-+    pub fn fetch_ref_pattern(
-+        &mut self,
-+        remote_name: &RemoteName,
-+        pattern: &str,
-+        callback: &mut dyn GitSubprocessCallback,
-+        depth: Option<NonZeroU32>,
-+        shallow_exclude: Option<&str>,
-+    ) -> Result<Vec<(GitRefNameBuf, CommitId)>, GitFetchError> {
-+        validate_remote_name(remote_name)?;
-+        if pattern.matches('*').count() != 1
-+            || !pattern.starts_with("refs/")
-+            || gix::refs::FullName::try_from(pattern.replace('*', "x").as_str()).is_err()
-+        {
-+            return Err(GitFetchError::InvalidSource {
++/// Fetches all refs matching a fully-qualified ref pattern and resolves their
++/// targets to commits.
++///
++/// The boolean reports whether the Git shallow boundary changed, including
++/// when the fetch itself failed.
++#[tracing::instrument(skip(store, subprocess_options, callback))]
++pub fn fetch_ref_pattern_with_options(
++    store: &Store,
++    subprocess_options: GitSubprocessOptions,
++    remote_name: &RemoteName,
++    pattern: &str,
++    callback: &mut dyn GitSubprocessCallback,
++    depth: Option<NonZeroU32>,
++    shallow_exclude: Option<&str>,
++) -> (Result<Vec<(GitRefNameBuf, CommitId)>, GitFetchError>, bool) {
++    if let Err(err) = validate_remote_name(remote_name) {
++        return (Err(err.into()), false);
++    }
++    if pattern.matches('*').count() != 1
++        || !pattern.starts_with("refs/")
++        || gix::refs::FullName::try_from(pattern.replace('*', "x").as_str()).is_err()
++    {
++        return (
++            Err(GitFetchError::InvalidSource {
++                fetch_source: pattern.to_owned(),
++            }),
++            false,
++        );
++    }
++    let shallow_exclude = match shallow_exclude {
++        Some(source) => match gix::refs::PartialName::try_from(source) {
++            Ok(source) => Some(source),
++            Err(_) => {
++                return (
++                    Err(GitFetchError::InvalidSource {
++                        fetch_source: source.to_owned(),
++                    }),
++                    false,
++                );
++            }
++        },
++        None => None,
++    };
++
++    let git_backend = match get_git_backend(store) {
++        Ok(backend) => backend,
++        Err(err) => return (Err(err.into()), false),
++    };
++    let mut git_repo = git_backend.git_repo();
++    let mut shallow_commits = match read_shallow_commits(&git_repo) {
++        Ok(commits) => commits,
++        Err(err) => return (Err(err), false),
++    };
++    if try_find_active_remote_inner(&git_repo, remote_name).is_none() {
++        return (
++            Err(GitFetchError::NoSuchRemote(remote_name.to_owned())),
++            false,
++        );
++    }
++    let git_ctx = GitSubprocessContext::from_git_backend(git_backend, subprocess_options);
++
++    let random_bytes = rand::random::<[u8; 16]>();
++    let destination_prefix = format!(
++        "{TEMPORARY_FETCH_REF_NAMESPACE}{}/",
++        crate::hex_util::encode_hex(&random_bytes)
++    );
++    let destination_pattern = format!("{destination_prefix}{pattern}");
++    let refspec = RefSpec::forced(pattern, destination_pattern);
++    let no_negative_refspecs = [];
++    let mut shallow_boundary_changed = false;
++    let fetch_result = (|| {
++        let mut spawn_fetch = |shallow| {
++            let fetch_status = git_ctx.spawn_fetch_with_options(
++                remote_name,
++                std::slice::from_ref(&refspec),
++                &no_negative_refspecs,
++                callback,
++                shallow,
++            );
++            shallow_boundary_changed |=
++                refresh_git_shallow_state(store, &mut git_repo, &mut shallow_commits)?;
++            fetch_status.map_err(GitFetchError::from)
++        };
++        let check_status = |status| match status {
++            GitFetchStatus::Updates(updates) if updates.rejected.is_empty() => Ok(updates),
++            GitFetchStatus::Updates(updates) => {
++                let names = updates.rejected.into_iter().map(|(name, _)| name).collect();
++                Err(GitFetchError::RejectedUpdates(names))
++            }
++            GitFetchStatus::NoRemoteRef(_) => Err(GitFetchError::NoSuchSource {
++                remote: remote_name.to_owned(),
++                fetch_source: pattern.to_owned(),
++            }),
++        };
++
++        let updates = if let Some(excluded_source) = shallow_exclude {
++            let updates = check_status(spawn_fetch(Shallow::Exclude {
++                remote_refs: vec![excluded_source],
++                since_cutoff: None,
++            })?)?;
++            check_status(spawn_fetch(Shallow::Deepen(1))?)?;
++            updates
++        } else {
++            check_status(spawn_fetch(
++                depth.map_or(Shallow::NoChange, Shallow::DepthAtRemote),
++            )?)?
++        };
++
++        if updates.updated.is_empty() {
++            return Err(GitFetchError::NoSuchSource {
++                remote: remote_name.to_owned(),
 +                fetch_source: pattern.to_owned(),
 +            });
 +        }
-+        if try_find_active_remote_inner(&self.git_repo, remote_name).is_none() {
-+            return Err(GitFetchError::NoSuchRemote(remote_name.to_owned()));
-+        }
-+
-+        let random_bytes = rand::random::<[u8; 16]>();
-+        let destination_prefix = format!(
-+            "{TEMPORARY_FETCH_REF_NAMESPACE}{}/",
-+            crate::hex_util::encode_hex(&random_bytes)
-+        );
-+        let destination_pattern = format!("{destination_prefix}{pattern}");
-+        let refspec = RefSpec::forced(pattern, destination_pattern);
-+        let no_negative_refspecs = [];
-+        let fetch_result = (|| {
-+            let check_status = |status| match status {
-+                GitFetchStatus::Updates(updates) if updates.rejected.is_empty() => Ok(updates),
-+                GitFetchStatus::Updates(updates) => {
-+                    let names = updates.rejected.into_iter().map(|(name, _)| name).collect();
-+                    Err(GitFetchError::RejectedUpdates(names))
-+                }
-+                GitFetchStatus::NoRemoteRef(_) => Err(GitFetchError::NoSuchSource {
-+                    remote: remote_name.to_owned(),
-+                    fetch_source: pattern.to_owned(),
-+                }),
-+            };
-+
-+            let updates = if let Some(excluded_source) = shallow_exclude {
-+                let excluded_ref =
-+                    gix::refs::PartialName::try_from(excluded_source).map_err(|_| {
-+                        GitFetchError::InvalidSource {
-+                            fetch_source: excluded_source.to_owned(),
-+                        }
-+                    })?;
-+                let updates = check_status(self.spawn_fetch_with_options(
-+                    remote_name,
-+                    std::slice::from_ref(&refspec),
-+                    &no_negative_refspecs,
-+                    callback,
-+                    Shallow::Exclude {
-+                        remote_refs: vec![excluded_ref],
-+                        since_cutoff: None,
-+                    },
-+                )?)?;
-+                check_status(self.spawn_fetch_with_options(
-+                    remote_name,
-+                    std::slice::from_ref(&refspec),
-+                    &no_negative_refspecs,
-+                    callback,
-+                    Shallow::Deepen(1),
-+                )?)?;
-+                updates
-+            } else {
-+                check_status(self.spawn_fetch(
-+                    remote_name,
-+                    std::slice::from_ref(&refspec),
-+                    &no_negative_refspecs,
-+                    callback,
-+                    depth,
-+                )?)?
-+            };
-+
-+            if updates.updated.is_empty() {
-+                return Err(GitFetchError::NoSuchSource {
-+                    remote: remote_name.to_owned(),
-+                    fetch_source: pattern.to_owned(),
-+                });
-+            }
-+            updates
-+                .updated
-+                .into_iter()
-+                .map(|(destination_name, _)| {
-+                    let source_name = destination_name
-+                        .as_str()
-+                        .strip_prefix(&destination_prefix)
-+                        .expect("fetch destination should use the temporary prefix");
-+                    let reference = self
-+                        .git_repo
++        updates
++            .updated
++            .into_iter()
++            .map(|(destination_name, _)| {
++                let source_name = destination_name
++                    .as_str()
++                    .strip_prefix(&destination_prefix)
++                    .expect("fetch destination should use the temporary prefix");
++                let reference =
++                    git_repo
 +                        .find_reference(destination_name.as_str())
 +                        .map_err(|_| GitFetchError::NoSuchSource {
 +                            remote: remote_name.to_owned(),
 +                            fetch_source: source_name.to_owned(),
 +                        })?;
-+                    let commit_id =
-+                        resolve_git_ref_to_commit_id(&reference, None).ok_or_else(|| {
-+                            GitFetchError::NotACommit {
-+                                remote: remote_name.to_owned(),
-+                                fetch_source: source_name.to_owned(),
-+                            }
-+                        })?;
-+                    Ok((
-+                        GitRefNameBuf::from(source_name),
-+                        CommitId::from_bytes(commit_id.as_bytes()),
-+                    ))
-+                })
-+                .collect()
-+        })();
-+        let cleanup_result = self.delete_temporary_fetch_refs(&destination_prefix);
-+        match (fetch_result, cleanup_result) {
-+            (Ok(targets), Ok(())) => Ok(targets),
-+            (Err(err), _) => Err(err),
-+            (Ok(_), Err(err)) => Err(err),
-+        }
-+    }
++                let commit_id =
++                    resolve_git_ref_to_commit_id(&reference, None).ok_or_else(|| {
++                        GitFetchError::NotACommit {
++                            remote: remote_name.to_owned(),
++                            fetch_source: source_name.to_owned(),
++                        }
++                    })?;
++                Ok((
++                    GitRefNameBuf::from(source_name),
++                    CommitId::from_bytes(commit_id.as_bytes()),
++                ))
++            })
++            .collect()
++    })();
++    let cleanup_result = delete_temporary_fetch_refs(&git_repo, &destination_prefix);
++    let result = match (fetch_result, cleanup_result) {
++        (Ok(targets), Ok(())) => Ok(targets),
++        (Err(err), _) => Err(err),
++        (Ok(_), Err(err)) => Err(err),
++    };
++    (result, shallow_boundary_changed)
++}
 +
-     fn delete_temporary_fetch_ref(&self, ref_name: &GitRefName) -> Result<(), GitFetchError> {
-         let reference = self
-             .git_repo
-@@ -3390,6 +3514,34 @@ impl<'a> GitFetch<'a> {
-         Ok(())
-     }
+ fn delete_temporary_fetch_ref(
+     git_repo: &gix::Repository,
+     ref_name: &GitRefName,
+@@ -3604,6 +3756,37 @@ fn delete_temporary_fetch_ref(
+     Ok(())
+ }
  
-+    fn delete_temporary_fetch_refs(&self, prefix: &str) -> Result<(), GitFetchError> {
-+        let references = self.git_repo.references().map_err(|err| {
++fn delete_temporary_fetch_refs(
++    git_repo: &gix::Repository,
++    prefix: &str,
++) -> Result<(), GitFetchError> {
++    let references = git_repo.references().map_err(|err| {
++        GitSubprocessError::External(format!(
++            "failed to inspect temporary Git refs under {prefix}: {err}"
++        ))
++    })?;
++    let edits: Vec<_> = references
++        .prefixed(prefix)
++        .map_err(|err| {
++            GitSubprocessError::External(format!(
++                "failed to inspect temporary Git refs under {prefix}: {err}"
++            ))
++        })?
++        .map_ok(remove_ref)
++        .try_collect()
++        .map_err(|err| {
 +            GitSubprocessError::External(format!(
 +                "failed to inspect temporary Git refs under {prefix}: {err}"
 +            ))
 +        })?;
-+        let edits: Vec<_> = references
-+            .prefixed(prefix)
-+            .map_err(|err| {
-+                GitSubprocessError::External(format!(
-+                    "failed to inspect temporary Git refs under {prefix}: {err}"
-+                ))
-+            })?
-+            .map_ok(remove_ref)
-+            .try_collect()
-+            .map_err(|err| {
-+                GitSubprocessError::External(format!(
-+                    "failed to inspect temporary Git refs under {prefix}: {err}"
-+                ))
-+            })?;
-+        self.git_repo.edit_references(edits).map_err(|err| {
-+            GitSubprocessError::External(format!(
-+                "failed to delete temporary Git refs under {prefix}: {err}"
-+            ))
-+        })?;
-+        Ok(())
-+    }
++    git_repo.edit_references(edits).map_err(|err| {
++        GitSubprocessError::External(format!(
++            "failed to delete temporary Git refs under {prefix}: {err}"
++        ))
++    })?;
++    Ok(())
++}
 +
-     /// Queries remote for the default branch name.
-     #[tracing::instrument(skip(self))]
-     pub fn get_default_branch(
+ #[derive(Error, Debug)]
+ pub enum GitPushError {
+     #[error("No git remote named '{}'", .0.as_symbol())]
 diff --git a/lib/src/git_subprocess.rs b/lib/src/git_subprocess.rs
 index 7b702b49be86d386ca6192aa84df4ac0d0900492..364254f453be530dbc2b7972eb975decbd12fa2c 100644
 --- a/lib/src/git_subprocess.rs
@@ -4096,49 +3984,3 @@ index 7b702b49be86d386ca6192aa84df4ac0d0900492..364254f453be530dbc2b7972eb975dec
      pub updated: Vec<(GitRefNameBuf, Diff<gix::ObjectId>)>,
      /// Git ref `(name, (old_oid, new_oid)`s that are rejected or failed to
      /// update.
-diff --git a/lib/tests/test_git.rs b/lib/tests/test_git.rs
-index 01857db0548ad9a50a98588764616414cf6d2081..eaf0f3cd6ecb61d783e5a5e3d36345750e932b86 100644
---- a/lib/tests/test_git.rs
-+++ b/lib/tests/test_git.rs
-@@ -4045,6 +4045,7 @@ fn test_fetch_commit_from_ref() -> TestResult {
-         "refs/pull/123/head",
-         &mut NullCallback,
-         None,
-+        None,
-     )?;
-     drop(fetcher);
- 
-@@ -4080,6 +4081,7 @@ fn test_fetch_commit_by_id() -> TestResult {
-         &commit_id.to_string(),
-         &mut NullCallback,
-         None,
-+        None,
-     )?;
-     drop(fetcher);
- 
-@@ -4104,7 +4106,13 @@ fn test_fetch_commit_cleans_up_non_commit_target() -> TestResult {
- 
-     let mut tx = test_data.repo.start_transaction();
-     let mut fetcher = GitFetch::new(tx.repo_mut(), subprocess_options, &import_options)?;
--    let result = fetcher.fetch_commit("origin".as_ref(), "refs/meta/blob", &mut NullCallback, None);
-+    let result = fetcher.fetch_commit(
-+        "origin".as_ref(),
-+        "refs/meta/blob",
-+        &mut NullCallback,
-+        None,
-+        None,
-+    );
- 
-     assert_matches!(result, Err(GitFetchError::NotACommit { .. }));
-     assert!(
-@@ -4131,6 +4139,7 @@ fn test_fetch_commit_rejects_invalid_source() -> TestResult {
-         "refs/pull/../head",
-         &mut NullCallback,
-         None,
-+        None,
-     );
- 
-     assert_matches!(
--- 
-2.55.0
-

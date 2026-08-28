@@ -1,17 +1,12 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 174e213be498185e3c060ec960606e9fba3a0ca9 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Thu, 1 Jan 1970 00:00:00 +0000
+Date: Fri, 28 Aug 2026 01:04:00 +0300
 Subject: metaedit: parameterize the commit edit transaction
 
-Add explicit transaction policy for status text, target signing, and
-descendant metadata preservation. Keep metaedit's default behavior
-unchanged while allowing sibling commands to reuse the same rewrite path
-with different policies.
----
- cli/src/commands/metaedit.rs |   68 ++++++++++++++++++++++++++++++++++++-------
- 1 file changed, 58 insertions(+), 10 deletions(-)
+Add explicit transaction policy for status text, target signing, and descendant metadata preservation. Keep metaedit's default behavior unchanged while allowing sibling commands to reuse the same rewrite path with different policies.
 
 diff --git a/cli/src/commands/metaedit.rs b/cli/src/commands/metaedit.rs
+index be88bfd0f7ee6bf8a13600cfb1826b32b75fbdb9..6bc79c9df1c280c8f8731ae781d130ec2c8c70c5 100644
 --- a/cli/src/commands/metaedit.rs
 +++ b/cli/src/commands/metaedit.rs
 @@ -18,7 +18,10 @@ use clap_complete::ArgValueCompleter;

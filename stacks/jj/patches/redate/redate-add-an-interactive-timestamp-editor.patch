@@ -1,37 +1,17 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 9f53c1210122f3ee742726407e47c2242c2725f8 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Thu, 1 Jan 1970 00:00:00 +0000
+Date: Fri, 28 Aug 2026 01:04:00 +0300
 Subject: redate: add an interactive timestamp editor
 
-Add a revision picker that renders jj's topologically grouped graph
-with the configured graph style, log node template, and a
-command-specific row template. Use the same working-copy-oriented
-default revset as other history-editing commands.
+Add a revision picker that renders jj's topologically grouped graph with the configured graph style, log node template, and a command-specific row template. Use the same working-copy-oriented default revset as other history-editing commands.
 
-Apply exact timestamps through the shared metadata transaction.
-Preserve descendant metadata with jj's standard keep signing behavior,
-and make signing selected revisions opt-in with --sign.
----
- CHANGELOG.md                     |    4 
- cli/src/commands/metaedit.rs     |   19 +
- cli/src/commands/mod.rs          |    3 
- cli/src/commands/redate.rs       |  476 +++++++++++++++++++++++++++++++++++++++
- cli/src/config-schema.json       |    9 
- cli/src/config/colors.toml       |    7 
- cli/src/config/revsets.toml      |    1 
- cli/src/config/templates.toml    |    7 
- cli/tests/cli-reference@.md.snap |   18 +
- cli/tests/runner.rs              |    1 
- cli/tests/test_redate_command.rs |  143 +++++++++++
- docs/config.md                   |   26 ++
- 12 files changed, 714 insertions(+)
- create mode 100644 cli/src/commands/redate.rs
- create mode 100644 cli/tests/test_redate_command.rs
+Apply exact timestamps through the shared metadata transaction. Preserve descendant metadata with jj's standard keep signing behavior, and make signing selected revisions opt-in with --sign.
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
+index cf113f6df28084465cefa75b6fb3a362b5f0e89c..491f108cb1485d79a9d2e40bb1ba71af14b3c3c2 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -51,6 +51,10 @@ to [Semantic Versioning](https://semver.
+@@ -54,6 +54,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
    repositories. `jj git ref fetch --shallow-exclude` can fetch a review stack
    plus one parent generation for a usable diff base.
  
@@ -41,7 +21,9 @@ diff --git a/CHANGELOG.md b/CHANGELOG.md
 +
  ### Fixed bugs
  
- * `jj git push` now warns when `git.sign-on-push` selects immutable commits
+ * `jj arrange` now scrolls the viewport to keep the selected commit visible
+diff --git a/cli/src/commands/metaedit.rs b/cli/src/commands/metaedit.rs
+index 6bc79c9df1c280c8f8731ae781d130ec2c8c70c5..5fa01179f99061cabc56ecdf0dc0cb86cac3e855 100644
 --- a/cli/src/commands/metaedit.rs
 +++ b/cli/src/commands/metaedit.rs
 @@ -169,6 +169,15 @@ pub(crate) struct CommitEditArgs {
@@ -60,11 +42,10 @@ diff --git a/CHANGELOG.md b/CHANGELOG.md
  #[derive(Clone, Copy)]
  pub(crate) struct CommitEditOptions {
      transaction_action: &'static str,
-@@ -185,6 +194,16 @@ impl Default for CommitEditOptions {
-         }
+@@ -186,6 +195,16 @@ impl Default for CommitEditOptions {
      }
  }
-+
+ 
 +impl CommitEditOptions {
 +    pub(crate) fn redate(force_sign: bool) -> Self {
 +        Self {
@@ -74,9 +55,12 @@ diff --git a/CHANGELOG.md b/CHANGELOG.md
 +        }
 +    }
 +}
- 
++
  #[instrument(skip_all)]
  pub(crate) async fn cmd_metaedit(
+     ui: &mut Ui,
+diff --git a/cli/src/commands/mod.rs b/cli/src/commands/mod.rs
+index e2a55b887893e5e4222dee1b2f59cf161a724d95..63e954800c568f6031812651b1a431f9ea2920ea 100644
 --- a/cli/src/commands/mod.rs
 +++ b/cli/src/commands/mod.rs
 @@ -45,6 +45,7 @@ mod operation;
@@ -95,7 +79,7 @@ diff --git a/CHANGELOG.md b/CHANGELOG.md
      Redo(redo::RedoArgs),
      Resolve(resolve::ResolveArgs),
      Restore(restore::RestoreArgs),
-@@ -208,6 +210,7 @@ pub async fn run_command(ui: &mut Ui, co
+@@ -208,6 +210,7 @@ pub async fn run_command(ui: &mut Ui, command_helper: &CommandHelper) -> Result<
          Command::Parallelize(args) => parallelize::cmd_parallelize(ui, command_helper, args).await,
          Command::Prev(args) => prev::cmd_prev(ui, command_helper, args).await,
          Command::Rebase(args) => rebase::cmd_rebase(ui, command_helper, args).await,
@@ -103,6 +87,9 @@ diff --git a/CHANGELOG.md b/CHANGELOG.md
          Command::Redo(args) => redo::cmd_redo(ui, command_helper, args).await,
          Command::Resolve(args) => resolve::cmd_resolve(ui, command_helper, args).await,
          Command::Restore(args) => restore::cmd_restore(ui, command_helper, args).await,
+diff --git a/cli/src/commands/redate.rs b/cli/src/commands/redate.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..974c35f5f684e68ab72ea2a0e9bb9d8fdc66ac3c
 --- /dev/null
 +++ b/cli/src/commands/redate.rs
 @@ -0,0 +1,476 @@
@@ -582,9 +569,11 @@ diff --git a/CHANGELOG.md b/CHANGELOG.md
 +        Ok(())
 +    }
 +}
+diff --git a/cli/src/config-schema.json b/cli/src/config-schema.json
+index 625ec6b7775a15c90cfa56f1b64bb2660951bfb7..65652a178471857cf348a7b930b051ef555ec37b 100644
 --- a/cli/src/config-schema.json
 +++ b/cli/src/config-schema.json
-@@ -741,6 +741,11 @@
+@@ -742,6 +742,11 @@
                      "description": "Default set of revisions to run a command on when no explicit revset is given for jj run",
                      "default": "reachable(@, mutable())"
                  },
@@ -596,7 +585,7 @@ diff --git a/CHANGELOG.md b/CHANGELOG.md
                  "simplify-parents": {
                      "type": "string",
                      "description": "Default set of revisions to simplify when no explicit revset is given for jj simplify-parents",
-@@ -1074,6 +1079,10 @@
+@@ -1075,6 +1080,10 @@
                      "type": "string",
                      "description": "`jj arrange``'s template for commits in the main view"
                  },
@@ -607,6 +596,8 @@ diff --git a/CHANGELOG.md b/CHANGELOG.md
                  "bookmark_list": {
                      "type": "string",
                      "description": "`jj bookmark list`'s output"
+diff --git a/cli/src/config/colors.toml b/cli/src/config/colors.toml
+index 76e5534287fced1d1293b762601710fd28f58949..6172ab4413f4bd9981731ad0ef5e14b2225c1b6f 100644
 --- a/cli/src/config/colors.toml
 +++ b/cli/src/config/colors.toml
 @@ -118,3 +118,10 @@
@@ -620,6 +611,8 @@ diff --git a/CHANGELOG.md b/CHANGELOG.md
 +"redate commit change" = { fg = "cyan", bold = true }
 +"redate commit empty" = { fg = "bright black", italic = true }
 +"redate commit timestamp" = "bright black"
+diff --git a/cli/src/config/revsets.toml b/cli/src/config/revsets.toml
+index 5cdd1f2057d5c510d9e35475c256bdfd98406cbb..0b7f0f243a7e195300e885a20c6c1889335354f1 100644
 --- a/cli/src/config/revsets.toml
 +++ b/cli/src/config/revsets.toml
 @@ -7,6 +7,7 @@ converge = "mutable() & divergent()"
@@ -630,9 +623,11 @@ diff --git a/CHANGELOG.md b/CHANGELOG.md
  # log revset is also used as the default short-prefixes. If it failed to
  # evaluate, lengthy warning messages would be printed. Use present(expr) if
  # symbols in expr might not always exist.
+diff --git a/cli/src/config/templates.toml b/cli/src/config/templates.toml
+index afdb50828cfd5aba473eb26353d1e1a8a23cca5e..41db1f48091f471f7b69a72fb1ef2b7e3d34dbfe 100644
 --- a/cli/src/config/templates.toml
 +++ b/cli/src/config/templates.toml
-@@ -3,6 +3,13 @@ bookmark_list = 'format_commit_ref(self,
+@@ -3,6 +3,13 @@ bookmark_list = 'format_commit_ref(self, "bookmark") ++ "\n"'
  
  commit_summary = 'format_commit_summary_with_refs(self, format_commit_ref_names(bookmarks))'
  arrange = 'builtin_log_compact'
@@ -646,9 +641,11 @@ diff --git a/CHANGELOG.md b/CHANGELOG.md
  
  file_annotate = '''
  join(" ",
+diff --git a/cli/tests/cli-reference@.md.snap b/cli/tests/cli-reference@.md.snap
+index 1ceee6ffc755efa7aacca58e7af7cb1776b3c54e..8765ce08edb6647dc2c91c3b32a736c3ea49bd38 100644
 --- a/cli/tests/cli-reference@.md.snap
 +++ b/cli/tests/cli-reference@.md.snap
-@@ -95,6 +95,7 @@ This document contains the help content
+@@ -95,6 +95,7 @@ This document contains the help content for the `jj` command-line program.
  * [`jj parallelize`↴](#jj-parallelize)
  * [`jj prev`↴](#jj-prev)
  * [`jj rebase`↴](#jj-rebase)
@@ -656,7 +653,7 @@ diff --git a/CHANGELOG.md b/CHANGELOG.md
  * [`jj redo`↴](#jj-redo)
  * [`jj resolve`↴](#jj-resolve)
  * [`jj restore`↴](#jj-restore)
-@@ -182,6 +183,7 @@ To get started, see the tutorial [`jj he
+@@ -182,6 +183,7 @@ To get started, see the tutorial [`jj help -k tutorial`].
  * `parallelize` — Parallelize revisions by making them siblings
  * `prev` — Change the working copy revision relative to the parent revision
  * `rebase` — Move revisions to different parent(s)
@@ -687,6 +684,8 @@ diff --git a/CHANGELOG.md b/CHANGELOG.md
  ## `jj redo`
  
  Redo the most recently undone operation
+diff --git a/cli/tests/runner.rs b/cli/tests/runner.rs
+index b790cc57d49aa441e47bd02c72e27722ea60b104..860410ad5f72e07f80c6df5bbeecb7c6a51bb984 100644
 --- a/cli/tests/runner.rs
 +++ b/cli/tests/runner.rs
 @@ -69,6 +69,7 @@ mod test_op_revert_command;
@@ -697,6 +696,9 @@ diff --git a/CHANGELOG.md b/CHANGELOG.md
  mod test_repo_change_report;
  mod test_resolve_command;
  mod test_restore_command;
+diff --git a/cli/tests/test_redate_command.rs b/cli/tests/test_redate_command.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..0f29d396f89d652ae2d824dc86fb0d475190f648
 --- /dev/null
 +++ b/cli/tests/test_redate_command.rs
 @@ -0,0 +1,143 @@
@@ -843,6 +845,8 @@ diff --git a/CHANGELOG.md b/CHANGELOG.md
 +        .raw()
 +        .to_owned()
 +}
+diff --git a/docs/config.md b/docs/config.md
+index cb6e039d8c5253da9ce15fd8dc7eebe03001fd48..705ec927da41a4e4ce20cc0ee8397c1e5ddd5bf9 100644
 --- a/docs/config.md
 +++ b/docs/config.md
 @@ -1594,6 +1594,32 @@ this setting for a single invocation:

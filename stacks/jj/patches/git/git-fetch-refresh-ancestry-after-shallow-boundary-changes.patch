@@ -1,8 +1,7 @@
-From 68ccf2a5ec0eb86dcfc7b987edd730c55d1ebf13 Mon Sep 17 00:00:00 2001
+From f5dc502652dc3235bc0866485acdf5a57a7d973b Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Thu, 1 Jan 1970 00:00:00 +0000
-Subject: git fetch: refresh ancestry after shallow boundary
- changes
+Date: Fri, 28 Aug 2026 01:04:00 +0300
+Subject: git fetch: refresh ancestry after shallow boundary changes
 
 Allow regular fetches to deepen an existing shallow repository and add
 the lower-level depth, deepen, and exclusion controls needed by raw-ref
@@ -11,13 +10,14 @@ caches, and rebuild the commit index so newly available ancestors are
 immediately queryable, including after failed fetches
 
 diff --git a/cli/src/command_error.rs b/cli/src/command_error.rs
-index 261898d369688e7eea4f5f9f2702855973652c21..671120d3215d9617fccd17cca696357915177dd8 100644
+index 3664fcf87d39607975da9d4782531679f19e94be..54d81243a6d5eea2657aa5d798abf63a4cc4f45d 100644
 --- a/cli/src/command_error.rs
 +++ b/cli/src/command_error.rs
-@@ -589,7 +589,10 @@ jj currently does not support partial clones. To use jj with this repository, tr
+@@ -589,8 +589,10 @@ jj currently does not support partial clones. To use jj with this repository, tr
                  }
                  GitFetchError::RejectedUpdates(_)
                  | GitFetchError::TemporaryRefCleanup { .. }
+-                | GitFetchError::UnexpectedBackend(_)
 -                | GitFetchError::Subprocess(_) => user_error(err),
 +                | GitFetchError::Subprocess(_)
 +                | GitFetchError::ShallowCommits(_)
@@ -27,7 +27,7 @@ index 261898d369688e7eea4f5f9f2702855973652c21..671120d3215d9617fccd17cca6963579
          }
      }
 diff --git a/cli/src/commands/git/fetch.rs b/cli/src/commands/git/fetch.rs
-index 5bb2d823acfbccaa4a951e78a322053f3e6f27a4..5937af902005f8c15836944f64cf0f22b635775e 100644
+index 2514757320d4a616f1cf13cde21c756c96e474e1..d2845231b2474dbac3a91f528af220ea267abf11 100644
 --- a/cli/src/commands/git/fetch.rs
 +++ b/cli/src/commands/git/fetch.rs
 @@ -13,6 +13,7 @@
@@ -38,7 +38,7 @@ index 5bb2d823acfbccaa4a951e78a322053f3e6f27a4..5937af902005f8c15836944f64cf0f22
  
  use clap_complete::ArgValueCandidates;
  use itertools::Itertools as _;
-@@ -125,6 +126,13 @@ pub struct GitFetchArgs {
+@@ -123,6 +124,13 @@ pub struct GitFetchArgs {
      /// Fetch from all remotes
      #[arg(long, conflicts_with = "remotes")]
      all_remotes: bool,
@@ -52,7 +52,7 @@ index 5bb2d823acfbccaa4a951e78a322053f3e6f27a4..5937af902005f8c15836944f64cf0f22
  }
  
  #[tracing::instrument(skip_all)]
-@@ -232,34 +240,51 @@ pub async fn cmd_git_fetch(
+@@ -230,34 +238,51 @@ pub async fn cmd_git_fetch(
      }
  
      let git_settings = GitSettings::from_settings(tx.settings())?;
@@ -120,12 +120,12 @@ index 5bb2d823acfbccaa4a951e78a322053f3e6f27a4..5937af902005f8c15836944f64cf0f22
 +    reinit_result
  }
  
- const DEFAULT_REMOTE: &RemoteName = RemoteName::new("origin");
+ fn warn_if_branches_not_found(
 diff --git a/cli/src/commands/git/mod.rs b/cli/src/commands/git/mod.rs
-index 9e43a2d40217f70e66d1764dfedfd1a1bca2d48b..f03c416e1f23fc75068644002be1a515ea40ad3a 100644
+index 83495bf3e73f14b0f142f8626d4a4ee427d2e439..c2f294ff3ceba5886a953c8da399a4d8e505e91e 100644
 --- a/cli/src/commands/git/mod.rs
 +++ b/cli/src/commands/git/mod.rs
-@@ -24,18 +24,22 @@ mod remote;
+@@ -24,15 +24,21 @@ mod remote;
  mod root;
  
  use std::io::Write as _;
@@ -136,19 +136,18 @@ index 9e43a2d40217f70e66d1764dfedfd1a1bca2d48b..f03c416e1f23fc75068644002be1a515
 +use jj_lib::config::ConfigGetResultExt as _;
  use jj_lib::config::ConfigLayer;
  use jj_lib::config::ConfigSource;
- use jj_lib::git;
- use jj_lib::git::UnexpectedGitBackendError;
++use jj_lib::git;
 +use jj_lib::index::IndexStore;
  use jj_lib::ref_name::RemoteName;
- use jj_lib::ref_name::RemoteNameBuf;
  use jj_lib::ref_name::RemoteRefSymbol;
  use jj_lib::ref_name::RemoteRefSymbolBuf;
  use jj_lib::revset;
 +use jj_lib::settings::UserSettings;
- use jj_lib::store::Store;
++use jj_lib::store::Store;
  use r#ref::RefCommand;
  use r#ref::cmd_git_ref;
-@@ -62,6 +66,7 @@ use self::root::cmd_git_root;
+ 
+@@ -58,6 +64,7 @@ use self::root::cmd_git_root;
  use crate::cli_util::CommandHelper;
  use crate::cli_util::WorkspaceCommandHelper;
  use crate::command_error::CommandError;
@@ -156,7 +155,7 @@ index 9e43a2d40217f70e66d1764dfedfd1a1bca2d48b..f03c416e1f23fc75068644002be1a515
  use crate::command_error::user_error_with_message;
  use crate::config::ConfigEnv;
  use crate::config::RawConfig;
-@@ -113,6 +118,37 @@ pub async fn cmd_git(
+@@ -109,6 +116,37 @@ pub async fn cmd_git(
      }
  }
  
@@ -194,24 +193,11 @@ index 9e43a2d40217f70e66d1764dfedfd1a1bca2d48b..f03c416e1f23fc75068644002be1a515
  pub fn maybe_add_gitignore(workspace_command: &WorkspaceCommandHelper) -> Result<(), CommandError> {
      if workspace_command.working_copy_shared_with_git() {
          std::fs::write(
-diff --git a/cli/src/commands/git/ref/fetch.rs b/cli/src/commands/git/ref/fetch.rs
-index 5d81c7319c48c334e41e7f09f871a5bcadf045ee..9550c494217dd7e4fdb1a34bd5ad74b582ed42c7 100644
---- a/cli/src/commands/git/ref/fetch.rs
-+++ b/cli/src/commands/git/ref/fetch.rs
-@@ -184,7 +184,7 @@ async fn do_fetch(
-     )?;
- 
-     let mut callback = GitSubprocessUi::new(ui);
--    let commit_id = git_fetch.fetch_commit(remote_name, source, &mut callback, None)?;
-+    let commit_id = git_fetch.fetch_commit(remote_name, source, &mut callback, None, None)?;
-     let commit = import_commit(tx.repo_mut(), commit_id).await?;
-     if let Some(mut formatter) = ui.status_formatter() {
-         write!(formatter, "Fetched {source} as ")?;
 diff --git a/cli/src/config-schema.json b/cli/src/config-schema.json
-index 4ff0790b87577fb71b8e8dd70e04afa9c67ebd65..e379ccd463ec380c50509e748daa0bce86e0047c 100644
+index e48edbb45c82adfd7abce87712c5f132a7683e83..e604e2412a385824dde0505b27a953110dc9a7b7 100644
 --- a/cli/src/config-schema.json
 +++ b/cli/src/config-schema.json
-@@ -514,6 +514,11 @@
+@@ -515,6 +515,11 @@
                          }
                      ]
                  },
@@ -224,10 +210,10 @@ index 4ff0790b87577fb71b8e8dd70e04afa9c67ebd65..e379ccd463ec380c50509e748daa0bce
                      "type": "string",
                      "description": "Revset of commits to refuse to push to remotes",
 diff --git a/cli/tests/cli-reference@.md.snap b/cli/tests/cli-reference@.md.snap
-index 1043d3d7da0b0b4a58567caa41aab72e3f735429..3d80f813a62d7bcf831241b335bdacf671045517 100644
+index 35b864712ae12b5f25adc91daa94c75450d9ae11..df9cbf2c07e104940bf6ac303661539f3b15fb8d 100644
 --- a/cli/tests/cli-reference@.md.snap
 +++ b/cli/tests/cli-reference@.md.snap
-@@ -1766,6 +1766,9 @@ If a working-copy commit gets abandoned, it will be given a new, empty commit. T
+@@ -1767,6 +1767,9 @@ If a working-copy commit gets abandoned, it will be given a new, empty commit. T
  
     [string pattern syntax]: https://docs.jj-vcs.dev/latest/revsets/#string-patterns
  * `--all-remotes` — Fetch from all remotes
@@ -259,10 +245,10 @@ index edf0492ad154e3a679e8f7ff3d71ffb7e09999ae..f42fee952ec0a99039368561707bf993
  record-synthetic-predecessors = false
  sign-on-push = true
 diff --git a/cli/tests/test_git_fetch.rs b/cli/tests/test_git_fetch.rs
-index faf4a3ff28ed85321428584dbf36337802171869..bc4402fe8074fc46a8e7e8514e2870a6c13d554d 100644
+index 5a4456b10cd24ba527ea8752c793b92533caba2c..a8020bc2987d73495daafc22acf3d4fb35a24789 100644
 --- a/cli/tests/test_git_fetch.rs
 +++ b/cli/tests/test_git_fetch.rs
-@@ -3634,6 +3634,51 @@ fn test_git_fetch_tracked_multiple_remotes() {
+@@ -3670,6 +3670,51 @@ fn test_git_fetch_tracked_multiple_remotes() {
      ");
  }
  
@@ -315,18 +301,18 @@ index faf4a3ff28ed85321428584dbf36337802171869..bc4402fe8074fc46a8e7e8514e2870a6
  fn test_git_fetch_auto_track_bookmarks() {
      let test_env = TestEnvironment::default();
 diff --git a/lib/src/git.rs b/lib/src/git.rs
-index e47c84d173be806c23ce8f1f584440dbf4136dc7..c3f1b2d4b7a0bd9a7a5179946e2e858ead659de2 100644
+index a7a9768d87723ac03815d6048273f49a5695132d..de2a69071cf4608f017feacd6dfff55b88ee41b8 100644
 --- a/lib/src/git.rs
 +++ b/lib/src/git.rs
-@@ -31,6 +31,7 @@ use bstr::BString;
- use futures::StreamExt as _;
+@@ -33,6 +33,7 @@ use futures::StreamExt as _;
  use futures::TryStreamExt as _;
  use futures::stream;
-+use gix::remote::fetch::Shallow;
  use gix::refspec::Instruction;
++use gix::remote::fetch::Shallow;
  use itertools::Itertools as _;
  use thiserror::Error;
-@@ -2758,6 +2759,12 @@ pub enum GitFetchError {
+ 
+@@ -2812,6 +2813,10 @@ pub enum GitFetchError {
      RejectedUpdates(Vec<GitRefNameBuf>),
      #[error(transparent)]
      Subprocess(#[from] GitSubprocessError),
@@ -334,12 +320,10 @@ index e47c84d173be806c23ce8f1f584440dbf4136dc7..c3f1b2d4b7a0bd9a7a5179946e2e858e
 +    ShallowCommits(#[source] gix::shallow::read::Error),
 +    #[error("Failed to refresh Git repository after shallow boundary changed")]
 +    RefreshShallowState(#[source] Box<gix::open::Error>),
-+    #[error(transparent)]
-+    UnexpectedBackend(#[from] UnexpectedGitBackendError),
  }
  
  #[derive(Error, Debug)]
-@@ -3103,6 +3110,8 @@ pub struct GitFetch<'a> {
+@@ -3157,6 +3162,8 @@ pub struct GitFetch<'a> {
      git_ctx: GitSubprocessContext,
      import_options: &'a GitImportOptions,
      fetched: Vec<FetchedRefs>,
@@ -348,7 +332,7 @@ index e47c84d173be806c23ce8f1f584440dbf4136dc7..c3f1b2d4b7a0bd9a7a5179946e2e858e
  }
  
  impl<'a> GitFetch<'a> {
-@@ -3110,9 +3119,10 @@ impl<'a> GitFetch<'a> {
+@@ -3164,9 +3171,10 @@ impl<'a> GitFetch<'a> {
          mut_repo: &'a mut MutableRepo,
          subprocess_options: GitSubprocessOptions,
          import_options: &'a GitImportOptions,
@@ -360,7 +344,7 @@ index e47c84d173be806c23ce8f1f584440dbf4136dc7..c3f1b2d4b7a0bd9a7a5179946e2e858e
          let git_ctx = GitSubprocessContext::from_git_backend(git_backend, subprocess_options);
          Ok(GitFetch {
              mut_repo,
-@@ -3120,9 +3130,68 @@ impl<'a> GitFetch<'a> {
+@@ -3174,9 +3182,60 @@ impl<'a> GitFetch<'a> {
              git_ctx,
              import_options,
              fetched: vec![],
@@ -370,19 +354,11 @@ index e47c84d173be806c23ce8f1f584440dbf4136dc7..c3f1b2d4b7a0bd9a7a5179946e2e858e
      }
  
 +    fn refresh_shallow_state(&mut self) -> Result<(), GitFetchError> {
-+        // A Git subprocess may update the shallow file without changing its
-+        // modification time, so force gix to drop its file snapshot first.
-+        self.git_repo
-+            .reload()
-+            .map_err(|err| GitFetchError::RefreshShallowState(Box::new(err)))?;
-+        let shallow_commits = read_shallow_commits(&self.git_repo)?;
-+        if shallow_commits != self.shallow_commits {
-+            let git_backend = get_git_backend(self.mut_repo.store())?;
-+            git_backend
-+                .refresh_shallow_state()
-+                .map_err(GitFetchError::RefreshShallowState)?;
-+            self.mut_repo.store().clear_caches();
-+            self.shallow_commits = shallow_commits;
++        if refresh_git_shallow_state(
++            self.mut_repo.store(),
++            &mut self.git_repo,
++            &mut self.shallow_commits,
++        )? {
 +            self.shallow_boundary_changed = true;
 +        }
 +        Ok(())
@@ -429,7 +405,7 @@ index e47c84d173be806c23ce8f1f584440dbf4136dc7..c3f1b2d4b7a0bd9a7a5179946e2e858e
      /// Perform a `git fetch` on the local git repo, updating the
      /// remote-tracking branches in the git repo.
      ///
-@@ -3161,7 +3230,7 @@ impl<'a> GitFetch<'a> {
+@@ -3215,7 +3274,7 @@ impl<'a> GitFetch<'a> {
          // even more unfortunately, git errors out one refspec at a time,
          // meaning that the below cycle runs in O(#failed refspecs)
          let updates = loop {
@@ -438,91 +414,7 @@ index e47c84d173be806c23ce8f1f584440dbf4136dc7..c3f1b2d4b7a0bd9a7a5179946e2e858e
                  remote_name,
                  &remaining_refspecs,
                  &negative_refspecs,
-@@ -3210,6 +3279,7 @@ impl<'a> GitFetch<'a> {
-         source: &str,
-         callback: &mut dyn GitSubprocessCallback,
-         depth: Option<NonZeroU32>,
-+        shallow_exclude: Option<&str>,
-     ) -> Result<CommitId, GitFetchError> {
-         validate_remote_name(remote_name)?;
-         if <&gix::refs::PartialNameRef>::try_from(source).is_err() {
-@@ -3233,32 +3303,57 @@ impl<'a> GitFetch<'a> {
-         let refspec = RefSpec::forced(source, temporary_ref_name.as_str());
-         let no_negative_refspecs = [];
-         let fetch_result = (|| {
--            let updates = match self.git_ctx.spawn_fetch(
--                remote_name,
--                std::slice::from_ref(&refspec),
--                &no_negative_refspecs,
--                callback,
--                depth,
--            )? {
--                GitFetchStatus::Updates(updates) => updates,
--                GitFetchStatus::NoRemoteRef(_) => {
--                    return Err(GitFetchError::NoSuchSource {
--                        remote: remote_name.to_owned(),
--                        fetch_source: source.to_owned(),
--                    });
-+            let check_status = |status| match status {
-+                GitFetchStatus::Updates(updates) if updates.rejected.is_empty() => Ok(()),
-+                GitFetchStatus::Updates(updates) => {
-+                    let names = updates.rejected.into_iter().map(|(name, _)| name).collect();
-+                    Err(GitFetchError::RejectedUpdates(names))
-                 }
-+                GitFetchStatus::NoRemoteRef(_) => Err(GitFetchError::NoSuchSource {
-+                    remote: remote_name.to_owned(),
-+                    fetch_source: source.to_owned(),
-+                }),
-             };
--            if !updates.rejected.is_empty() {
--                let names = updates.rejected.into_iter().map(|(name, _)| name).collect();
--                return Err(GitFetchError::RejectedUpdates(names));
-+
-+            if let Some(excluded_source) = shallow_exclude {
-+                let excluded_ref = gix::refs::PartialName::try_from(excluded_source).map_err(|_| {
-+                    GitFetchError::InvalidSource {
-+                        fetch_source: excluded_source.to_owned(),
-+                    }
-+                })?;
-+                check_status(self.spawn_fetch_with_options(
-+                    remote_name,
-+                    std::slice::from_ref(&refspec),
-+                    &no_negative_refspecs,
-+                    callback,
-+                    Shallow::Exclude {
-+                        remote_refs: vec![excluded_ref],
-+                        since_cutoff: None,
-+                    },
-+                )?)?;
-+                check_status(self.spawn_fetch_with_options(
-+                    remote_name,
-+                    std::slice::from_ref(&refspec),
-+                    &no_negative_refspecs,
-+                    callback,
-+                    Shallow::Deepen(1),
-+                )?)?;
-+            } else {
-+                check_status(self.spawn_fetch(
-+                    remote_name,
-+                    std::slice::from_ref(&refspec),
-+                    &no_negative_refspecs,
-+                    callback,
-+                    depth,
-+                )?)?;
-             }
- 
-             let reference = self
-                 .git_repo
-                 .find_reference(temporary_ref_name.as_str())
-                 .map_err(|_| GitFetchError::NoSuchSource {
--                    remote: remote_name.to_owned(),
--                    fetch_source: source.to_owned(),
-+                        remote: remote_name.to_owned(),
-+                        fetch_source: source.to_owned(),
-                 })?;
-             let commit_id = resolve_git_ref_to_commit_id(&reference, None).ok_or_else(|| {
-                 GitFetchError::NotACommit {
-@@ -3343,6 +3438,18 @@ impl<'a> GitFetch<'a> {
+@@ -3304,6 +3363,41 @@ impl<'a> GitFetch<'a> {
  
          Ok(import_stats)
      }
@@ -538,11 +430,63 @@ index e47c84d173be806c23ce8f1f584440dbf4136dc7..c3f1b2d4b7a0bd9a7a5179946e2e858e
 +        .shallow_commits()
 +        .map_err(GitFetchError::ShallowCommits)?
 +        .map_or_else(Vec::new, |commits| commits.iter().copied().collect()))
++}
++
++fn refresh_git_shallow_state(
++    store: &Store,
++    git_repo: &mut gix::Repository,
++    previous_shallow_commits: &mut Vec<gix::ObjectId>,
++) -> Result<bool, GitFetchError> {
++    // A Git subprocess may update the shallow file without changing its
++    // modification time, so force gix to drop its file snapshot first.
++    git_repo
++        .reload()
++        .map_err(|err| GitFetchError::RefreshShallowState(Box::new(err)))?;
++    let shallow_commits = read_shallow_commits(git_repo)?;
++    if shallow_commits == *previous_shallow_commits {
++        return Ok(false);
++    }
++    let git_backend = get_git_backend(store)?;
++    git_backend
++        .refresh_shallow_state()
++        .map_err(GitFetchError::RefreshShallowState)?;
++    store.clear_caches();
++    *previous_shallow_commits = shallow_commits;
++    Ok(true)
  }
  
- #[derive(Error, Debug)]
+ /// Fetches the commits identified by raw refs or full commit IDs.
+@@ -3329,7 +3423,8 @@ pub fn fetch_commits(
+     }
+ 
+     let git_backend = get_git_backend(store)?;
+-    let git_repo = git_backend.git_repo();
++    let mut git_repo = git_backend.git_repo();
++    let mut shallow_commits = read_shallow_commits(&git_repo)?;
+     if try_find_active_remote_inner(&git_repo, remote_name).is_none() {
+         return Err(GitFetchError::NoSuchRemote(remote_name.to_owned()));
+     }
+@@ -3355,13 +3450,15 @@ pub fn fetch_commits(
+         .collect_vec();
+     let no_negative_refspecs = [];
+     let fetch_result = (|| {
+-        let updates = match git_ctx.spawn_fetch(
++        let fetch_status = git_ctx.spawn_fetch_with_options(
+             remote_name,
+             &refspecs,
+             &no_negative_refspecs,
+             callback,
+-            depth,
+-        )? {
++            depth.map_or(Shallow::NoChange, Shallow::DepthAtRemote),
++        );
++        refresh_git_shallow_state(store, &mut git_repo, &mut shallow_commits)?;
++        let updates = match fetch_status? {
+             GitFetchStatus::Updates(updates) => updates,
+             GitFetchStatus::NoRemoteRef(fetch_source) => {
+                 return Err(GitFetchError::NoSuchSource {
 diff --git a/lib/src/git_backend.rs b/lib/src/git_backend.rs
-index a09defdc83091f2e228d97507b54c404e9730afb..76a22764dab3523b926cea7d38b8ce79b91cf788 100644
+index edf870bcc3c10a46259d5adc9e40e4c829f2b67b..7a6d3fa5fa3f1f67371b6fbdfe0e180ee93d5a8d 100644
 --- a/lib/src/git_backend.rs
 +++ b/lib/src/git_backend.rs
 @@ -44,7 +44,6 @@ use gix::objs::Exists as _;
@@ -553,7 +497,7 @@ index a09defdc83091f2e228d97507b54c404e9730afb..76a22764dab3523b926cea7d38b8ce79
  use pollster::FutureExt as _;
  use prost::Message as _;
  use smallvec::SmallVec;
-@@ -175,7 +174,7 @@ pub struct GitBackend {
+@@ -188,7 +187,7 @@ pub struct GitBackend {
      root_commit_id: CommitId,
      root_change_id: ChangeId,
      empty_tree_id: TreeId,
@@ -562,7 +506,7 @@ index a09defdc83091f2e228d97507b54c404e9730afb..76a22764dab3523b926cea7d38b8ce79
      extra_metadata_store: TableStore,
      cached_extra_metadata: Mutex<Option<Arc<ReadonlyTable>>>,
      git_executable: PathBuf,
-@@ -203,7 +202,7 @@ impl GitBackend {
+@@ -216,7 +215,7 @@ impl GitBackend {
              root_commit_id,
              root_change_id,
              empty_tree_id,
@@ -571,17 +515,17 @@ index a09defdc83091f2e228d97507b54c404e9730afb..76a22764dab3523b926cea7d38b8ce79
              extra_metadata_store,
              cached_extra_metadata: Mutex::new(None),
              git_executable: git_settings.executable_path,
-@@ -354,7 +353,7 @@ impl GitBackend {
- 
-     /// Returns new thread-local instance to access to the underlying Git repo.
+@@ -369,7 +368,7 @@ impl GitBackend {
+     ///
+     /// Use [`Self::open_git_repo_at_workdir()`] for worktree operations.
      pub fn git_repo(&self) -> gix::Repository {
 -        self.base_repo.to_thread_local()
 +        self.repo.lock().unwrap().clone()
      }
  
-     /// Path to the `.git` directory or the repository itself if it's bare.
-@@ -367,23 +366,35 @@ impl GitBackend {
-         self.base_repo.work_dir()
+     /// Reopens the repository at the given workspace path. Returns a new
+@@ -415,23 +414,35 @@ impl GitBackend {
+         self.base_repo.path()
      }
  
 -    fn shallow_root_ids(&self, git_repo: &gix::Repository) -> BackendResult<&[CommitId]> {
@@ -630,7 +574,7 @@ index a09defdc83091f2e228d97507b54c404e9730afb..76a22764dab3523b926cea7d38b8ce79
      }
  
      fn cached_extra_metadata_table(&self) -> BackendResult<Arc<ReadonlyTable>> {
-@@ -456,12 +467,13 @@ impl GitBackend {
+@@ -504,12 +515,13 @@ impl GitBackend {
          );
          let (table, table_lock) = self.read_extra_metadata_table_locked()?;
          let mut mut_table = table.start_mutation();
@@ -732,10 +676,10 @@ index ecda0f69e063d8ab2805102c70972f5680fc47dc..3be56080279e5ef1ea25593af7c0946e
          self.commit_cache.lock().unwrap().clear();
          self.tree_cache.lock().unwrap().clear();
 diff --git a/lib/tests/test_git.rs b/lib/tests/test_git.rs
-index e02277dbafe7ff9a0aa8af25bcdf3399372ed530..01857db0548ad9a50a98588764616414cf6d2081 100644
+index b8313765bc45df159f6e6b3f574cff47b6154c20..a5d91430448e874116b487b06ff093c3b48916d6 100644
 --- a/lib/tests/test_git.rs
 +++ b/lib/tests/test_git.rs
-@@ -6670,8 +6670,20 @@ fn test_shallow_commits_lack_parents() -> TestResult {
+@@ -6879,8 +6879,20 @@ fn test_shallow_commits_lack_parents() -> TestResult {
          "shallow commits have the root commit as a parent"
      );
  
@@ -758,6 +702,3 @@ index e02277dbafe7ff9a0aa8af25bcdf3399372ed530..01857db0548ad9a50a98588764616414
  
      let mut tx = repo.start_transaction();
      git::import_refs(tx.repo_mut(), &import_options).block_on()?;
--- 
-2.55.0
-

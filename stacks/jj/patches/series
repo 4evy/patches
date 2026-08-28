@@ -1,5 +1,3 @@
-git/git-fetch-and-import-one-raw-ref.patch
-git/cli-git-add-raw-ref-fetch-command.patch
 git/git-support-unconditional-raw-ref-updates.patch
 git/cli-git-add-raw-ref-push-command.patch
 git/git-persist-fetched-refs-in-repo-view.patch

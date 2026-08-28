@@ -1,6 +1,6 @@
-From 104c12cdb1054de6b8470e976b4880b607101fb2 Mon Sep 17 00:00:00 2001
+From 440e02cc116ace68943043d7cc054c17bb719c8d Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Thu, 1 Jan 1970 00:00:00 +0000
+Date: Fri, 28 Aug 2026 01:04:00 +0300
 Subject: test: update operation IDs for fetched ref state
 
 Persisting fetched refs changes repository-view serialization and
@@ -123,7 +123,7 @@ index 56f0effe8fdc39fcc0be545aaa2cf46977fcb3e2..24091e60f71c4971ce14a64cd96e5211
      ");
  
 diff --git a/cli/tests/test_completion.rs b/cli/tests/test_completion.rs
-index a82205d68eefed5dfba06701b0a4dc409681b8c8..99ce6f1ee07a464a4b9e7044894a079fa8690ff3 100644
+index 825de11104cb02142b493c87663b09f86477288d..0fa26b817a3e2a70e5818309352d6d88e4119e05 100644
 --- a/cli/tests/test_completion.rs
 +++ b/cli/tests/test_completion.rs
 @@ -1311,16 +1311,16 @@ fn test_operations() {
@@ -561,10 +561,10 @@ index 4bde2e178a6e16a039c8ee80c2955f0096fa4fd0..670150991a87a0914f28be252f68d251
      Parent commit (@-)      : qpvuntsm e8849ae1 (empty) (no description set)
      [EOF]
 diff --git a/cli/tests/test_git_fetch.rs b/cli/tests/test_git_fetch.rs
-index 8b010ca7d15a17e44b870817a3b801fcd2cc5172..7e073feb5469551c7655c3c2e071e35b35e22ea0 100644
+index d6c908769396228018ecb5dcec138e2cc45ee667..f21f27512646b84deec763a82697d68d1d78e4e0 100644
 --- a/cli/tests/test_git_fetch.rs
 +++ b/cli/tests/test_git_fetch.rs
-@@ -854,9 +854,9 @@ fn test_git_ref_fetch_operation_diff() {
+@@ -890,9 +890,9 @@ fn test_git_ref_fetch_operation_diff() {
              "refs/pull/123/head",
          ])
          .success();
@@ -577,7 +577,7 @@ index 8b010ca7d15a17e44b870817a3b801fcd2cc5172..7e073feb5469551c7655c3c2e071e35b
  
      Changed commits:
      ○  + vrvtsttm b182bf31 pull request 123 v1
-@@ -2611,8 +2611,8 @@ fn test_git_fetch_undo() {
+@@ -2647,8 +2647,8 @@ fn test_git_fetch_undo() {
      let output = target_dir.run_jj(["undo"]);
      insta::assert_snapshot!(output, @"
      ------- stderr -------
@@ -588,7 +588,7 @@ index 8b010ca7d15a17e44b870817a3b801fcd2cc5172..7e073feb5469551c7655c3c2e071e35b
      [EOF]
      ");
      // The undo works as expected
-@@ -2702,7 +2702,7 @@ fn test_fetch_undo_what() {
+@@ -2738,7 +2738,7 @@ fn test_fetch_undo_what() {
      let output = work_dir.run_jj(["op", "restore", "--what", "repo", &base_operation_id]);
      insta::assert_snapshot!(output, @"
      ------- stderr -------
@@ -597,7 +597,7 @@ index 8b010ca7d15a17e44b870817a3b801fcd2cc5172..7e073feb5469551c7655c3c2e071e35b
      [EOF]
      ");
      insta::assert_snapshot!(get_bookmark_output(&work_dir), @"
-@@ -3242,12 +3242,12 @@ fn test_git_fetch_remotely_rewritten() {
+@@ -3278,12 +3278,12 @@ fn test_git_fetch_remotely_rewritten() {
      insta::assert_snapshot!(output, @"
      ◆  kkmpptxz test.user@example.com 2001-02-03 08:05:14 book@origin 3ee37bc8
      │  (empty) bookmarked
@@ -612,7 +612,7 @@ index 8b010ca7d15a17e44b870817a3b801fcd2cc5172..7e073feb5469551c7655c3c2e071e35b
      ○  qpvuntsm/1 test.user@example.com 2001-02-03 08:05:08 97604bbe (hidden)
         (empty) original
      [EOF]
-@@ -3454,17 +3454,17 @@ fn test_git_fetch_remotely_rewritten_descendants() {
+@@ -3490,17 +3490,17 @@ fn test_git_fetch_remotely_rewritten_descendants() {
      insta::assert_snapshot!(output, @"
      ◆  mzvwutvl test.user@example.com 2001-02-03 08:05:16 book2@origin 3faff772
      │  (empty) bookmarked 2
@@ -1217,10 +1217,10 @@ index 9c9fd8c9a2ef777627a068e116c435358cd1c8f3..4925459b310ef83197e689d470e70aec
      ");
  
 diff --git a/cli/tests/test_squash_command.rs b/cli/tests/test_squash_command.rs
-index 766a656172af1eb05db0526018cf472e07c8d8cc..1b3466180674d44218e2935d0e180b3d57636866 100644
+index 63bbcb72e261467440c61e424dea86f13d9d17ac..7c88eab50c2d23fdf22bd9354dee5943e59e8a55 100644
 --- a/cli/tests/test_squash_command.rs
 +++ b/cli/tests/test_squash_command.rs
-@@ -2124,31 +2124,31 @@ fn test_squash_to_new_commit() -> TestResult {
+@@ -2173,31 +2173,31 @@ fn test_squash_to_new_commit() -> TestResult {
      insta::assert_snapshot!(output, @"
      ○    pkstwlsy test.user@example.com 2001-02-03 08:05:35 41510a56
      ├─╮  file 3&4
@@ -1409,20 +1409,6 @@ index be7256dea408de668c0a915a1aa0f3b6a6c19891..b847af5e3453cd9111629bb00c860fb7
      │  add workspace 'default'
      ○  000000000000 root()
      [EOF]
-diff --git a/lib/src/git.rs b/lib/src/git.rs
-index c3f1b2d4b7a0bd9a7a5179946e2e858ead659de2..0b50b1a813ef298bfdbe2843a4bdbcc05e539f24 100644
---- a/lib/src/git.rs
-+++ b/lib/src/git.rs
-@@ -31,8 +31,8 @@ use bstr::BString;
- use futures::StreamExt as _;
- use futures::TryStreamExt as _;
- use futures::stream;
--use gix::remote::fetch::Shallow;
- use gix::refspec::Instruction;
-+use gix::remote::fetch::Shallow;
- use itertools::Itertools as _;
- use thiserror::Error;
- 
 diff --git a/lib/tests/test_operations.rs b/lib/tests/test_operations.rs
 index fee2240257b64abb827086fb2c8420a2998e4941..be44fdb6d4a025926d9a5afee74716e3135aad1c 100644
 --- a/lib/tests/test_operations.rs
@@ -1500,6 +1486,3 @@ index fee2240257b64abb827086fb2c8420a2998e4941..be44fdb6d4a025926d9a5afee74716e3
      Ok(())
  }
  
--- 
-2.55.0
-

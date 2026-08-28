@@ -1,6 +1,6 @@
-From 5ef365dc526eb83a1007ab28b135f92d15e65c53 Mon Sep 17 00:00:00 2001
+From f9bab05f449aeed1f9f771f2cca851bebde33552 Mon Sep 17 00:00:00 2001
 From: Josh McKinney <joshka@users.noreply.github.com>
-Date: Thu, 1 Jan 1970 00:00:00 +0000
+Date: Fri, 28 Aug 2026 01:04:00 +0300
 Subject: git: persist fetched refs in repo view
 
 Store fetched Git refs in the view so one-off fetches can survive
@@ -21,10 +21,10 @@ index ee158d940c60edb7fafca1f6b292f9ad72a93e4c..e10c6d9dbe7297d85fe456809a95407f
      }
  }
 diff --git a/lib/src/git.rs b/lib/src/git.rs
-index 7c075df5a855fa52ecd045cf26cae0b85269c73a..e47c84d173be806c23ce8f1f584440dbf4136dc7 100644
+index 5676a8a533c8089f08336df17c8a36344d4f6b92..a7a9768d87723ac03815d6048273f49a5695132d 100644
 --- a/lib/src/git.rs
 +++ b/lib/src/git.rs
-@@ -1161,16 +1161,26 @@ fn default_remote_ref_state_for(
+@@ -1162,16 +1162,26 @@ fn default_remote_ref_state_for(
      }
  }
  
@@ -443,6 +443,3 @@ index db1972f1de164827e54ab50c308258029c3aede9..93c1758534972faaa179752c384fb535
              git_heads.values().flat_map(ref_target_ids),
              wc_commit_ids.values()
          )
--- 
-2.55.0
-

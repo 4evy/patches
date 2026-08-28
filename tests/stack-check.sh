@@ -48,7 +48,19 @@ for stack in "$@"; do
         exit 1
     fi
 
-    ruby --disable-gems "$root/cmd/brew-patches.rb" check "$stack" "$source"
+    ruby --disable-gems "$root/cmd/brew-patches.rb" \
+        apply "$stack" "$source" >/dev/null
+
+    expected_tree=$(manifest_value "$manifest" result.tree.oid)
+    if [ -n "$expected_tree" ]; then
+        git -C "$source" add --all
+        actual_tree=$(git -C "$source" write-tree)
+        if [ "$actual_tree" != "$expected_tree" ]; then
+            printf 'expected %s result tree %s, produced %s\n' \
+                "$stack" "$expected_tree" "$actual_tree" >&2
+            exit 1
+        fi
+    fi
 done
 
 printf 'Checked %s real patch stack%s.\n' "$#" \

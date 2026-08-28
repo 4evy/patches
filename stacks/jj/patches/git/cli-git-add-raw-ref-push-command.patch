@@ -1,6 +1,6 @@
-From 2a9d3540740ebdfa5b918236d3457bce4945dcf0 Mon Sep 17 00:00:00 2001
+From 3a5e274e402925655d8ab22711de2d39f7f58158 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Thu, 1 Jan 1970 00:00:00 +0000
+Date: Fri, 28 Aug 2026 01:04:00 +0300
 Subject: cli: git: add raw ref push command
 
 Code review systems and other Git applications accept commits through
@@ -19,12 +19,12 @@ the eligibility checks and `git.sign-on-push` behavior of `jj git push`
 Closes #4388
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index abf5627e6ff15146d638d02e302df6658990c8b8..52caa9db72925c345e35e5989338186e2457262a 100644
+index 52a4371b5eeebee04ed3b256ca2fa1d8afff852f..35d897d8fceac37ac18a19f4d0d279b541712be7 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -34,6 +34,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-   configured remote. The fetched commit becomes visible without creating a
-   bookmark or remote-tracking ref.
+@@ -37,6 +37,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+   remote. The fetched commits become visible without creating bookmarks or
+   remote-tracking refs.
  
 +* `jj git ref push` can push one revision to a fully qualified Git ref. Each
 +  push must be unconditional, require the ref to be absent, or require it to
@@ -32,12 +32,12 @@ index abf5627e6ff15146d638d02e302df6658990c8b8..52caa9db72925c345e35e5989338186e
 +
  ### Fixed bugs
  
- * The default pager flags now include `-K` (`--quit-on-intr`), so pressing
+ * `jj arrange` now scrolls the viewport to keep the selected commit visible
 diff --git a/cli/src/commands/git/push.rs b/cli/src/commands/git/push.rs
-index ac3445654887e621d9382dc6814cafece4d5fd5e..b778f55b7b2a9603a0f4bd4fc389a21a0a554097 100644
+index 9e8629e60e90f59bd690c695fc7d19d420f25f07..0df9dfa92f487b183e047703fae594b7be3e097b 100644
 --- a/cli/src/commands/git/push.rs
 +++ b/cli/src/commands/git/push.rs
-@@ -959,7 +959,7 @@ async fn print_commits_ready_to_push(
+@@ -962,7 +962,7 @@ async fn print_commits_ready_to_push(
      Ok(())
  }
  
@@ -291,10 +291,10 @@ index 0000000000000000000000000000000000000000..c4fa0d3eb0647c560516da33eb2f7fb1
 +    Ok(())
 +}
 diff --git a/cli/src/git_util.rs b/cli/src/git_util.rs
-index 53e369bd27bfad282fced59630784eda02bca3cb..85835f0bb42ee22d1a943b638a82fd419882f45b 100644
+index 5cfc34b747fd2a427d93a4efa3cdc57213a019ba..01880ff93b6b8969d169c74285431c30e2ff7584 100644
 --- a/cli/src/git_util.rs
 +++ b/cli/src/git_util.rs
-@@ -506,6 +506,32 @@ pub fn print_git_export_stats(ui: &Ui, stats: &GitExportStats) -> Result<(), std
+@@ -545,6 +545,32 @@ pub fn print_git_export_stats(ui: &Ui, stats: &GitExportStats) -> Result<(), std
  }
  
  pub fn print_push_stats(ui: &Ui, stats: &GitPushStats) -> io::Result<()> {
@@ -327,7 +327,7 @@ index 53e369bd27bfad282fced59630784eda02bca3cb..85835f0bb42ee22d1a943b638a82fd41
      if !stats.rejected.is_empty() {
          writeln!(
              ui.warning_default(),
-@@ -521,11 +547,7 @@ pub fn print_push_stats(ui: &Ui, stats: &GitPushStats) -> io::Result<()> {
+@@ -560,11 +586,7 @@ pub fn print_push_stats(ui: &Ui, stats: &GitPushStats) -> io::Result<()> {
              writeln!(formatter)?;
          }
          drop(formatter);
@@ -340,7 +340,7 @@ index 53e369bd27bfad282fced59630784eda02bca3cb..85835f0bb42ee22d1a943b638a82fd41
      }
      if !stats.remote_rejected.is_empty() {
          writeln!(
-@@ -542,10 +564,7 @@ pub fn print_push_stats(ui: &Ui, stats: &GitPushStats) -> io::Result<()> {
+@@ -581,10 +603,7 @@ pub fn print_push_stats(ui: &Ui, stats: &GitPushStats) -> io::Result<()> {
              writeln!(formatter)?;
          }
          drop(formatter);
@@ -353,10 +353,10 @@ index 53e369bd27bfad282fced59630784eda02bca3cb..85835f0bb42ee22d1a943b638a82fd41
      if !stats.unexported_bookmarks.is_empty() {
          writeln!(
 diff --git a/cli/tests/cli-reference@.md.snap b/cli/tests/cli-reference@.md.snap
-index fa5a81ff958fe5eb6a057952d634ff1953ee5159..584f28a2a0664de5f36c9b34561b7a4c12471d18 100644
+index 69f1afa60f8c8fb93034fe53747bc16e0bd4ad74..d0bf7a04c5df0a5536155ddced7293dceb3b9746 100644
 --- a/cli/tests/cli-reference@.md.snap
 +++ b/cli/tests/cli-reference@.md.snap
-@@ -67,6 +67,7 @@ This document contains the help content for the `jj` command-line program.
+@@ -68,6 +68,7 @@ This document contains the help content for the `jj` command-line program.
  * [`jj git push`↴](#jj-git-push)
  * [`jj git ref`↴](#jj-git-ref)
  * [`jj git ref fetch`↴](#jj-git-ref-fetch)
@@ -364,24 +364,15 @@ index fa5a81ff958fe5eb6a057952d634ff1953ee5159..584f28a2a0664de5f36c9b34561b7a4c
  * [`jj git remote`↴](#jj-git-remote)
  * [`jj git remote add`↴](#jj-git-remote-add)
  * [`jj git remote list`↴](#jj-git-remote-list)
-@@ -1902,6 +1903,7 @@ Manage raw Git refs
+@@ -1903,6 +1904,7 @@ Manage raw Git refs
  ###### **Subcommands:**
  
- * `fetch` — Fetch one raw ref or full commit ID from a Git remote
+ * `fetch` — Fetch raw refs or full commit IDs from a Git remote
 +* `push` — Push one revision to a raw Git ref on a remote
  
  
  
-@@ -1909,7 +1911,7 @@ Manage raw Git refs
- 
- Fetch one raw ref or full commit ID from a Git remote
- 
--The source can be a fully qualified remote ref such as GitHub's `refs/pull/123/head`, or a full Git commit ID (40 hexadecimal characters for SHA-1 repositories or 64 for SHA-256 repositories).
-+The source can be a fully qualified remote ref such as GitHub's `refs/pull/123/head`, or a full Git commit ID
- 
- **Usage:** `jj git ref fetch [OPTIONS] <REF>`
- 
-@@ -1925,6 +1927,35 @@ The source can be a fully qualified remote ref such as GitHub's `refs/pull/123/h
+@@ -1926,6 +1928,35 @@ Each source can be a fully qualified remote ref such as GitHub's `refs/pull/123/
  
  
  
@@ -780,7 +771,7 @@ index 6ddc9dbdc5fa78d1f68c13ccd9409bb013a13812..a4a9da1cb433c920f3e04d04ad385eb0
  fn test_git_push_nothing() {
      let test_env = TestEnvironment::default();
 diff --git a/docs/git-compatibility.md b/docs/git-compatibility.md
-index 957d6a45864f53e3d02ca09ff7b2c6afcb9f2f6f..90b359d3746f64eaab5ce8b58b10c0812f56e8c9 100644
+index 862c69fe27159d8eaaf3ac57c550b13eefea97e2..99f33a456da40da28a87280c1518acba193d16d1 100644
 --- a/docs/git-compatibility.md
 +++ b/docs/git-compatibility.md
 @@ -97,13 +97,31 @@ into a directory by the same name.
@@ -790,10 +781,10 @@ index 957d6a45864f53e3d02ca09ff7b2c6afcb9f2f6f..90b359d3746f64eaab5ce8b58b10c081
 -## Fetching refs that are not branches or tags
 +## Fetching and pushing refs that are not branches or tags
  
- Use `jj git ref fetch --remote <remote> <ref-or-commit-id>` to fetch one raw Git
- ref, such as a GitHub pull request ref, or one full Git commit ID. The fetched
- commit becomes visible without a name. The command does not create a bookmark
- or remote-tracking ref.
+ Use `jj git ref fetch --remote <remote> <ref-or-commit-id>...` to fetch raw Git
+ refs, such as GitHub pull request refs, or full Git commit IDs. The fetched
+ commits become visible without names. The command does not create bookmarks or
+ remote-tracking refs.
  
 +Use `jj git ref push` to push one revision to an application-specific ref such
 +as Gerrit's `refs/for/main`. Unlike `jj git push`, this low-level command does
@@ -816,6 +807,3 @@ index 957d6a45864f53e3d02ca09ff7b2c6afcb9f2f6f..90b359d3746f64eaab5ce8b58b10c081
  ## <a name="colocated-jujutsugit-repos"></a>Colocated Jujutsu/Git workspaces
  
  A colocated Jujutsu workspace is a hybrid Jujutsu/Git workspace. This is the
--- 
-2.55.0
-

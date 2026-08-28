@@ -1,23 +1,15 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 5145e23fc51c9bd5700a6d425b3e0eefff486ee6 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Thu, 1 Jan 1970 00:00:00 +0000
+Date: Fri, 28 Aug 2026 01:04:00 +0300
 Subject: metaedit: set exact committer timestamps
 
-Add --committer-timestamp for setting the committer timestamp directly
-and --timestamp as shorthand for setting both author and committer
-timestamps. Avoid rewriting when the requested values already match the
-commit.
----
- CHANGELOG.md                       |    3 +
- cli/src/commands/metaedit.rs       |   59 +++++++++++++++++++++--
- cli/tests/cli-reference@.md.snap   |   10 +++
- cli/tests/test_metaedit_command.rs |   94 +++++++++++++++++++++++++++++++++++++
- 4 files changed, 161 insertions(+), 5 deletions(-)
+Add --committer-timestamp for setting the committer timestamp directly and --timestamp as shorthand for setting both author and committer timestamps. Avoid rewriting when the requested values already match the commit.
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 1f694e0c6d00e19e3e6d7e4ada8b4c38c051767f..cf113f6df28084465cefa75b6fb3a362b5f0e89c 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -20,6 +20,9 @@ to [Semantic Versioning](https://semver.
+@@ -23,6 +23,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
  
  ### New features
  
@@ -27,6 +19,8 @@ diff --git a/CHANGELOG.md b/CHANGELOG.md
  * `jj bisect` will now mention when it cannot unambiguously find the first bad
    revision due to skips in evaluation.
  
+diff --git a/cli/src/commands/metaedit.rs b/cli/src/commands/metaedit.rs
+index 89cd8acb428a812bff18fd881347b785affeff0e..be88bfd0f7ee6bf8a13600cfb1826b32b75fbdb9 100644
 --- a/cli/src/commands/metaedit.rs
 +++ b/cli/src/commands/metaedit.rs
 @@ -116,11 +116,38 @@ pub(crate) struct CommitEditArgs {
@@ -122,12 +116,15 @@ diff --git a/CHANGELOG.md b/CHANGELOG.md
                  if let Some(description) = &new_description
                      && description != commit_builder.description()
                  {
+diff --git a/cli/tests/cli-reference@.md.snap b/cli/tests/cli-reference@.md.snap
+index 4a649082e4b56694e25ae1d4f4ed56f3e5f1f134..1ceee6ffc755efa7aacca58e7af7cb1776b3c54e 100644
 --- a/cli/tests/cli-reference@.md.snap
 +++ b/cli/tests/cli-reference@.md.snap
-@@ -2302,6 +2302,16 @@ Whenever any metadata is updated, the co
+@@ -2301,6 +2301,16 @@ Whenever any metadata is updated, the committer name, email, and timestamp are a
+ 
     [RFC2822]: https://datatracker.ietf.org/doc/html/rfc2822
  
-    [RFC3339]: https://datatracker.ietf.org/doc/html/rfc3339
++   [RFC3339]: https://datatracker.ietf.org/doc/html/rfc3339
 +* `--timestamp <TIMESTAMP>` — Set both the author and committer dates to the given date
 +
 +   This is equivalent to setting `--author-timestamp` and `--committer-timestamp` to the same value.
@@ -137,13 +134,14 @@ diff --git a/CHANGELOG.md b/CHANGELOG.md
 +
 +   [RFC2822]: https://datatracker.ietf.org/doc/html/rfc2822
 +
-+   [RFC3339]: https://datatracker.ietf.org/doc/html/rfc3339
+    [RFC3339]: https://datatracker.ietf.org/doc/html/rfc3339
  * `--force-rewrite` — Rewrite the commit, even if no other metadata changed
  
-    This updates the committer timestamp to the current time, as well as the committer name and email.
+diff --git a/cli/tests/test_metaedit_command.rs b/cli/tests/test_metaedit_command.rs
+index 1a3a0b5a017f3bd1c946506e04e0ce800259924e..c41493d0a40ae5b032b786c21274ed5e32c0cf26 100644
 --- a/cli/tests/test_metaedit_command.rs
 +++ b/cli/tests/test_metaedit_command.rs
-@@ -816,6 +816,100 @@ fn test_metaedit_set_same_timestamp_twic
+@@ -816,6 +816,100 @@ fn test_metaedit_set_same_timestamp_twice() {
      ");
  }
  

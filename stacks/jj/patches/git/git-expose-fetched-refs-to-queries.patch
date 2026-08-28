@@ -1,6 +1,6 @@
-From 7910715e963805fe20449e1a2cf39468f2720dfc Mon Sep 17 00:00:00 2001
+From a2da4b65c7e73a0422e8224223e2976ec959b638 Mon Sep 17 00:00:00 2001
 From: Josh McKinney <joshka@users.noreply.github.com>
-Date: Thu, 1 Jan 1970 00:00:00 +0000
+Date: Fri, 28 Aug 2026 01:04:00 +0300
 Subject: git: expose fetched refs to queries
 
 Allow stored fetched Git refs to be resolved from revsets and reported
@@ -8,7 +8,7 @@ in operation diffs. This makes the durable state visible before adding
 higher-level CLI management commands.
 
 diff --git a/cli/src/commands/operation/diff.rs b/cli/src/commands/operation/diff.rs
-index 143eb44ec956492b883c494baa68e873c39f94c0..425c92ff9ecd63797308b525086e8950eb641ae8 100644
+index cbb513fc162f91191455903b2bb977ba805e76a8..84d2b21a909fb3be94382924d43b1d78f27bd7b5 100644
 --- a/cli/src/commands/operation/diff.rs
 +++ b/cli/src/commands/operation/diff.rs
 @@ -12,6 +12,7 @@
@@ -110,7 +110,7 @@ index 143eb44ec956492b883c494baa68e873c39f94c0..425c92ff9ecd63797308b525086e8950
  }
  
 diff --git a/lib/src/revset.rs b/lib/src/revset.rs
-index c22504430bdf857d912a16e1bc09e582c0ee8ec8..d29d2b5abdadbff96a82227a9f303f46d5c81d10 100644
+index 5eee838369986a15791c25e5d317365280e10cc0..93a4d46f6a1bebeb4585ed4ef6ec93c72c1abf0a 100644
 --- a/lib/src/revset.rs
 +++ b/lib/src/revset.rs
 @@ -53,6 +53,7 @@ use crate::op_store::LocalRemoteRefTarget;
@@ -202,6 +202,3 @@ index c22504430bdf857d912a16e1bc09e582c0ee8ec8..d29d2b5abdadbff96a82227a9f303f46
      }
  }
  
--- 
-2.55.0
-

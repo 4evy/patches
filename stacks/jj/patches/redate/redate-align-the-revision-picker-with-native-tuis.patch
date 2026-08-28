@@ -1,28 +1,14 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From a10afc9e31081b35470f417608f11964e2c99d43 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Thu, 1 Jan 1970 00:00:00 +0000
+Date: Fri, 28 Aug 2026 01:04:00 +0300
 Subject: redate: align the revision picker with native TUIs
 
-Use a borderless title/main/status layout with stable checked markers
-and a full-row focus highlight so graph glyphs only describe topology.
-Keep the focused revision timestamp in the title bar, make key hints
-responsive, and add select-all, boundary navigation, anchored Shift
-range selection, and the standard c-to-confirm binding.
+Use a borderless title/main/status layout with stable checked markers and a full-row focus highlight so graph glyphs only describe topology. Keep the focused revision timestamp in the title bar, make key hints responsive, and add select-all, boundary navigation, anchored Shift range selection, and the standard c-to-confirm binding.
 
-Present the proposed timestamp as prefilled editable input with
-arrow-key navigation instead of describing it as a default. Share TUI
-helpers with arrange and cover the interaction and responsive layouts
-with tests.
----
- cli/src/commands/arrange.rs      |   14 -
- cli/src/commands/redate.rs       |  399 ++++++++++++++++++++++++++++++++++-----
- cli/src/config/colors.toml       |    3 
- cli/src/config/templates.toml    |    1 
- cli/src/tui_util.rs              |  201 +++++++++++++++++++
- cli/tests/test_redate_command.rs |    2 
- 6 files changed, 557 insertions(+), 63 deletions(-)
+Use jj's standard prompt for timestamps instead of a bespoke raw-mode line editor. Accept exact and relative local-time expressions, add --timestamp for non-interactive use, preserve explicit offsets, and cover the interaction and responsive layouts with tests.
 
 diff --git a/cli/src/commands/arrange.rs b/cli/src/commands/arrange.rs
+index 5316df48b97f3acea427a337f339e5ace63c986d..68c23c838b52282bf65ea7e557ffccf83bcdf4f7 100644
 --- a/cli/src/commands/arrange.rs
 +++ b/cli/src/commands/arrange.rs
 @@ -41,10 +41,6 @@ use ratatui::layout::Direction;
@@ -36,7 +22,7 @@ diff --git a/cli/src/commands/arrange.rs b/cli/src/commands/arrange.rs
  use ratatui::text::Text;
  use ratatui::widgets::Widget as _;
  use renderdag::Ancestor;
-@@ -444,15 +440,7 @@ fn run_tui<B: ratatui::backend::Backend>
+@@ -470,15 +466,7 @@ fn run_tui<B: ratatui::backend::Backend>(
          ("c", "confirm"),
          ("q", "quit"),
      ];
@@ -53,11 +39,24 @@ diff --git a/cli/src/commands/arrange.rs b/cli/src/commands/arrange.rs
  
      let render_commit = |commit: &Commit, is_context_node: bool| {
          let mut text_lines = vec![];
+diff --git a/cli/src/commands/redate.rs b/cli/src/commands/redate.rs
+index 974c35f5f684e68ab72ea2a0e9bb9d8fdc66ac3c..40a34e6a5a77a5a19bcc9822a1ef94069fdae5c7 100644
 --- a/cli/src/commands/redate.rs
 +++ b/cli/src/commands/redate.rs
-@@ -33,13 +33,16 @@ use jj_lib::graph::TopoGroupedGraph;
+@@ -18,7 +18,6 @@ use std::io::IsTerminal as _;
+ 
+ use ansi_to_tui::IntoText as _;
+ use chrono::Local;
+-use chrono::SecondsFormat;
+ use clap_complete::ArgValueCompleter;
+ use crossterm::event;
+ use crossterm::event::Event;
+@@ -31,15 +30,18 @@ use jj_lib::commit::Commit;
+ use jj_lib::graph::GraphEdge;
+ use jj_lib::graph::TopoGroupedGraph;
  use jj_lib::repo::Repo as _;
- use jj_lib::time_util::parse_datetime;
+-use jj_lib::time_util::parse_datetime;
++use jj_lib::time_util::parse_datetime_expression;
  use ratatui::Terminal;
 +use ratatui::layout::Alignment;
  use ratatui::layout::Constraint;
@@ -73,18 +72,70 @@ diff --git a/cli/src/commands/arrange.rs b/cli/src/commands/arrange.rs
  use ratatui::widgets::List;
  use ratatui::widgets::ListItem;
  use ratatui::widgets::ListState;
-@@ -150,7 +153,9 @@ pub(crate) async fn cmd_redate(
+@@ -76,6 +78,13 @@ pub(crate) struct RedateArgs {
+     #[arg(add = ArgValueCompleter::new(complete::revset_expression_mutable))]
+     revisions_opt: Vec<RevisionArg>,
+ 
++    /// Set the timestamp without prompting
++    ///
++    /// Accepts exact timestamps and local-time expressions such as `now`,
++    /// `yesterday 5pm`, or `2026-08-28 14:30 +03:00`.
++    #[arg(long, value_name = "TIMESTAMP", value_parser = parse_timestamp_arg)]
++    timestamp: Option<Timestamp>,
++
+     /// Sign the rewritten revisions
+     #[arg(long)]
+     sign: bool,
+@@ -94,14 +103,14 @@ pub(crate) async fn cmd_redate(
+              https://docs.jj-vcs.dev/latest/config/#commit-signing",
+         ));
+     }
+-    if !ui.can_prompt() {
+-        return Err(user_error("Cannot prompt for a redate timestamp")
+-            .hinted("Run from a terminal or set JJ_INTERACTIVE=1"));
+-    }
+     let interactive = args.revisions_pos.is_empty()
+         && args.revisions_opt.is_empty()
+         && io::stdin().is_terminal()
+         && io::stdout().is_terminal();
++    if (interactive || args.timestamp.is_none()) && !ui.can_prompt() {
++        return Err(user_error("Cannot prompt for redate input")
++            .hinted("Run from a terminal, set JJ_INTERACTIVE=1, or pass --timestamp"));
++    }
+     let target_expression = if !args.revisions_pos.is_empty() || !args.revisions_opt.is_empty() {
+         workspace_command
+             .parse_union_revsets(ui, &[&*args.revisions_pos, &*args.revisions_opt].concat())?
+@@ -150,7 +159,11 @@ pub(crate) async fn cmd_redate(
              .map(|(commit, _)| commit.id().clone())
              .collect()
      };
 -    let timestamp = prompt_timestamp(ui)?;
-+    let Some(timestamp) = prompt_timestamp(ui)? else {
-+        return Ok(());
++    let timestamp = if let Some(timestamp) = args.timestamp {
++        timestamp
++    } else {
++        prompt_timestamp(ui)?
 +    };
      let display_timestamp = timestamp
          .to_datetime()
          .map_err(internal_error)?
-@@ -212,6 +217,13 @@ fn render_rows(
+@@ -159,10 +172,12 @@ pub(crate) async fn cmd_redate(
+         [_] => "1 revision".to_owned(),
+         revisions => format!("{} revisions", revisions.len()),
+     };
+-    if !ui.prompt_yes_no(
+-        &format!("Redate {revision_label} to {display_timestamp}?"),
+-        Some(true),
+-    )? {
++    if args.timestamp.is_none()
++        && !ui.prompt_yes_no(
++            &format!("Redate {revision_label} to {display_timestamp}?"),
++            Some(true),
++        )?
++    {
+         return Ok(());
+     }
+     metaedit::edit_commits(
+@@ -212,6 +227,13 @@ fn render_rows(
                  edges: edges.clone(),
                  node_symbol: format_template(ui, &Some(commit.clone()), &node_template),
                  text: output,
@@ -98,7 +149,7 @@ diff --git a/cli/src/commands/arrange.rs b/cli/src/commands/arrange.rs
              })
          })
          .collect()
-@@ -222,8 +234,25 @@ struct RevisionRow {
+@@ -222,8 +244,25 @@ struct RevisionRow {
      edges: Vec<GraphEdge<CommitId>>,
      node_symbol: String,
      text: Vec<u8>,
@@ -124,7 +175,7 @@ diff --git a/cli/src/commands/arrange.rs b/cli/src/commands/arrange.rs
  fn select_revisions(
      ui: &Ui,
      graph_style: GraphStyle,
-@@ -240,30 +269,22 @@ fn run_selector<B: ratatui::backend::Bac
+@@ -240,30 +279,22 @@ fn run_selector<B: ratatui::backend::Backend>(
  ) -> Result<Option<Vec<usize>>, CommandError> {
      let mut list_state = ListState::default().with_selected(Some(0));
      let mut state = SelectorState::default();
@@ -166,7 +217,7 @@ diff --git a/cli/src/commands/arrange.rs b/cli/src/commands/arrange.rs
              })
              .map_err(|error| internal_error(format!("Failed to draw redate TUI: {error}")))?;
  
-@@ -283,6 +304,103 @@ fn run_selector<B: ratatui::backend::Bac
+@@ -283,6 +314,103 @@ fn run_selector<B: ratatui::backend::Backend>(
      }
  }
  
@@ -270,7 +321,7 @@ diff --git a/cli/src/commands/arrange.rs b/cli/src/commands/arrange.rs
  fn render_graph_rows(
      ui: &Ui,
      graph_style: GraphStyle,
-@@ -296,18 +414,10 @@ fn render_graph_rows(
+@@ -296,18 +424,10 @@ fn render_graph_rows(
              let mut message = vec![];
              {
                  let mut formatter = ui.new_formatter(&mut message).into_labeled("redate");
@@ -292,7 +343,7 @@ diff --git a/cli/src/commands/arrange.rs b/cli/src/commands/arrange.rs
                  }
              }
              message.extend_from_slice(&row.text);
-@@ -329,9 +439,15 @@ fn render_graph_rows(
+@@ -329,9 +449,15 @@ fn render_graph_rows(
  struct SelectorState {
      cursor: usize,
      selected: BTreeSet<usize>,
@@ -308,7 +359,7 @@ diff --git a/cli/src/commands/arrange.rs b/cli/src/commands/arrange.rs
  #[derive(Debug, PartialEq, Eq)]
  enum SelectorAction {
      Continue,
-@@ -340,6 +456,33 @@ enum SelectorAction {
+@@ -340,6 +466,33 @@ enum SelectorAction {
  }
  
  impl SelectorState {
@@ -342,7 +393,7 @@ diff --git a/cli/src/commands/arrange.rs b/cli/src/commands/arrange.rs
      fn handle_key(
          &mut self,
          code: KeyCode,
-@@ -349,38 +492,94 @@ impl SelectorState {
+@@ -349,28 +502,65 @@ impl SelectorState {
          match (code, modifiers) {
              (KeyCode::Char('q') | KeyCode::Esc, KeyModifiers::NONE)
              | (KeyCode::Char('c'), KeyModifiers::CONTROL) => SelectorAction::Cancel,
@@ -412,42 +463,34 @@ diff --git a/cli/src/commands/arrange.rs b/cli/src/commands/arrange.rs
              _ => SelectorAction::Continue,
          }
      }
- }
+@@ -378,9 +568,19 @@ impl SelectorState {
  
--fn prompt_timestamp(ui: &Ui) -> Result<Timestamp, CommandError> {
-+fn prompt_timestamp(ui: &Ui) -> Result<Option<Timestamp>, CommandError> {
+ fn prompt_timestamp(ui: &Ui) -> Result<Timestamp, CommandError> {
      let now = Local::now();
-     let initial = now.to_rfc3339_opts(SecondsFormat::Secs, false);
+-    let initial = now.to_rfc3339_opts(SecondsFormat::Secs, false);
 -    let prompt = format!("Timestamp (default {initial})");
 -    Ok(ui.prompt_choice_with(&prompt, Some(&initial), parse_datetime)?)
-+    if !io::stdin().is_terminal() || !io::stderr().is_terminal() {
-+        return Ok(Some(ui.prompt_choice_with(
-+            "Timestamp",
-+            Some(&initial),
-+            parse_datetime,
-+        )?));
-+    }
++    writeln!(
++        ui.hint_default(),
++        "Enter a local date and time, such as `yesterday 5pm`, or an exact timestamp."
++    )?;
++    Ok(
++        ui.prompt_choice_with("Timestamp [now]", Some("now"), |input| {
++            parse_datetime_expression(input, now)
++        })?,
++    )
++}
 +
-+    let mut input = initial;
-+    loop {
-+        let Some(edited) = tui_util::edit_line("Timestamp", &input)? else {
-+            return Ok(None);
-+        };
-+        match parse_datetime(&edited) {
-+            Ok(timestamp) => return Ok(Some(timestamp)),
-+            Err(error) => {
-+                writeln!(ui.warning_no_heading(), "{error}")?;
-+                input = edited;
-+            }
-+        }
-+    }
++fn parse_timestamp_arg(input: &str) -> Result<Timestamp, String> {
++    parse_datetime_expression(input, Local::now()).map_err(|error| error.to_string())
  }
  
  #[cfg(test)]
-@@ -405,6 +604,50 @@ mod tests {
+@@ -404,6 +604,50 @@ mod tests {
+         );
      }
  
-     #[test]
++    #[test]
 +    fn test_selector_bulk_and_boundary_navigation() {
 +        let mut state = SelectorState::default();
 +        state.handle_key(KeyCode::End, KeyModifiers::NONE, 3);
@@ -491,11 +534,10 @@ diff --git a/cli/src/commands/arrange.rs b/cli/src/commands/arrange.rs
 +        assert_eq!(state.selected, BTreeSet::from([0, 1, 2, 3, 4]));
 +    }
 +
-+    #[test]
+     #[test]
      fn test_selector_requires_selection() {
          let mut state = SelectorState::default();
-         assert_eq!(
-@@ -431,45 +674,109 @@ mod tests {
+@@ -431,45 +675,109 @@ mod tests {
                  ],
                  node_symbol: "@".to_owned(),
                  text: b"merge".to_vec(),
@@ -541,13 +583,10 @@ diff --git a/cli/src/commands/arrange.rs b/cli/src/commands/arrange.rs
          insta::assert_snapshot!(output, @r"
 -        @    › ○ merge
 +        @    [ ] merge
-         |\
--        | o    ● right
--        o |    ○ left
++        |\
 +        | o  [●] right
 +        o |  [ ] left
-         |/
--        o    ○ root
++        |/
 +        o  [ ] root
 +        ");
 +
@@ -589,10 +628,13 @@ diff --git a/cli/src/commands/arrange.rs b/cli/src/commands/arrange.rs
 +        insta::assert_snapshot!(output, @r"
 +         Redate revisions  1/4 selected                     committed  2004-01-01 00:00
 +        @    [ ] merge
-+        |\
+         |\
+-        | o    ● right
+-        o |    ○ left
 +        | o  [●] right
 +        o |  [ ] left
-+        |/
+         |/
+-        o    ○ root
 +        o  [ ] root
 +
 +        ↑↓/jk move • ⇧↑↓ range • space toggle • a all/none • enter confirm • q cancel
@@ -612,6 +654,8 @@ diff --git a/cli/src/commands/arrange.rs b/cli/src/commands/arrange.rs
          ");
          Ok(())
      }
+diff --git a/cli/src/config/colors.toml b/cli/src/config/colors.toml
+index 6172ab4413f4bd9981731ad0ef5e14b2225c1b6f..c9583eae97f736a52640ed360677f6120cd9ad78 100644
 --- a/cli/src/config/colors.toml
 +++ b/cli/src/config/colors.toml
 @@ -118,10 +118,7 @@
@@ -625,6 +669,8 @@ diff --git a/cli/src/commands/arrange.rs b/cli/src/commands/arrange.rs
  "redate commit change" = { fg = "cyan", bold = true }
  "redate commit empty" = { fg = "bright black", italic = true }
 -"redate commit timestamp" = "bright black"
+diff --git a/cli/src/config/templates.toml b/cli/src/config/templates.toml
+index 41db1f48091f471f7b69a72fb1ef2b7e3d34dbfe..88f86d2ef2fb76bbcd1778f63608224b038e3792 100644
 --- a/cli/src/config/templates.toml
 +++ b/cli/src/config/templates.toml
 @@ -7,7 +7,6 @@ redate = '''
@@ -635,38 +681,30 @@ diff --git a/cli/src/commands/arrange.rs b/cli/src/commands/arrange.rs
  )
  '''
  
+diff --git a/cli/src/tui_util.rs b/cli/src/tui_util.rs
+index 44c457245325ec01607656366ee2aa4511a979a1..6a244c5f82e4a8109bf2c76b2b6c72f698030d0d 100644
 --- a/cli/src/tui_util.rs
 +++ b/cli/src/tui_util.rs
-@@ -13,20 +13,175 @@
- // limitations under the License.
+@@ -14,6 +14,8 @@
  
  use std::io;
-+use std::io::IsTerminal as _;
-+use std::io::Write;
  
++use crate::cleanup_guard::CleanupGuard;
++use crate::command_error::CommandError;
  use crossterm::ExecutableCommand as _;
-+use crossterm::QueueableCommand as _;
-+use crossterm::cursor::MoveToColumn;
-+use crossterm::event;
-+use crossterm::event::Event;
-+use crossterm::event::KeyCode;
-+use crossterm::event::KeyModifiers;
-+use crossterm::terminal::Clear;
-+use crossterm::terminal::ClearType;
  use crossterm::terminal::EnterAlternateScreen;
  use crossterm::terminal::LeaveAlternateScreen;
- use crossterm::terminal::disable_raw_mode;
+@@ -21,12 +23,26 @@ use crossterm::terminal::disable_raw_mode;
  use crossterm::terminal::enable_raw_mode;
  use ratatui::Terminal;
  use ratatui::prelude::CrosstermBackend;
+-
+-use crate::cleanup_guard::CleanupGuard;
+-use crate::command_error::CommandError;
 +use ratatui::style::Color;
 +use ratatui::style::Style;
 +use ratatui::text::Line;
 +use ratatui::text::Span;
-+use unicode_width::UnicodeWidthStr as _;
- 
- use crate::cleanup_guard::CleanupGuard;
- use crate::command_error::CommandError;
  
  pub(crate) type TuiTerminal = Terminal<CrosstermBackend<io::Stdout>>;
  
@@ -683,194 +721,144 @@ diff --git a/cli/src/commands/arrange.rs b/cli/src/commands/arrange.rs
 +    Line::from(spans)
 +}
 +
-+/// Reads a line of text with `initial` prefilled as editable input.
-+///
-+/// Returns `None` if the user presses Escape or Ctrl-C.
-+pub(crate) fn edit_line(prompt: &str, initial: &str) -> io::Result<Option<String>> {
-+    if !io::stdin().is_terminal() || !io::stderr().is_terminal() {
-+        return Err(io::Error::new(
-+            io::ErrorKind::Unsupported,
-+            "Cannot edit a prefilled prompt without a terminal",
-+        ));
-+    }
-+
-+    enable_raw_mode()?;
-+    let _terminal_guard = CleanupGuard::new(|| drop(disable_raw_mode()));
-+    let mut output = io::stderr();
-+    let mut editor = LineEditor::new(initial);
-+    editor.draw(&mut output, prompt)?;
-+
-+    loop {
-+        let Event::Key(key) = event::read()? else {
-+            continue;
-+        };
-+        if key.is_release() {
-+            continue;
-+        }
-+        match editor.handle_key(key.code, key.modifiers) {
-+            LineEditorAction::Continue => editor.draw(&mut output, prompt)?,
-+            LineEditorAction::Submit => {
-+                write!(output, "\r\n")?;
-+                output.flush()?;
-+                return Ok(Some(editor.value));
-+            }
-+            LineEditorAction::Cancel => {
-+                write!(output, "\r\n")?;
-+                output.flush()?;
-+                return Ok(None);
-+            }
-+        }
-+    }
-+}
-+
-+#[derive(Debug, PartialEq, Eq)]
-+enum LineEditorAction {
-+    Continue,
-+    Submit,
-+    Cancel,
-+}
-+
-+struct LineEditor {
-+    value: String,
-+    cursor: usize,
-+}
-+
-+impl LineEditor {
-+    fn new(initial: &str) -> Self {
-+        Self {
-+            value: initial.to_owned(),
-+            cursor: initial.len(),
-+        }
-+    }
-+
-+    fn draw(&self, output: &mut impl Write, prompt: &str) -> io::Result<()> {
-+        output
-+            .queue(MoveToColumn(0))?
-+            .queue(Clear(ClearType::CurrentLine))?;
-+        write!(output, "{prompt}: {}", self.value)?;
-+        let cursor_column = prompt.width() + 2 + self.value[..self.cursor].width();
-+        output.queue(MoveToColumn(cursor_column.min(usize::from(u16::MAX)) as u16))?;
-+        output.flush()
-+    }
-+
-+    fn handle_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> LineEditorAction {
-+        match (code, modifiers) {
-+            (KeyCode::Enter, KeyModifiers::NONE) => LineEditorAction::Submit,
-+            (KeyCode::Esc, KeyModifiers::NONE) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
-+                LineEditorAction::Cancel
-+            }
-+            (KeyCode::Left, KeyModifiers::NONE) | (KeyCode::Char('b'), KeyModifiers::CONTROL) => {
-+                self.cursor = self.previous_char_boundary();
-+                LineEditorAction::Continue
-+            }
-+            (KeyCode::Right, KeyModifiers::NONE) | (KeyCode::Char('f'), KeyModifiers::CONTROL) => {
-+                self.cursor = self.next_char_boundary();
-+                LineEditorAction::Continue
-+            }
-+            (KeyCode::Home, KeyModifiers::NONE) | (KeyCode::Char('a'), KeyModifiers::CONTROL) => {
-+                self.cursor = 0;
-+                LineEditorAction::Continue
-+            }
-+            (KeyCode::End, KeyModifiers::NONE) | (KeyCode::Char('e'), KeyModifiers::CONTROL) => {
-+                self.cursor = self.value.len();
-+                LineEditorAction::Continue
-+            }
-+            (KeyCode::Backspace, KeyModifiers::NONE) => {
-+                let previous = self.previous_char_boundary();
-+                self.value.replace_range(previous..self.cursor, "");
-+                self.cursor = previous;
-+                LineEditorAction::Continue
-+            }
-+            (KeyCode::Delete, KeyModifiers::NONE) => {
-+                self.value
-+                    .replace_range(self.cursor..self.next_char_boundary(), "");
-+                LineEditorAction::Continue
-+            }
-+            (KeyCode::Char(character), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
-+                self.value.insert(self.cursor, character);
-+                self.cursor += character.len_utf8();
-+                LineEditorAction::Continue
-+            }
-+            _ => LineEditorAction::Continue,
-+        }
-+    }
-+
-+    fn previous_char_boundary(&self) -> usize {
-+        self.value[..self.cursor]
-+            .char_indices()
-+            .next_back()
-+            .map_or(0, |(index, _)| index)
-+    }
-+
-+    fn next_char_boundary(&self) -> usize {
-+        self.value[self.cursor..]
-+            .chars()
-+            .next()
-+            .map_or(self.cursor, |character| self.cursor + character.len_utf8())
-+    }
-+}
-+
  /// Runs a terminal UI in raw mode on the alternate screen.
  ///
  /// Terminal state is restored even if drawing or event handling fails.
-@@ -43,3 +198,49 @@ pub(crate) fn with_terminal<T>(
-     terminal.clear()?;
-     run(&mut terminal)
- }
-+
-+#[cfg(test)]
-+mod tests {
-+    use super::*;
-+
-+    #[test]
-+    fn test_line_editor_navigation_and_editing() {
-+        let mut editor = LineEditor::new("abcd");
-+        assert_eq!(editor.cursor, 4);
-+
-+        editor.handle_key(KeyCode::Left, KeyModifiers::NONE);
-+        editor.handle_key(KeyCode::Left, KeyModifiers::NONE);
-+        editor.handle_key(KeyCode::Backspace, KeyModifiers::NONE);
-+        assert_eq!(editor.value, "acd");
-+        assert_eq!(editor.cursor, 1);
-+
-+        editor.handle_key(KeyCode::Char('X'), KeyModifiers::SHIFT);
-+        editor.handle_key(KeyCode::Delete, KeyModifiers::NONE);
-+        assert_eq!(editor.value, "aXd");
-+        assert_eq!(editor.cursor, 2);
-+
-+        editor.handle_key(KeyCode::Home, KeyModifiers::NONE);
-+        editor.handle_key(KeyCode::Char('!'), KeyModifiers::NONE);
-+        editor.handle_key(KeyCode::End, KeyModifiers::NONE);
-+        assert_eq!(editor.value, "!aXd");
-+        assert_eq!(editor.cursor, editor.value.len());
-+    }
-+
-+    #[test]
-+    fn test_line_editor_unicode_boundaries_and_actions() {
-+        let mut editor = LineEditor::new("aé");
-+        editor.handle_key(KeyCode::Left, KeyModifiers::NONE);
-+        assert_eq!(editor.cursor, 1);
-+        editor.handle_key(KeyCode::Delete, KeyModifiers::NONE);
-+        assert_eq!(editor.value, "a");
-+
-+        assert_eq!(
-+            editor.handle_key(KeyCode::Enter, KeyModifiers::NONE),
-+            LineEditorAction::Submit
-+        );
-+        assert_eq!(
-+            editor.handle_key(KeyCode::Esc, KeyModifiers::NONE),
-+            LineEditorAction::Cancel
-+        );
-+    }
-+}
+diff --git a/cli/tests/test_redate_command.rs b/cli/tests/test_redate_command.rs
+index 0f29d396f89d652ae2d824dc86fb0d475190f648..b4a80a3b3d37a4e6d7fe2ec643c2dcb06daccf3d 100644
 --- a/cli/tests/test_redate_command.rs
 +++ b/cli/tests/test_redate_command.rs
-@@ -50,6 +50,8 @@ fn test_redate_retries_invalid_timestamp
-         output.stderr.raw().contains("premature end of input"),
+@@ -47,12 +47,60 @@ fn test_redate_retries_invalid_timestamp_and_can_cancel() {
+         })
+         .success();
+     assert!(
+-        output.stderr.raw().contains("premature end of input"),
++        output
++            .stderr
++            .raw()
++            .contains("Couldn't understand `aaaaaa` as a date and time"),
          "unexpected prompt output: {output}"
      );
-+    assert!(output.stderr.raw().contains("Timestamp: "));
-+    assert!(!output.stderr.raw().contains("Timestamp (default"));
++    assert!(output.stderr.raw().contains("Timestamp [now]: "));
++    assert!(
++        output
++            .stderr
++            .raw()
++            .contains("Hint: Enter a local date and time")
++    );
      assert_eq!(work_dir.current_operation_id(), operation_id);
  }
  
++#[test]
++fn test_redate_timestamp_argument_does_not_prompt() {
++    let test_env = TestEnvironment::default();
++    test_env.run_jj_in(".", ["git", "init", "repo"]).success();
++    let work_dir = test_env.work_dir("repo");
++
++    let output = work_dir
++        .run_jj([
++            "redate",
++            "-r",
++            "@",
++            "--timestamp",
++            "2002-03-04 05:06 -07:00",
++        ])
++        .success();
++    assert!(!output.stderr.raw().contains("Timestamp"));
++    assert!(!output.stderr.raw().contains("Redate 1 revision"));
++    assert_eq!(
++        commit_metadata(&work_dir, "@"),
++        "2002-03-04 12:06:00|2002-03-04 12:06:00|unsigned\n"
++    );
++    assert_eq!(
++        work_dir
++            .run_jj([
++                "log",
++                "--no-graph",
++                "-r",
++                "@",
++                "-T",
++                r#"author.timestamp() ++ "\n""#,
++            ])
++            .success()
++            .stdout
++            .raw(),
++        "2002-03-04 05:06:00.000 -07:00\n"
++    );
++}
++
+ #[test]
+ fn test_redate_preserves_descendant_metadata_and_signs_on_request() {
+     let test_env = TestEnvironment::default();
+diff --git a/lib/src/time_util.rs b/lib/src/time_util.rs
+index d1865a0ee2db6f3ceed9df40e86c307844a7f2c5..4ee5c8f3bf4abfd3b43410dbe7a788da929bd968 100644
+--- a/lib/src/time_util.rs
++++ b/lib/src/time_util.rs
+@@ -72,6 +72,15 @@ pub enum DatePatternParseError {
+     ParseError(#[from] DateError),
+ }
+ 
++/// Error occurred while parsing a date-time expression.
++#[derive(Debug, Error)]
++#[error("Couldn't understand `{input}` as a date and time")]
++pub struct DateTimeExpressionParseError {
++    input: String,
++    #[source]
++    source: DateError,
++}
++
+ /// Represents an range of dates that may be matched against.
+ #[derive(Copy, Clone, Debug, Eq, PartialEq)]
+ pub enum DatePattern {
+@@ -132,6 +141,30 @@ pub fn parse_datetime(s: &str) -> chrono::ParseResult<Timestamp> {
+     ))
+ }
+ 
++/// Parses an exact or relative date-time expression relative to `now`.
++///
++/// Expressions without an explicit time zone are interpreted in `now`'s time
++/// zone. For example, this accepts `now`, `yesterday 5pm`, and RFC 3339
++/// timestamps.
++pub fn parse_datetime_expression<Tz: TimeZone<Offset = FixedOffset>>(
++    s: &str,
++    now: DateTime<Tz>,
++) -> Result<Timestamp, DateTimeExpressionParseError> {
++    if let Ok(datetime) = DateTime::parse_from_rfc2822(s)
++        .or_else(|_| DateTime::parse_from_rfc3339(s))
++        .or_else(|_| DateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S %:z"))
++        .or_else(|_| DateTime::parse_from_str(s, "%Y-%m-%d %H:%M %:z"))
++    {
++        return Ok(Timestamp::from_datetime(datetime));
++    }
++    let datetime =
++        parse_date_string(s, now, Dialect::Us).map_err(|source| DateTimeExpressionParseError {
++            input: s.to_owned(),
++            source,
++        })?;
++    Ok(Timestamp::from_datetime(datetime))
++}
++
+ #[cfg(test)]
+ mod tests {
+     use assert_matches::assert_matches;
+@@ -221,4 +254,20 @@ mod tests {
+         assert_eq!(timestamp, human_readable);
+         assert_eq!(timestamp, human_readable_explicit);
+     }
++
++    #[test]
++    fn test_parse_datetime_expression() {
++        let now = DateTime::parse_from_rfc3339("2024-01-01T08:00:00-08:00").unwrap();
++        let parse = |expression| parse_datetime_expression(expression, now).unwrap();
++
++        assert_eq!(parse("now"), Timestamp::from_datetime(now));
++        assert_eq!(
++            parse("yesterday 5pm"),
++            parse_datetime("2023-12-31T17:00:00-08:00").unwrap()
++        );
++        assert_eq!(
++            parse("2023-03-25 01:30:45 -05:00"),
++            parse_datetime("2023-03-25T01:30:45-05:00").unwrap()
++        );
++    }
+ }

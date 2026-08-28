@@ -1,19 +1,12 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From e63d9a05a041e35e53f83be82656fe618f2a491a Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Thu, 1 Jan 1970 00:00:00 +0000
+Date: Fri, 28 Aug 2026 01:04:00 +0300
 Subject: tui: share alternate-screen setup
 
-Centralize crossterm raw-mode and alternate-screen setup for ratatui
-commands. Restore the terminal through a cleanup guard on success,
-cancellation, and errors, and move arrange onto the shared runner.
----
- cli/src/commands/arrange.rs |   20 +------------------
- cli/src/lib.rs              |    1 
- cli/src/tui_util.rs         |   45 ++++++++++++++++++++++++++++++++++++++++++++
- 3 files changed, 48 insertions(+), 18 deletions(-)
- create mode 100644 cli/src/tui_util.rs
+Centralize crossterm raw-mode and alternate-screen setup for ratatui commands. Restore the terminal through a cleanup guard on success, cancellation, and errors, and move arrange onto the shared runner.
 
 diff --git a/cli/src/commands/arrange.rs b/cli/src/commands/arrange.rs
+index 70fa8ed5c5d7a168e308cd1241b66df1032027d6..5316df48b97f3acea427a337f339e5ace63c986d 100644
 --- a/cli/src/commands/arrange.rs
 +++ b/cli/src/commands/arrange.rs
 @@ -14,19 +14,13 @@
@@ -78,6 +71,8 @@ diff --git a/cli/src/commands/arrange.rs b/cli/src/commands/arrange.rs
  
      if let Some(new_state) = result? {
          let mut tx = workspace_command.start_transaction();
+diff --git a/cli/src/lib.rs b/cli/src/lib.rs
+index eff94476a5e2e343d06c7d798e5b7427b93e43e7..39826de70fa151d22d0607f1c507912a1d8455ef 100644
 --- a/cli/src/lib.rs
 +++ b/cli/src/lib.rs
 @@ -39,4 +39,5 @@ pub mod template_parser;
@@ -86,6 +81,9 @@ diff --git a/cli/src/commands/arrange.rs b/cli/src/commands/arrange.rs
  pub mod time_util;
 +mod tui_util;
  pub mod ui;
+diff --git a/cli/src/tui_util.rs b/cli/src/tui_util.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..44c457245325ec01607656366ee2aa4511a979a1
 --- /dev/null
 +++ b/cli/src/tui_util.rs
 @@ -0,0 +1,45 @@

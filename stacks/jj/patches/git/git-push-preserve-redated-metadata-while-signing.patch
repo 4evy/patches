@@ -1,24 +1,16 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 55952da9be2b0a60e206a5df0764cd10a9279e33 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Thu, 1 Jan 1970 00:00:00 +0000
+Date: Fri, 28 Aug 2026 01:04:00 +0300
 Subject: git push: preserve redated metadata while signing
 
-Treat signing during push as a transport concern. Preserve author and
-committer metadata on the commits being signed and on descendants
-rewritten because a signed parent's commit ID changed, including exact
-timestamps set with redate.
----
- CHANGELOG.md                 |    4 ++
- cli/src/commands/git/push.rs |   27 ++++++++-----
- cli/tests/test_git_push.rs   |   86 ++++++++++++++++++++++++++++++++++++++-----
- 3 files changed, 98 insertions(+), 19 deletions(-)
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 491f108cb1485d79a9d2e40bb1ba71af14b3c3c2..b1962d3b11901ff74da6d7c6edc41e9dbc8cdee5 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -56,6 +56,10 @@ to [Semantic Versioning](https://semver.
- 
- ### Fixed bugs
+@@ -64,6 +64,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+   when the commit stack is taller than the terminal.
+   [#9033](https://github.com/jj-vcs/jj/issues/9033).
  
 +* Signing commits during `jj git push` now preserves their author and committer
 +  metadata, including timestamps set by `jj redate`. Metadata is also preserved
@@ -28,9 +20,10 @@ diff --git a/CHANGELOG.md b/CHANGELOG.md
    instead of silently leaving them unsigned.
  
 diff --git a/cli/src/commands/git/push.rs b/cli/src/commands/git/push.rs
+index b9f9424d5ef8ea1a2da8682739ff8c6d37cb4bd3..a8918c5798089a3f4f8218dcf8beec52ac4bf73c 100644
 --- a/cli/src/commands/git/push.rs
 +++ b/cli/src/commands/git/push.rs
-@@ -869,23 +869,30 @@ async fn sign_commits_before_push(
+@@ -872,23 +872,30 @@ async fn sign_commits_before_push(
                  async |rewriter: CommitRewriter<'_>| {
                      let old_commit = rewriter.old_commit();
                      let old_commit_id = old_commit.id().clone();
@@ -72,6 +65,7 @@ diff --git a/cli/src/commands/git/push.rs b/cli/src/commands/git/push.rs
                  },
              )
 diff --git a/cli/tests/test_git_push.rs b/cli/tests/test_git_push.rs
+index 8b3914a9c66d294dd83d783c296638628616fb66..cd34f378db595dabc19ae429286e4397cbb8f688 100644
 --- a/cli/tests/test_git_push.rs
 +++ b/cli/tests/test_git_push.rs
 @@ -3047,9 +3047,9 @@ fn test_git_push_sign_on_push() {
@@ -121,11 +115,10 @@ diff --git a/cli/tests/test_git_push.rs b/cli/tests/test_git_push.rs
      [EOF]
      ");
      let output = work_dir.run_jj(["log", "-T", template]);
-@@ -3156,6 +3156,74 @@ fn test_git_push_sign_on_push() {
-     [EOF]
+@@ -3157,6 +3157,74 @@ fn test_git_push_sign_on_push() {
      ");
  }
-+
+ 
 +#[test]
 +fn test_git_push_sign_on_push_preserves_redated_timestamps() {
 +    let test_env = TestEnvironment::default();
@@ -193,6 +186,7 @@ diff --git a/cli/tests/test_git_push.rs b/cli/tests/test_git_push.rs
 +    [EOF]
 +    ");
 +}
- 
++
  #[test]
  fn test_git_push_rejected_by_remote() -> TestResult {
+     let test_env = TestEnvironment::default();
