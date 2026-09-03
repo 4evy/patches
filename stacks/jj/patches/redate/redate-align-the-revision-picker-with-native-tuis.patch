@@ -1,6 +1,6 @@
-From a10afc9e31081b35470f417608f11964e2c99d43 Mon Sep 17 00:00:00 2001
+From e93357a1c988857d0f17876ff383ffc07d441079 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Fri, 28 Aug 2026 01:04:00 +0300
+Date: Thu, 1 Jan 1970 00:00:00 +0000
 Subject: redate: align the revision picker with native TUIs
 
 Use a borderless title/main/status layout with stable checked markers and a full-row focus highlight so graph glyphs only describe topology. Keep the focused revision timestamp in the title bar, make key hints responsive, and add select-all, boundary navigation, anchored Shift range selection, and the standard c-to-confirm binding.
@@ -670,7 +670,7 @@ index 6172ab4413f4bd9981731ad0ef5e14b2225c1b6f..c9583eae97f736a52640ed360677f612
  "redate commit empty" = { fg = "bright black", italic = true }
 -"redate commit timestamp" = "bright black"
 diff --git a/cli/src/config/templates.toml b/cli/src/config/templates.toml
-index 41db1f48091f471f7b69a72fb1ef2b7e3d34dbfe..88f86d2ef2fb76bbcd1778f63608224b038e3792 100644
+index 46fe90e0bb9b318cb4bdf20e5abb9125e2c22da1..73ed74166f54c3953b9b1544e2adc87f3fe65d9b 100644
 --- a/cli/src/config/templates.toml
 +++ b/cli/src/config/templates.toml
 @@ -7,7 +7,6 @@ redate = '''

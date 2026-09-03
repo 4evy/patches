@@ -1,6 +1,6 @@
-From 9f53c1210122f3ee742726407e47c2242c2725f8 Mon Sep 17 00:00:00 2001
+From 75060e871751def1631a8cfcf7e8f9600c7f80a1 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Fri, 28 Aug 2026 01:04:00 +0300
+Date: Thu, 1 Jan 1970 00:00:00 +0000
 Subject: redate: add an interactive timestamp editor
 
 Add a revision picker that renders jj's topologically grouped graph with the configured graph style, log node template, and a command-specific row template. Use the same working-copy-oriented default revset as other history-editing commands.
@@ -8,10 +8,10 @@ Add a revision picker that renders jj's topologically grouped graph with the con
 Apply exact timestamps through the shared metadata transaction. Preserve descendant metadata with jj's standard keep signing behavior, and make signing selected revisions opt-in with --sign.
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index cf113f6df28084465cefa75b6fb3a362b5f0e89c..491f108cb1485d79a9d2e40bb1ba71af14b3c3c2 100644
+index 449b40f5154672b5c725bb500dad74acc201009d..fd3bce89b42e0cc3018938fd0de98167ebf2f7b0 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -54,6 +54,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+@@ -81,6 +81,10 @@ None
    repositories. `jj git ref fetch --shallow-exclude` can fetch a review stack
    plus one parent generation for a usable diff base.
  
@@ -21,7 +21,7 @@ index cf113f6df28084465cefa75b6fb3a362b5f0e89c..491f108cb1485d79a9d2e40bb1ba71af
 +
  ### Fixed bugs
  
- * `jj arrange` now scrolls the viewport to keep the selected commit visible
+ * [The default `immutable_heads()` set](docs/config.md#set-of-immutable-commits)
 diff --git a/cli/src/commands/metaedit.rs b/cli/src/commands/metaedit.rs
 index 6bc79c9df1c280c8f8731ae781d130ec2c8c70c5..5fa01179f99061cabc56ecdf0dc0cb86cac3e855 100644
 --- a/cli/src/commands/metaedit.rs
@@ -570,7 +570,7 @@ index 0000000000000000000000000000000000000000..974c35f5f684e68ab72ea2a0e9bb9d8f
 +    }
 +}
 diff --git a/cli/src/config-schema.json b/cli/src/config-schema.json
-index 625ec6b7775a15c90cfa56f1b64bb2660951bfb7..65652a178471857cf348a7b930b051ef555ec37b 100644
+index 3f2d1f30cc0f1b763d5c26cadabf4cf449567cfe..c915a7b0b9218abdbaf2653b0a04b129f06f0ef7 100644
 --- a/cli/src/config-schema.json
 +++ b/cli/src/config-schema.json
 @@ -742,6 +742,11 @@
@@ -612,7 +612,7 @@ index 76e5534287fced1d1293b762601710fd28f58949..6172ab4413f4bd9981731ad0ef5e14b2
 +"redate commit empty" = { fg = "bright black", italic = true }
 +"redate commit timestamp" = "bright black"
 diff --git a/cli/src/config/revsets.toml b/cli/src/config/revsets.toml
-index 5cdd1f2057d5c510d9e35475c256bdfd98406cbb..0b7f0f243a7e195300e885a20c6c1889335354f1 100644
+index 43ff7cc8c8c6d46793da9b214297f8ebfb89977b..a144183e69165651c08359c8cd1be1d12c40cf80 100644
 --- a/cli/src/config/revsets.toml
 +++ b/cli/src/config/revsets.toml
 @@ -7,6 +7,7 @@ converge = "mutable() & divergent()"
@@ -624,7 +624,7 @@ index 5cdd1f2057d5c510d9e35475c256bdfd98406cbb..0b7f0f243a7e195300e885a20c6c1889
  # evaluate, lengthy warning messages would be printed. Use present(expr) if
  # symbols in expr might not always exist.
 diff --git a/cli/src/config/templates.toml b/cli/src/config/templates.toml
-index afdb50828cfd5aba473eb26353d1e1a8a23cca5e..41db1f48091f471f7b69a72fb1ef2b7e3d34dbfe 100644
+index a619b5bd35724e15108ffcd5daec619f05546546..46fe90e0bb9b318cb4bdf20e5abb9125e2c22da1 100644
 --- a/cli/src/config/templates.toml
 +++ b/cli/src/config/templates.toml
 @@ -3,6 +3,13 @@ bookmark_list = 'format_commit_ref(self, "bookmark") ++ "\n"'
@@ -642,7 +642,7 @@ index afdb50828cfd5aba473eb26353d1e1a8a23cca5e..41db1f48091f471f7b69a72fb1ef2b7e
  file_annotate = '''
  join(" ",
 diff --git a/cli/tests/cli-reference@.md.snap b/cli/tests/cli-reference@.md.snap
-index 1ceee6ffc755efa7aacca58e7af7cb1776b3c54e..8765ce08edb6647dc2c91c3b32a736c3ea49bd38 100644
+index 276ab04464edc72b4771c037351050b96e7431b8..a525422ce05893890387ada99f81ccb096d3d599 100644
 --- a/cli/tests/cli-reference@.md.snap
 +++ b/cli/tests/cli-reference@.md.snap
 @@ -95,6 +95,7 @@ This document contains the help content for the `jj` command-line program.
@@ -661,7 +661,7 @@ index 1ceee6ffc755efa7aacca58e7af7cb1776b3c54e..8765ce08edb6647dc2c91c3b32a736c3
  * `redo` — Redo the most recently undone operation
  * `resolve` — Resolve conflicted files with an external merge tool
  * `restore` — Restore paths from another revision
-@@ -3046,6 +3048,22 @@ J           J
+@@ -3103,6 +3105,22 @@ J           J
  
  
  
@@ -846,10 +846,10 @@ index 0000000000000000000000000000000000000000..0f29d396f89d652ae2d824dc86fb0d47
 +        .to_owned()
 +}
 diff --git a/docs/config.md b/docs/config.md
-index cb6e039d8c5253da9ce15fd8dc7eebe03001fd48..705ec927da41a4e4ce20cc0ee8397c1e5ddd5bf9 100644
+index 076bf44df428f387215362bb0da24f7f2d94494d..50eb6e6b00b468728ad7ce710de064a37004ca32 100644
 --- a/docs/config.md
 +++ b/docs/config.md
-@@ -1594,6 +1594,32 @@ this setting for a single invocation:
+@@ -1597,6 +1597,32 @@ this setting for a single invocation:
  jj run -j 4 -- cargo fmt
  ```
  

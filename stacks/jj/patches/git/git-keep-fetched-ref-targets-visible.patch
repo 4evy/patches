@@ -1,6 +1,6 @@
-From 52d695fe506c49f236a3c3f40935308f941b69ed Mon Sep 17 00:00:00 2001
+From 3658cd2c542c76f53596e7a70046c7b986af3639 Mon Sep 17 00:00:00 2001
 From: Josh McKinney <joshka@users.noreply.github.com>
-Date: Fri, 28 Aug 2026 01:04:00 +0300
+Date: Thu, 1 Jan 1970 00:00:00 +0000
 Subject: git: keep fetched ref targets visible
 
 Fetched Git refs are durable labels for the commit imported from the

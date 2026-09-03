@@ -1,6 +1,6 @@
-From f5dc502652dc3235bc0866485acdf5a57a7d973b Mon Sep 17 00:00:00 2001
+From a433e76a77597be451dd815265cdced9cab45c99 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Fri, 28 Aug 2026 01:04:00 +0300
+Date: Thu, 1 Jan 1970 00:00:00 +0000
 Subject: git fetch: refresh ancestry after shallow boundary changes
 
 Allow regular fetches to deepen an existing shallow repository and add
@@ -194,7 +194,7 @@ index 83495bf3e73f14b0f142f8626d4a4ee427d2e439..c2f294ff3ceba5886a953c8da399a4d8
      if workspace_command.working_copy_shared_with_git() {
          std::fs::write(
 diff --git a/cli/src/config-schema.json b/cli/src/config-schema.json
-index e48edbb45c82adfd7abce87712c5f132a7683e83..e604e2412a385824dde0505b27a953110dc9a7b7 100644
+index aa841243910c164a92f6db7722988138fca9afb1..a19b338da7d97daed42672966d11617fd83bd096 100644
 --- a/cli/src/config-schema.json
 +++ b/cli/src/config-schema.json
 @@ -515,6 +515,11 @@
@@ -210,10 +210,10 @@ index e48edbb45c82adfd7abce87712c5f132a7683e83..e604e2412a385824dde0505b27a95311
                      "type": "string",
                      "description": "Revset of commits to refuse to push to remotes",
 diff --git a/cli/tests/cli-reference@.md.snap b/cli/tests/cli-reference@.md.snap
-index 35b864712ae12b5f25adc91daa94c75450d9ae11..df9cbf2c07e104940bf6ac303661539f3b15fb8d 100644
+index c668accd631df49656d70def3ac8e4edda22575f..8ff66fafd72ea65235f2357afdb8e3829c9e272e 100644
 --- a/cli/tests/cli-reference@.md.snap
 +++ b/cli/tests/cli-reference@.md.snap
-@@ -1767,6 +1767,9 @@ If a working-copy commit gets abandoned, it will be given a new, empty commit. T
+@@ -1824,6 +1824,9 @@ If a working-copy commit gets abandoned, it will be given a new, empty commit. T
  
     [string pattern syntax]: https://docs.jj-vcs.dev/latest/revsets/#string-patterns
  * `--all-remotes` — Fetch from all remotes

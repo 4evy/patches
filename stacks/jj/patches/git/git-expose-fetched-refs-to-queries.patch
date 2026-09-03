@@ -1,6 +1,6 @@
-From a2da4b65c7e73a0422e8224223e2976ec959b638 Mon Sep 17 00:00:00 2001
+From 8dc63974aeee831233e586c8604f525e08e3d1bc Mon Sep 17 00:00:00 2001
 From: Josh McKinney <joshka@users.noreply.github.com>
-Date: Fri, 28 Aug 2026 01:04:00 +0300
+Date: Thu, 1 Jan 1970 00:00:00 +0000
 Subject: git: expose fetched refs to queries
 
 Allow stored fetched Git refs to be resolved from revsets and reported
@@ -110,7 +110,7 @@ index cbb513fc162f91191455903b2bb977ba805e76a8..84d2b21a909fb3be94382924d43b1d78
  }
  
 diff --git a/lib/src/revset.rs b/lib/src/revset.rs
-index 5eee838369986a15791c25e5d317365280e10cc0..93a4d46f6a1bebeb4585ed4ef6ec93c72c1abf0a 100644
+index fb96220f2e59b89b2949d84803b7d5247701b2a1..fb42b67ee6cf5340e136b8048f25da6bb504c505 100644
 --- a/lib/src/revset.rs
 +++ b/lib/src/revset.rs
 @@ -53,6 +53,7 @@ use crate::op_store::LocalRemoteRefTarget;
@@ -121,7 +121,7 @@ index 5eee838369986a15791c25e5d317365280e10cc0..93a4d46f6a1bebeb4585ed4ef6ec93c7
  use crate::ref_name::RefName;
  use crate::ref_name::RemoteName;
  use crate::ref_name::RemoteRefSymbol;
-@@ -160,6 +161,7 @@ pub enum RevsetCommitRef {
+@@ -161,6 +162,7 @@ pub enum RevsetCommitRef {
          symbol: RemoteRefSymbolExpression,
          remote_ref_state: Option<RemoteRefState>,
      },
@@ -129,7 +129,7 @@ index 5eee838369986a15791c25e5d317365280e10cc0..93a4d46f6a1bebeb4585ed4ef6ec93c7
  }
  
  /// String expressions to match `name@remote` bookmarks/tags.
-@@ -464,6 +466,10 @@ impl<St: ExpressionState<CommitRef = RevsetCommitRef>> RevsetExpression<St> {
+@@ -465,6 +467,10 @@ impl<St: ExpressionState<CommitRef = RevsetCommitRef>> RevsetExpression<St> {
              remote_ref_state,
          }))
      }
@@ -140,7 +140,7 @@ index 5eee838369986a15791c25e5d317365280e10cc0..93a4d46f6a1bebeb4585ed4ef6ec93c7
  }
  
  // Compound expression
-@@ -989,6 +995,10 @@ static BUILTIN_FUNCTION_MAP: LazyLock<HashMap<&str, RevsetFunction>> = LazyLock:
+@@ -990,6 +996,10 @@ static BUILTIN_FUNCTION_MAP: LazyLock<HashMap<&str, RevsetFunction>> = LazyLock:
          let state = None;
          Ok(RevsetExpression::remote_tags(symbol, state))
      });
@@ -148,10 +148,10 @@ index 5eee838369986a15791c25e5d317365280e10cc0..93a4d46f6a1bebeb4585ed4ef6ec93c7
 +        let symbol = parse_remote_refs_arguments(diagnostics, function, context)?;
 +        Ok(RevsetExpression::fetched_git_refs(symbol))
 +    });
-     // TODO: Document tracked/untracked_remote_tags() if we add untracked state
-     // to remote tags.
      map.insert("tracked_remote_tags", |diagnostics, function, context| {
-@@ -2658,6 +2668,12 @@ fn resolve_remote_symbol(
+         let symbol = parse_remote_refs_arguments(diagnostics, function, context)?;
+         let state = Some(RemoteRefState::Tracked);
+@@ -2657,6 +2667,12 @@ fn resolve_remote_symbol(
      if let Some(id) = to_resolved_ref("remote_bookmark", symbol, &remote_ref.target)? {
          return Ok(id);
      }
@@ -164,7 +164,7 @@ index 5eee838369986a15791c25e5d317365280e10cc0..93a4d46f6a1bebeb4585ed4ef6ec93c7
      Err(make_no_such_symbol_error(repo, symbol.to_string()))
  }
  
-@@ -2703,7 +2719,18 @@ fn make_no_such_symbol_error(repo: &dyn Repo, name: String) -> RevsetResolutionE
+@@ -2702,7 +2718,18 @@ fn make_no_such_symbol_error(repo: &dyn Repo, name: String) -> RevsetResolutionE
      let include_synced_remotes = name.contains('@');
      let tag_names = all_formatted_ref_symbols(repo.view().tags(), include_synced_remotes);
      let bookmark_names = all_formatted_ref_symbols(repo.view().bookmarks(), include_synced_remotes);
@@ -184,7 +184,7 @@ index 5eee838369986a15791c25e5d317365280e10cc0..93a4d46f6a1bebeb4585ed4ef6ec93c7
      candidates.dedup(); // tags and bookmarks may have duplicate symbols
      RevsetResolutionError::NoSuchRevision { name, candidates }
  }
-@@ -3032,6 +3059,17 @@ fn resolve_commit_ref(
+@@ -3031,6 +3058,17 @@ fn resolve_commit_ref(
                  .collect();
              Ok(commit_ids)
          }

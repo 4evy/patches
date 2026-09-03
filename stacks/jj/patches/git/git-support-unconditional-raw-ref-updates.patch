@@ -1,6 +1,6 @@
-From 2e64ae86180a0cee2fe1343a8bc2e549ebc00fd0 Mon Sep 17 00:00:00 2001
+From c68f235e4a0e6018668a44226b727e54068ab9d9 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Fri, 28 Aug 2026 01:04:00 +0300
+Date: Thu, 1 Jan 1970 00:00:00 +0000
 Subject: git: support unconditional raw ref updates
 
 Raw ref updates need guarded and unconditional modes. Existing bookmark,
@@ -16,10 +16,10 @@ already has the requested target
 Refs #4388
 
 diff --git a/cli/src/commands/gerrit/upload.rs b/cli/src/commands/gerrit/upload.rs
-index e6e977ecad8763b47c64f284085a04348928d399..12f48d9191c14cf3b4185fa8f68b24485cfc9e38 100644
+index 4969f506319ac83d42c80717adcd25de3b4bdfc8..ef577e76485c1680008d96ec3418d5222c7fa6b6 100644
 --- a/cli/src/commands/gerrit/upload.rs
 +++ b/cli/src/commands/gerrit/upload.rs
-@@ -678,15 +678,15 @@ pub async fn cmd_gerrit_upload(
+@@ -696,15 +696,15 @@ pub async fn cmd_gerrit_upload(
              tx.repo_mut(),
              subprocess_options.clone(),
              remote.as_ref(),

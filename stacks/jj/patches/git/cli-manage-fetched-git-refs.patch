@@ -1,6 +1,6 @@
-From e5c62dced4807d0848297a3429811a6cd6c53365 Mon Sep 17 00:00:00 2001
+From 9aa19d419d9c5d10594040d53b616a202ff2464a Mon Sep 17 00:00:00 2001
 From: Josh McKinney <joshka@users.noreply.github.com>
-Date: Fri, 28 Aug 2026 01:04:00 +0300
+Date: Thu, 1 Jan 1970 00:00:00 +0000
 Subject: cli: manage fetched Git refs
 
 Record arbitrary fetched refs as durable review refs and add commands to
@@ -365,7 +365,7 @@ index ce9771feaaee603e2b20908b7d3c3c30234dddf6..c13a4ca743c129278f77643409a76dac
      }
  }
 diff --git a/cli/tests/cli-reference@.md.snap b/cli/tests/cli-reference@.md.snap
-index d0bf7a04c5df0a5536155ddced7293dceb3b9746..35b864712ae12b5f25adc91daa94c75450d9ae11 100644
+index 05ab2a4928d13c9ed86424490ed53c2b9ec8f89b..c668accd631df49656d70def3ac8e4edda22575f 100644
 --- a/cli/tests/cli-reference@.md.snap
 +++ b/cli/tests/cli-reference@.md.snap
 @@ -1,5 +1,6 @@
@@ -386,7 +386,7 @@ index d0bf7a04c5df0a5536155ddced7293dceb3b9746..35b864712ae12b5f25adc91daa94c754
  * [`jj git push`↴](#jj-git-push)
  * [`jj git ref`↴](#jj-git-ref)
  * [`jj git ref fetch`↴](#jj-git-ref-fetch)
-@@ -1603,6 +1608,7 @@ See this [comparison], including a [table of commands].
+@@ -1660,6 +1665,7 @@ See this [comparison], including a [table of commands].
  * `fetch` — Fetch from a Git remote
  * `import` — Update repo with changes made in the underlying Git repo
  * `init` — Create a new Git backed repo
@@ -394,7 +394,7 @@ index d0bf7a04c5df0a5536155ddced7293dceb3b9746..35b864712ae12b5f25adc91daa94c754
  * `push` — Push to a Git remote
  * `ref` — Manage raw Git refs
  * `remote` — Manage Git remotes
-@@ -1830,6 +1836,76 @@ Create a new Git backed repo
+@@ -1887,6 +1893,76 @@ Create a new Git backed repo
  
  
  

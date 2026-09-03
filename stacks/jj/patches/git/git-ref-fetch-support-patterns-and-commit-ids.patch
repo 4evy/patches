@@ -1,6 +1,6 @@
-From dd34ae58e074d6404f1638cc20623a4a547c9f29 Mon Sep 17 00:00:00 2001
+From 00ce2a3f2494f71f87d55be7065caeca618176c1 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Fri, 28 Aug 2026 01:04:00 +0300
+Date: Thu, 1 Jan 1970 00:00:00 +0000
 Subject: git ref fetch: support patterns and commit IDs
 
 Accept multiple refs in one atomic operation, expand one-wildcard ref
@@ -9,10 +9,10 @@ anonymously. Keep list/forget name handling consistent and document the
 batch behavior
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index c3136d1bd5c62e6adb27c0bce85ff4360c799223..28ac97822f95f70dc6fcaf77cbe55526bf9c18f1 100644
+index 721bb753aa7cc31b5905ef843a58a1298831bcab..d5822d9b8919b6f88a2dd07c2852b96505dda044 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -119,9 +119,10 @@ None
+@@ -181,9 +181,10 @@ None
  
  ### New features
  
@@ -26,10 +26,10 @@ index c3136d1bd5c62e6adb27c0bce85ff4360c799223..28ac97822f95f70dc6fcaf77cbe55526
  * `jj git fetch` now supports `--depth` in existing repositories, with
    `git.fetch-depth` as the default for subsequent fetches in shallow
 diff --git a/cli/src/cli_util.rs b/cli/src/cli_util.rs
-index d716ef7a108f6c275bb20a765412d45fd68d9512..360d1d6d4edaeb3aeea28eb965c310ed8e312b01 100644
+index cad6842c7993f161a27406d3e72517acf6f4e0df..9bdece3fc730e0c269c8131bf905cfba3ff8b964 100644
 --- a/cli/src/cli_util.rs
 +++ b/cli/src/cli_util.rs
-@@ -2041,6 +2041,15 @@ to the current parents may contain changes from multiple commits.
+@@ -2043,6 +2043,15 @@ to the current parents may contain changes from multiple commits.
          to_rewrite_expr: &Arc<ResolvedRevsetExpression>,
      ) -> Result<(), CommandError> {
          let repo = self.repo().as_ref();
@@ -45,7 +45,7 @@ index d716ef7a108f6c275bb20a765412d45fd68d9512..360d1d6d4edaeb3aeea28eb965c310ed
          let immutable_expr = self.env.resolve_immutable_expression(repo)?;
          let Some(commit_id) = immutable_expr
              .intersection(to_rewrite_expr)
-@@ -2787,6 +2796,18 @@ impl WorkspaceCommandTransaction<'_> {
+@@ -2789,6 +2798,18 @@ impl WorkspaceCommandTransaction<'_> {
          self.tx.repo_mut()
      }
  
@@ -518,7 +518,7 @@ index c13a4ca743c129278f77643409a76dac86e52bdc..532feeaf01ec58d98ca53f683490df36
      ui: &mut Ui,
      command: &CommandHelper,
 diff --git a/cli/tests/cli-reference@.md.snap b/cli/tests/cli-reference@.md.snap
-index ac123ce89028bb6f2e16e0d3e820ff5d0b3a676a..4a649082e4b56694e25ae1d4f4ed56f3e5f1f134 100644
+index b1724e20d0166dae1e7d4ec97cbb47dc8ee4863c..0ce595c9902928c9f0585de538c114268a68d572 100644
 --- a/cli/tests/cli-reference@.md.snap
 +++ b/cli/tests/cli-reference@.md.snap
 @@ -1,6 +1,5 @@
@@ -544,7 +544,7 @@ index ac123ce89028bb6f2e16e0d3e820ff5d0b3a676a..4a649082e4b56694e25ae1d4f4ed56f3
  * [`jj git ref push`↴](#jj-git-ref-push)
  * [`jj git remote`↴](#jj-git-remote)
  * [`jj git remote add`↴](#jj-git-remote-add)
-@@ -1608,7 +1605,6 @@ See this [comparison], including a [table of commands].
+@@ -1665,7 +1662,6 @@ See this [comparison], including a [table of commands].
  * `fetch` — Fetch from a Git remote
  * `import` — Update repo with changes made in the underlying Git repo
  * `init` — Create a new Git backed repo
@@ -552,7 +552,7 @@ index ac123ce89028bb6f2e16e0d3e820ff5d0b3a676a..4a649082e4b56694e25ae1d4f4ed56f3
  * `push` — Push to a Git remote
  * `ref` — Manage raw Git refs
  * `remote` — Manage Git remotes
-@@ -1839,82 +1835,6 @@ Create a new Git backed repo
+@@ -1896,82 +1892,6 @@ Create a new Git backed repo
  
  
  
@@ -635,7 +635,7 @@ index ac123ce89028bb6f2e16e0d3e820ff5d0b3a676a..4a649082e4b56694e25ae1d4f4ed56f3
  ## `jj git push`
  
  Push to a Git remote
-@@ -1988,28 +1908,74 @@ Manage raw Git refs
+@@ -2045,28 +1965,74 @@ Manage raw Git refs
  
  ###### **Subcommands:**
  

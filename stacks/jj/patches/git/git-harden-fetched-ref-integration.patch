@@ -1,17 +1,17 @@
-From b0e8220ad3c4cf310e0e9d5d37b665a732e066ea Mon Sep 17 00:00:00 2001
+From 4c6369f6553cca857f81f477dec076069ccec8de Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Fri, 28 Aug 2026 01:04:00 +0300
+Date: Thu, 1 Jan 1970 00:00:00 +0000
 Subject: git: harden fetched ref integration
 
 Reuse canonical fetched-ref iteration and raw-fetch plumbing, normalize object IDs, preserve accurate cleanup errors, report merged ref conflicts, and avoid shallow-index rebuilds for order-only changes.
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index 28ac97822f95f70dc6fcaf77cbe55526bf9c18f1..7dc9ff8cb7108bb557e944f6af86e13e23c6a640 100644
+index d5822d9b8919b6f88a2dd07c2852b96505dda044..7773be29919b0e33b1d02d76a2c422556168a253 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -33,14 +33,20 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-   back to prompting the user if the heuristics are inconclusive. It can also run
-   in non-interactive mode, which aborts if prompting would be needed.
+@@ -60,14 +60,20 @@ None
+   directory or loaded via `--config-file`). This allows precise file targeting
+   and avoids interactive prompts when multiple config files exist.
  
 -* `jj git ref fetch` can fetch raw Git refs or full commit IDs from a configured
 -  remote. The fetched commits become visible without creating bookmarks or
@@ -32,8 +32,8 @@ index 28ac97822f95f70dc6fcaf77cbe55526bf9c18f1..7dc9ff8cb7108bb557e944f6af86e13e
 +
  ### Fixed bugs
  
- * `jj arrange` now scrolls the viewport to keep the selected commit visible
-@@ -119,16 +125,6 @@ None
+ * [The default `immutable_heads()` set](docs/config.md#set-of-immutable-commits)
+@@ -181,16 +187,6 @@ None
  
  ### New features
  
@@ -583,10 +583,10 @@ index ee492b18f76d7f2b3b39a922a83853a18815f391..bf6739fe38098ea793b310ad67947f46
  
          let changed_remote_bookmarks =
 diff --git a/lib/src/revset.rs b/lib/src/revset.rs
-index 93a4d46f6a1bebeb4585ed4ef6ec93c72c1abf0a..3b3bd2098fb6728dd06cb540c7d866d018e65839 100644
+index fb42b67ee6cf5340e136b8048f25da6bb504c505..6d3cd2f25c81a07b13944397bb9c5a421bf0de68 100644
 --- a/lib/src/revset.rs
 +++ b/lib/src/revset.rs
-@@ -2721,12 +2721,8 @@ fn make_no_such_symbol_error(repo: &dyn Repo, name: String) -> RevsetResolutionE
+@@ -2720,12 +2720,8 @@ fn make_no_such_symbol_error(repo: &dyn Repo, name: String) -> RevsetResolutionE
      let bookmark_names = all_formatted_ref_symbols(repo.view().bookmarks(), include_synced_remotes);
      let fetched_ref_names = repo
          .view()
@@ -601,7 +601,7 @@ index 93a4d46f6a1bebeb4585ed4ef6ec93c72c1abf0a..3b3bd2098fb6728dd06cb540c7d866d0
      let mut candidates = collect_similar(
          &name,
          itertools::chain!(tag_names, bookmark_names, fetched_ref_names),
-@@ -3065,7 +3061,7 @@ fn resolve_commit_ref(
+@@ -3064,7 +3060,7 @@ fn resolve_commit_ref(
              let commit_ids = repo
                  .view()
                  .fetched_git_refs_matching(&name_matcher, &remote_matcher)

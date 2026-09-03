@@ -1,6 +1,6 @@
-From 37b58b826b92bfb355e31fe8294c140bbc327c57 Mon Sep 17 00:00:00 2001
+From 19a8cc53998ca3491cc0b361be2d88426fb4eeed Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Fri, 28 Aug 2026 01:04:00 +0300
+Date: Thu, 1 Jan 1970 00:00:00 +0000
 Subject: docs: document fetched Git refs and shallow fetching
 
 Document durable fetched refs, their revset and template surfaces, and
@@ -8,10 +8,10 @@ shallow-fetch workflows. Add changelog entries for raw-ref fetching,
 configurable depth, and review-stack fetching
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index 35d897d8fceac37ac18a19f4d0d279b541712be7..c3136d1bd5c62e6adb27c0bce85ff4360c799223 100644
+index 4e352cf44ffa5d6695a33166e14ad09b37589ee7..721bb753aa7cc31b5905ef843a58a1298831bcab 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -119,6 +119,15 @@ None
+@@ -181,6 +181,15 @@ None
  
  ### New features
  
@@ -70,12 +70,12 @@ index 99f33a456da40da28a87280c1518acba193d16d1..280d46790f926085e9d4b7ef6e607ef0
  Use `jj git ref push` to push one revision to an application-specific ref such
  as Gerrit's `refs/for/main`. Unlike `jj git push`, this low-level command does
 diff --git a/docs/revsets.md b/docs/revsets.md
-index 3e455b17c2bd05b73601d224588e9c62486d1874..0497ad96fe96b6f833985d7f93f7635311dd4cf1 100644
+index c7aa71f390c197ef6479492cb90e8b12b920e01c..734d9a152bbf126fc301f8d34bf9858fd992cfe1 100644
 --- a/docs/revsets.md
 +++ b/docs/revsets.md
-@@ -325,6 +325,11 @@ revsets (expressions) as arguments.
- * `remote_tags([name_pattern], [[remote=]remote_pattern])`: All remote tags
-   targets across all remotes. See `remote_bookmarks()` for arguments.
+@@ -333,6 +333,11 @@ revsets (expressions) as arguments.
+   targets of untracked remote tags. Supports the same optional arguments as
+   `remote_tags()`.
  
 +* `fetched_git_refs([name_pattern], [[remote=]remote_pattern])`: Targets of raw
 +  Git refs fetched with `jj git ref fetch`. `name_pattern` matches the complete
@@ -86,7 +86,7 @@ index 3e455b17c2bd05b73601d224588e9c62486d1874..0497ad96fe96b6f833985d7f93f76353
    revisions are mentioned).
  
 diff --git a/docs/templates.md b/docs/templates.md
-index 740066e73c6ddf0924f901e0230eb6b7a02cc0e1..231eb16805f7dbbfde58317046d809068d3a485d 100644
+index 961a193a2c30c5171b2cb72d24fb77948013bee2..97dbaf7bf6be50e7bd6afa538ebfec9caf6090ad 100644
 --- a/docs/templates.md
 +++ b/docs/templates.md
 @@ -273,6 +273,9 @@ This type cannot be printed. The following methods are defined.

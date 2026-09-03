@@ -1,6 +1,6 @@
-From 2b816214fc5ee1a7a2c16b234324890ae3ca51c4 Mon Sep 17 00:00:00 2001
+From 6a474a6914b7a5b1421f67f85bbeccc787fea12a Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Fri, 28 Aug 2026 01:04:00 +0300
+Date: Thu, 1 Jan 1970 00:00:00 +0000
 Subject: metaedit: share the commit edit transaction
 
 Separate revision selection from metadata mutation and extract the transaction-backed editing path behind a dedicated options type. Sibling commands can now reuse descendant transformation and rewrite bookkeeping without constructing metaedit's command-line arguments.

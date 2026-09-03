@@ -1,6 +1,6 @@
-From a695c4fdcdb2f383bcdcec027c1ba0b12fc41060 Mon Sep 17 00:00:00 2001
+From 8bca816f2d832bf10e263e884a20da73802ac602 Mon Sep 17 00:00:00 2001
 From: Josh McKinney <joshka@users.noreply.github.com>
-Date: Fri, 28 Aug 2026 01:04:00 +0300
+Date: Thu, 1 Jan 1970 00:00:00 +0000
 Subject: template: expose fetched Git refs on commits
 
 Add a commit template method for displaying fetched Git refs so log

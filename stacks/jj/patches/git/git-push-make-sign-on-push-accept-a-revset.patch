@@ -1,6 +1,6 @@
-From dd61accfb3aadd029ca9f05a3823efd941652c45 Mon Sep 17 00:00:00 2001
+From bf11d74556601a5606fe67bc80cb93aa29a3d2e1 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Fri, 28 Aug 2026 01:04:00 +0300
+Date: Thu, 1 Jan 1970 00:00:00 +0000
 Subject: git push: make sign-on-push accept a revset
 
 Let users define signing policy with the same revset language used by other jj configuration. Intersect the configured selector with commits outgoing to the pushed references and force-sign exactly the selected commits.
@@ -8,10 +8,10 @@ Let users define signing policy with the same revset language used by other jj c
 Default to none() and migrate boolean values for six releases so existing configurations keep their old mutable, unsigned, own-commit behavior.
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index 7dc9ff8cb7108bb557e944f6af86e13e23c6a640..d03484aef4424b53531fc60237f499ab9a5b82e8 100644
+index 7773be29919b0e33b1d02d76a2c422556168a253..d51fc1f3bde5a97820b472598bcd51dc3bb553f6 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -15,6 +15,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+@@ -35,6 +35,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
  * `jj git import` in non-colocated repositories no longer imports commits from a
    detached Git HEAD branch.
  
@@ -21,9 +21,9 @@ index 7dc9ff8cb7108bb557e944f6af86e13e23c6a640..d03484aef4424b53531fc60237f499ab
 +
  ### Deprecations
  
- ### New features
+ None
 diff --git a/cli/src/commands/git/push.rs b/cli/src/commands/git/push.rs
-index 0df9dfa92f487b183e047703fae594b7be3e097b..81649e86fbd0d13469ec7cc1dd3d2cc441e11d21 100644
+index 860ef6ccdb7d70935fff4d3a801675f25d5e6338..f552a1ccbd56cd1454deacfe145766d4293cecbf 100644
 --- a/cli/src/commands/git/push.rs
 +++ b/cli/src/commands/git/push.rs
 @@ -14,7 +14,6 @@
@@ -34,7 +34,7 @@ index 0df9dfa92f487b183e047703fae594b7be3e097b..81649e86fbd0d13469ec7cc1dd3d2cc4
  use std::io;
  use std::io::Write as _;
  use std::iter;
-@@ -534,9 +533,14 @@ pub async fn cmd_git_push(
+@@ -535,9 +534,14 @@ pub async fn cmd_git_push(
          return Ok(());
      }
  
@@ -52,7 +52,7 @@ index 0df9dfa92f487b183e047703fae594b7be3e097b..81649e86fbd0d13469ec7cc1dd3d2cc4
      }
  
      if let Some(mut formatter) = ui.status_formatter() {
-@@ -810,19 +814,13 @@ fn ready_to_push_revset_expression(
+@@ -811,22 +815,18 @@ fn ready_to_push_revset_expression(
  async fn sign_commits_before_push(
      ui: &Ui,
      tx: &mut WorkspaceCommandTransaction<'_>,
@@ -62,22 +62,45 @@ index 0df9dfa92f487b183e047703fae594b7be3e097b..81649e86fbd0d13469ec7cc1dd3d2cc4
  ) -> Result<GitPushRefTargets, CommandError> {
 -    let mut sign_settings = tx.settings().sign_settings();
 -    sign_settings.behavior = SignBehavior::Own;
--    let commit_ids: IndexSet<CommitId> = tx
--        .base_workspace_helper()
--        .attach_revset_evaluator(commits_to_push)
+-    // TODO: make filter condition configurable by revset?
+-    let needs_signing = |commit: &Commit| {
+-        future::ready(!commit.is_signed() && sign_settings.should_sign(commit.store_commit()))
+-    };
+-
+     let workspace_helper = tx.base_workspace_helper();
+-    let immutable = workspace_helper.env().immutable_expression();
+-    let skipped: Vec<Commit> = workspace_helper
+-        .attach_revset_evaluator(commits_to_push.intersection(&immutable))
 -        .evaluate_to_commits()?
--        // TODO: make filter condition configurable by revset?
--        .try_filter(|commit| {
--            future::ready(!commit.is_signed() && sign_settings.should_sign(commit.store_commit()))
--        })
+-        .try_filter(needs_signing)
++    let immutable = workspace_helper
++        .attach_revset_evaluator(workspace_helper.env().immutable_expression())
++        .resolve()?;
++    let skipped: Vec<Commit> = commits_to_sign
++        .intersection(&immutable)
++        .evaluate(tx.base_repo().as_ref())?
++        .stream()
++        .commits(tx.base_repo().store())
+         .take(11)
+         .try_collect()
+         .await?;
+@@ -848,10 +848,11 @@ async fn sign_commits_before_push(
+         )?;
+     }
+ 
+-    let commit_ids: IndexSet<CommitId> = workspace_helper
+-        .attach_revset_evaluator(commits_to_push.minus(&immutable))
+-        .evaluate_to_commits()?
+-        .try_filter(needs_signing)
 +    let commit_ids: IndexSet<CommitId> = commits_to_sign
++        .minus(&immutable)
 +        .evaluate(tx.base_repo().as_ref())?
 +        .stream()
 +        .commits(tx.base_repo().store())
          .map_ok(|commit| commit.id().clone())
          .try_collect()
          .await?;
-@@ -849,7 +847,7 @@ async fn sign_commits_before_push(
+@@ -878,7 +879,7 @@ async fn sign_commits_before_push(
                      if commit_ids.contains(&old_commit_id) {
                          let commit = rewriter
                              .reparent()
@@ -87,7 +110,7 @@ index 0df9dfa92f487b183e047703fae594b7be3e097b..81649e86fbd0d13469ec7cc1dd3d2cc4
                              .await?;
                          old_to_new_commits_map.insert(old_commit_id, commit.id().clone());
 diff --git a/cli/src/config-schema.json b/cli/src/config-schema.json
-index e604e2412a385824dde0505b27a953110dc9a7b7..625ec6b7775a15c90cfa56f1b64bb2660951bfb7 100644
+index a19b338da7d97daed42672966d11617fd83bd096..3f2d1f30cc0f1b763d5c26cadabf4cf449567cfe 100644
 --- a/cli/src/config-schema.json
 +++ b/cli/src/config-schema.json
 @@ -536,9 +536,9 @@
@@ -104,10 +127,10 @@ index e604e2412a385824dde0505b27a953110dc9a7b7..625ec6b7775a15c90cfa56f1b64bb266
                  "track-default-bookmark-on-clone": {
                      "type": "boolean",
 diff --git a/cli/src/config.rs b/cli/src/config.rs
-index a4d82d964d17b9ca36768b723d922b32506cd23d..86c713b01e5384176bcb936221a26bebf89f3229 100644
+index 6459729a0df20ce88c67a7e39bd539a0eb9f4be0..b38ffe8c2827d1cbf8f814fb1d1dd3dd65e747b9 100644
 --- a/cli/src/config.rs
 +++ b/cli/src/config.rs
-@@ -877,7 +877,32 @@ fn parse_config_arg_item(item_str: &str) -> Result<(ConfigNamePathBuf, ConfigVal
+@@ -963,7 +963,32 @@ fn parse_config_arg_item(item_str: &str) -> Result<(ConfigNamePathBuf, ConfigVal
  
  /// List of rules to migrate deprecated config variables.
  pub fn default_config_migrations() -> Vec<ConfigMigrationRule> {
@@ -168,7 +191,7 @@ index f42fee952ec0a99039368561707bf9931fe4b79a..c0d64f8e1ce2443aed29a6ddc79bb3d3
  write-change-id-header = true
  executable-path = "/home/linus/.local/bin/git"
 diff --git a/cli/tests/test_config_command.rs b/cli/tests/test_config_command.rs
-index bebd66a029cde6a4ab5df01595eee82d483e8ee1..5a477de7a4edf1465e4deca18c25996551df3efd 100644
+index 61a489a1113cb641d373bae679cf66320e26546b..9abd2913769e4dcd0de27222111e1074a23f5db1 100644
 --- a/cli/tests/test_config_command.rs
 +++ b/cli/tests/test_config_command.rs
 @@ -27,6 +27,45 @@ use crate::common::fake_editor_path;
@@ -218,7 +241,7 @@ index bebd66a029cde6a4ab5df01595eee82d483e8ee1..5a477de7a4edf1465e4deca18c259965
  fn test_config_list_single() {
      let test_env = TestEnvironment::default();
 diff --git a/cli/tests/test_git_push.rs b/cli/tests/test_git_push.rs
-index a4a9da1cb433c920f3e04d04ad385eb016d0191a..9bf0b5bf6db8adeace8016f6b6f8f3a0a9ce89f5 100644
+index 23b83e59334fb1ca7505f4373faf4c02ee0939e4..8b3914a9c66d294dd83d783c296638628616fb66 100644
 --- a/cli/tests/test_git_push.rs
 +++ b/cli/tests/test_git_push.rs
 @@ -3017,7 +3017,7 @@ fn test_git_push_sign_on_push() {
@@ -231,10 +254,10 @@ index a4a9da1cb433c920f3e04d04ad385eb016d0191a..9bf0b5bf6db8adeace8016f6b6f8f3a0
      );
      let output = work_dir.run_jj(["git", "push", "--dry-run"]);
 diff --git a/docs/config.md b/docs/config.md
-index 8f2f9d53e8854a0c2cf4ceea3699bd06e6d0b3cb..cb6e039d8c5253da9ce15fd8dc7eebe03001fd48 100644
+index 5d4bb11af28b9d33466541aaabc411134a853e8a..076bf44df428f387215362bb0da24f7f2d94494d 100644
 --- a/docs/config.md
 +++ b/docs/config.md
-@@ -1727,22 +1727,21 @@ to do with signing commits on modification of a change (e.g., rebasing or edits)
+@@ -1730,22 +1730,21 @@ to do with signing commits on modification of a change (e.g., rebasing or edits)
  - `force`: sign all commits after modification, always, even if you are not the
    author.
  

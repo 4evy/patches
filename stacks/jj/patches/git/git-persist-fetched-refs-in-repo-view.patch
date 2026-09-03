@@ -1,6 +1,6 @@
-From f9bab05f449aeed1f9f771f2cca851bebde33552 Mon Sep 17 00:00:00 2001
+From 948c63cf859bd3ac5a4a00b984f0cb6126e66ba7 Mon Sep 17 00:00:00 2001
 From: Josh McKinney <joshka@users.noreply.github.com>
-Date: Fri, 28 Aug 2026 01:04:00 +0300
+Date: Thu, 1 Jan 1970 00:00:00 +0000
 Subject: git: persist fetched refs in repo view
 
 Store fetched Git refs in the view so one-off fetches can survive

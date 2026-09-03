@@ -1,6 +1,6 @@
-From 440e02cc116ace68943043d7cc054c17bb719c8d Mon Sep 17 00:00:00 2001
+From 9234420a1a8adc68d79072eb7a93342b3de44b4b Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Fri, 28 Aug 2026 01:04:00 +0300
+Date: Thu, 1 Jan 1970 00:00:00 +0000
 Subject: test: update operation IDs for fetched ref state
 
 Persisting fetched refs changes repository-view serialization and

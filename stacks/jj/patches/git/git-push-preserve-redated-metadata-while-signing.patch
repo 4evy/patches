@@ -1,14 +1,14 @@
-From 55952da9be2b0a60e206a5df0764cd10a9279e33 Mon Sep 17 00:00:00 2001
+From 413e6025594b2f856dee6bfee9d39d96daf4bb65 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Fri, 28 Aug 2026 01:04:00 +0300
+Date: Thu, 1 Jan 1970 00:00:00 +0000
 Subject: git push: preserve redated metadata while signing
 
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index 491f108cb1485d79a9d2e40bb1ba71af14b3c3c2..b1962d3b11901ff74da6d7c6edc41e9dbc8cdee5 100644
+index fd3bce89b42e0cc3018938fd0de98167ebf2f7b0..72e4d70bce5ad18f1ed75e8145551fbc5f705114 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -64,6 +64,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+@@ -94,6 +94,10 @@ None
    when the commit stack is taller than the terminal.
    [#9033](https://github.com/jj-vcs/jj/issues/9033).
  

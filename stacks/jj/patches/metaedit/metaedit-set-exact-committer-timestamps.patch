@@ -1,17 +1,17 @@
-From 5145e23fc51c9bd5700a6d425b3e0eefff486ee6 Mon Sep 17 00:00:00 2001
+From 8172cae3f4f1840d0f33cd691a316942e5ac3679 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Fri, 28 Aug 2026 01:04:00 +0300
+Date: Thu, 1 Jan 1970 00:00:00 +0000
 Subject: metaedit: set exact committer timestamps
 
 Add --committer-timestamp for setting the committer timestamp directly and --timestamp as shorthand for setting both author and committer timestamps. Avoid rewriting when the requested values already match the commit.
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index 1f694e0c6d00e19e3e6d7e4ada8b4c38c051767f..cf113f6df28084465cefa75b6fb3a362b5f0e89c 100644
+index 403c94a358f7d68bd6463f1a7842b735906a4378..449b40f5154672b5c725bb500dad74acc201009d 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -23,6 +23,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
- 
- ### New features
+@@ -51,6 +51,9 @@ None
+   back to prompting the user if the heuristics are inconclusive. It can also run
+   in non-interactive mode, which aborts if prompting would be needed.
  
 +* `jj metaedit` now supports `--timestamp` to set both commit timestamps and
 +  `--committer-timestamp` to set only the committer timestamp.
@@ -117,10 +117,10 @@ index 89cd8acb428a812bff18fd881347b785affeff0e..be88bfd0f7ee6bf8a13600cfb1826b32
                      && description != commit_builder.description()
                  {
 diff --git a/cli/tests/cli-reference@.md.snap b/cli/tests/cli-reference@.md.snap
-index 4a649082e4b56694e25ae1d4f4ed56f3e5f1f134..1ceee6ffc755efa7aacca58e7af7cb1776b3c54e 100644
+index 0ce595c9902928c9f0585de538c114268a68d572..276ab04464edc72b4771c037351050b96e7431b8 100644
 --- a/cli/tests/cli-reference@.md.snap
 +++ b/cli/tests/cli-reference@.md.snap
-@@ -2301,6 +2301,16 @@ Whenever any metadata is updated, the committer name, email, and timestamp are a
+@@ -2358,6 +2358,16 @@ Whenever any metadata is updated, the committer name, email, and timestamp are a
  
     [RFC2822]: https://datatracker.ietf.org/doc/html/rfc2822
  

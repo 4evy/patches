@@ -1,6 +1,6 @@
-From 3a5e274e402925655d8ab22711de2d39f7f58158 Mon Sep 17 00:00:00 2001
+From ad91bca2b08662514c0b216bf36392a18194982e Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Fri, 28 Aug 2026 01:04:00 +0300
+Date: Thu, 1 Jan 1970 00:00:00 +0000
 Subject: cli: git: add raw ref push command
 
 Code review systems and other Git applications accept commits through
@@ -19,10 +19,10 @@ the eligibility checks and `git.sign-on-push` behavior of `jj git push`
 Closes #4388
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index 52a4371b5eeebee04ed3b256ca2fa1d8afff852f..35d897d8fceac37ac18a19f4d0d279b541712be7 100644
+index 68e0bfa7874c7752c094001899210e1d6332d505..4e352cf44ffa5d6695a33166e14ad09b37589ee7 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -37,6 +37,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+@@ -64,6 +64,10 @@ None
    remote. The fetched commits become visible without creating bookmarks or
    remote-tracking refs.
  
@@ -32,12 +32,12 @@ index 52a4371b5eeebee04ed3b256ca2fa1d8afff852f..35d897d8fceac37ac18a19f4d0d279b5
 +
  ### Fixed bugs
  
- * `jj arrange` now scrolls the viewport to keep the selected commit visible
+ * [The default `immutable_heads()` set](docs/config.md#set-of-immutable-commits)
 diff --git a/cli/src/commands/git/push.rs b/cli/src/commands/git/push.rs
-index 9e8629e60e90f59bd690c695fc7d19d420f25f07..0df9dfa92f487b183e047703fae594b7be3e097b 100644
+index d6784889367372d5dae1bb69960fddcd80c2dee7..860ef6ccdb7d70935fff4d3a801675f25d5e6338 100644
 --- a/cli/src/commands/git/push.rs
 +++ b/cli/src/commands/git/push.rs
-@@ -962,7 +962,7 @@ async fn print_commits_ready_to_push(
+@@ -991,7 +991,7 @@ async fn print_commits_ready_to_push(
      Ok(())
  }
  
@@ -353,7 +353,7 @@ index 5cfc34b747fd2a427d93a4efa3cdc57213a019ba..01880ff93b6b8969d169c74285431c30
      if !stats.unexported_bookmarks.is_empty() {
          writeln!(
 diff --git a/cli/tests/cli-reference@.md.snap b/cli/tests/cli-reference@.md.snap
-index 69f1afa60f8c8fb93034fe53747bc16e0bd4ad74..d0bf7a04c5df0a5536155ddced7293dceb3b9746 100644
+index 6291338576599304b1c153e379cc13021da73798..05ab2a4928d13c9ed86424490ed53c2b9ec8f89b 100644
 --- a/cli/tests/cli-reference@.md.snap
 +++ b/cli/tests/cli-reference@.md.snap
 @@ -68,6 +68,7 @@ This document contains the help content for the `jj` command-line program.
@@ -364,7 +364,7 @@ index 69f1afa60f8c8fb93034fe53747bc16e0bd4ad74..d0bf7a04c5df0a5536155ddced7293dc
  * [`jj git remote`↴](#jj-git-remote)
  * [`jj git remote add`↴](#jj-git-remote-add)
  * [`jj git remote list`↴](#jj-git-remote-list)
-@@ -1903,6 +1904,7 @@ Manage raw Git refs
+@@ -1960,6 +1961,7 @@ Manage raw Git refs
  ###### **Subcommands:**
  
  * `fetch` — Fetch raw refs or full commit IDs from a Git remote
@@ -372,7 +372,7 @@ index 69f1afa60f8c8fb93034fe53747bc16e0bd4ad74..d0bf7a04c5df0a5536155ddced7293dc
  
  
  
-@@ -1926,6 +1928,35 @@ Each source can be a fully qualified remote ref such as GitHub's `refs/pull/123/
+@@ -1983,6 +1985,35 @@ Each source can be a fully qualified remote ref such as GitHub's `refs/pull/123/
  
  
  
@@ -409,7 +409,7 @@ index 69f1afa60f8c8fb93034fe53747bc16e0bd4ad74..d0bf7a04c5df0a5536155ddced7293dc
  
  Manage Git remotes
 diff --git a/cli/tests/test_git_push.rs b/cli/tests/test_git_push.rs
-index 6ddc9dbdc5fa78d1f68c13ccd9409bb013a13812..a4a9da1cb433c920f3e04d04ad385eb016d0191a 100644
+index 35de0bee209ea62d8ad433cab31b2cea17686bad..23b83e59334fb1ca7505f4373faf4c02ee0939e4 100644
 --- a/cli/tests/test_git_push.rs
 +++ b/cli/tests/test_git_push.rs
 @@ -63,6 +63,357 @@ fn set_up(test_env: &TestEnvironment) {

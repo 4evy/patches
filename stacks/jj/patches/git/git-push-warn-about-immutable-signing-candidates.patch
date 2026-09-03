@@ -1,15 +1,15 @@
-From 4d7ee71e7070e78d4977178c2f1f18d43267b197 Mon Sep 17 00:00:00 2001
+From 006ecb1bfb12029dd3f7aea04813ec2626035382 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Fri, 28 Aug 2026 01:04:00 +0300
+Date: Thu, 1 Jan 1970 00:00:00 +0000
 Subject: git push: warn about immutable signing candidates
 
 Evaluate the configured sign-on-push revset across every outgoing commit, then exclude immutable matches from rewriting and list them in a warning. This follows the same immutability boundary as other history-editing commands while making skipped signatures visible.
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index d03484aef4424b53531fc60237f499ab9a5b82e8..1f694e0c6d00e19e3e6d7e4ada8b4c38c051767f 100644
+index d51fc1f3bde5a97820b472598bcd51dc3bb553f6..403c94a358f7d68bd6463f1a7842b735906a4378 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -57,6 +57,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+@@ -87,6 +87,9 @@ None
    when the commit stack is taller than the terminal.
    [#9033](https://github.com/jj-vcs/jj/issues/9033).
  
@@ -20,84 +20,16 @@ index d03484aef4424b53531fc60237f499ab9a5b82e8..1f694e0c6d00e19e3e6d7e4ada8b4c38
    Ctrl+C in `less` exits cleanly instead of leaving the terminal in a
    corrupted state (raw mode, visible escape sequences, broken input).
 diff --git a/cli/src/commands/git/push.rs b/cli/src/commands/git/push.rs
-index 81649e86fbd0d13469ec7cc1dd3d2cc441e11d21..b9f9424d5ef8ea1a2da8682739ff8c6d37cb4bd3 100644
+index f552a1ccbd56cd1454deacfe145766d4293cecbf..b9f9424d5ef8ea1a2da8682739ff8c6d37cb4bd3 100644
 --- a/cli/src/commands/git/push.rs
 +++ b/cli/src/commands/git/push.rs
-@@ -65,6 +65,7 @@ use crate::cli_util::WorkspaceCommandHelper;
- use crate::cli_util::WorkspaceCommandTransaction;
- use crate::cli_util::has_tracked_remote_bookmarks;
- use crate::cli_util::has_tracked_remote_tags;
-+use crate::cli_util::print_updated_commits;
- use crate::cli_util::short_change_hash;
- use crate::cli_util::short_commit_hash;
- use crate::command_error::CommandError;
-@@ -802,13 +803,14 @@ fn ready_to_push_revset_expression(
-         .flat_map(|(_, old_head)| old_head.target.added_ids())
-         .cloned()
-         .collect_vec();
--    RevsetExpression::commits(old_heads)
--        .union(workspace_helper.env().immutable_heads_expression())
--        .range(&RevsetExpression::commits(new_heads))
-+    RevsetExpression::commits(old_heads).range(&RevsetExpression::commits(new_heads))
- }
+@@ -808,7 +808,8 @@ fn ready_to_push_revset_expression(
  
  /// Signs commits before pushing.
  ///
+-/// Warns about commits that need a signature but are immutable.
 +/// Warns about selected commits that are immutable and therefore cannot be
 +/// rewritten.
-+///
+ ///
  /// Returns the updated list of bookmark names and corresponding
  /// [`BookmarkPushUpdate`]s.
- async fn sign_commits_before_push(
-@@ -817,7 +819,38 @@ async fn sign_commits_before_push(
-     commits_to_sign: Arc<ResolvedRevsetExpression>,
-     ref_updates: GitPushRefTargets,
- ) -> Result<GitPushRefTargets, CommandError> {
-+    let workspace_helper = tx.base_workspace_helper();
-+    let immutable = workspace_helper
-+        .attach_revset_evaluator(workspace_helper.env().immutable_expression())
-+        .resolve()?;
-+    let skipped: Vec<Commit> = commits_to_sign
-+        .intersection(&immutable)
-+        .evaluate(tx.base_repo().as_ref())?
-+        .stream()
-+        .commits(tx.base_repo().store())
-+        .take(11)
-+        .try_collect()
-+        .await?;
-+    if !skipped.is_empty() {
-+        let count = if skipped.len() > 10 {
-+            "10+".to_owned()
-+        } else {
-+            skipped.len().to_string()
-+        };
-+        writeln!(
-+            ui.warning_default(),
-+            "Skipped signing {count} immutable commits:"
-+        )?;
-+        let mut formatter = ui.stderr_formatter();
-+        print_updated_commits(
-+            formatter.as_mut(),
-+            &workspace_helper.commit_summary_template(),
-+            &skipped,
-+        )?;
-+    }
-+
-     let commit_ids: IndexSet<CommitId> = commits_to_sign
-+        .minus(&immutable)
-         .evaluate(tx.base_repo().as_ref())?
-         .stream()
-         .commits(tx.base_repo().store())
-diff --git a/cli/tests/test_git_push.rs b/cli/tests/test_git_push.rs
-index 9bf0b5bf6db8adeace8016f6b6f8f3a0a9ce89f5..8b3914a9c66d294dd83d783c296638628616fb66 100644
---- a/cli/tests/test_git_push.rs
-+++ b/cli/tests/test_git_push.rs
-@@ -3079,6 +3079,8 @@ fn test_git_push_sign_on_push() {
-     let output = work_dir.run_jj(["git", "push"]);
-     insta::assert_snapshot!(output, @"
-     ------- stderr -------
-+    Warning: Skipped signing 1 immutable commits:
-+      kpqxywon 48ea83e9 bookmark2* | (empty) commit which should not be signed 1
-     Changes to push to origin:
-       bookmark: bookmark2 [move forward from d45e2adce0ad to 48ea83e9499c]
-     [EOF]
