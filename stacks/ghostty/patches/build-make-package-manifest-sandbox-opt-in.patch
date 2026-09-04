@@ -14,7 +14,7 @@ Homebrew sandboxes can opt out with
  2 files changed, 17 insertions(+)
 
 diff --git a/src/build/Config.zig b/src/build/Config.zig
-index c90f378..ccb1a36 100644
+index 71fa4d2..ee743e1 100644
 --- a/src/build/Config.zig
 +++ b/src/build/Config.zig
 @@ -61,6 +61,7 @@ emit_themes: bool = false,
@@ -25,7 +25,7 @@ index c90f378..ccb1a36 100644
  
  /// Feature gates for libghostty-vt artifacts (-Dvt-features). The full
  /// Ghostty application ignores this and always enables everything.
-@@ -560,6 +561,12 @@ pub fn init(b: *std.Build, appVersion: []const u8, libVersion: []const u8) !Conf
+@@ -561,6 +562,12 @@ pub fn init(b: *std.Build, appVersion: []const u8, libVersion: []const u8) !Conf
          "Build and install the macOS app bundle.",
      ) orelse !config.emit_lib_vt and config.emit_xcframework;
  

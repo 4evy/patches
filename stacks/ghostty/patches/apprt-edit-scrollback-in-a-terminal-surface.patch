@@ -29,10 +29,10 @@ Refs #3496
  10 files changed, 457 insertions(+), 19 deletions(-)
 
 diff --git a/include/ghostty.h b/include/ghostty.h
-index 5523654..cf12948 100644
+index 518af3f..7517a12 100644
 --- a/include/ghostty.h
 +++ b/include/ghostty.h
-@@ -841,6 +841,13 @@ typedef struct {
+@@ -878,6 +878,13 @@ typedef struct {
    uintptr_t len;
  } ghostty_action_open_url_s;
  
@@ -46,7 +46,7 @@ index 5523654..cf12948 100644
  // apprt.action.CloseTabMode
  typedef enum {
    GHOSTTY_ACTION_CLOSE_TAB_MODE_THIS,
-@@ -972,6 +979,7 @@ typedef enum {
+@@ -1009,6 +1016,7 @@ typedef enum {
    GHOSTTY_ACTION_READONLY,
    GHOSTTY_ACTION_COPY_TITLE_TO_CLIPBOARD,
    GHOSTTY_ACTION_MOVE_TAB_TO_NEW_WINDOW,
@@ -54,7 +54,7 @@ index 5523654..cf12948 100644
  } ghostty_action_tag_e;
  
  typedef union {
-@@ -1015,6 +1023,7 @@ typedef union {
+@@ -1052,6 +1060,7 @@ typedef union {
    ghostty_action_search_selected_s search_selected;
    ghostty_action_readonly_e readonly;
    ghostty_action_open_config_e open_config;
@@ -63,7 +63,7 @@ index 5523654..cf12948 100644
  
  typedef struct {
 diff --git a/macos/Sources/Features/Terminal/BaseTerminalController.swift b/macos/Sources/Features/Terminal/BaseTerminalController.swift
-index 7948810..bfea0b8 100644
+index 79ca5b6..ebeeb8a 100644
 --- a/macos/Sources/Features/Terminal/BaseTerminalController.swift
 +++ b/macos/Sources/Features/Terminal/BaseTerminalController.swift
 @@ -541,7 +541,8 @@ class BaseTerminalController: NSWindowController,
@@ -86,7 +86,7 @@ index 7948810..bfea0b8 100644
              undoManager.setActionName(undoAction)
          }
 diff --git a/macos/Sources/Features/Terminal/TerminalController.swift b/macos/Sources/Features/Terminal/TerminalController.swift
-index 340a0b4..6da8eaf 100644
+index 7070a48..0731966 100644
 --- a/macos/Sources/Features/Terminal/TerminalController.swift
 +++ b/macos/Sources/Features/Terminal/TerminalController.swift
 @@ -190,7 +190,8 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
@@ -110,10 +110,10 @@ index 340a0b4..6da8eaf 100644
  
      // MARK: Terminal Creation
 diff --git a/macos/Sources/Ghostty/Ghostty.App.swift b/macos/Sources/Ghostty/Ghostty.App.swift
-index 495dd82..51b8d8d 100644
+index bf06e3e..6a56ba7 100644
 --- a/macos/Sources/Ghostty/Ghostty.App.swift
 +++ b/macos/Sources/Ghostty/Ghostty.App.swift
-@@ -278,6 +278,29 @@ extension Ghostty {
+@@ -290,6 +290,29 @@ extension Ghostty {
  
          static func closeSurface(_ userdata: UnsafeMutableRawPointer?, processAlive: Bool) {
              let surface = self.surfaceUserdata(from: userdata)
@@ -143,7 +143,7 @@ index 495dd82..51b8d8d 100644
              NotificationCenter.default.post(name: Notification.ghosttyCloseSurface, object: surface, userInfo: [
                  "process_alive": processAlive,
              ])
-@@ -602,6 +625,9 @@ extension Ghostty {
+@@ -741,6 +764,9 @@ extension Ghostty {
              case GHOSTTY_ACTION_OPEN_URL:
                  return openURL(action.action.open_url)
  
@@ -153,7 +153,7 @@ index 495dd82..51b8d8d 100644
              case GHOSTTY_ACTION_UNDO:
                  return undo(app, target: target)
  
-@@ -713,6 +739,81 @@ extension Ghostty {
+@@ -852,6 +878,81 @@ extension Ghostty {
              return true
          }
  
@@ -236,7 +236,7 @@ index 495dd82..51b8d8d 100644
              let target = UntrustedURL(value)
              switch target.decision {
 diff --git a/macos/Sources/Ghostty/Surface View/SurfaceView_AppKit.swift b/macos/Sources/Ghostty/Surface View/SurfaceView_AppKit.swift
-index 0dbdeef..c071b0b 100644
+index f77985f..30b005e 100644
 --- a/macos/Sources/Ghostty/Surface View/SurfaceView_AppKit.swift	
 +++ b/macos/Sources/Ghostty/Surface View/SurfaceView_AppKit.swift	
 @@ -180,6 +180,12 @@ extension Ghostty {
@@ -253,10 +253,10 @@ index 0dbdeef..c071b0b 100644
          override var surface: ghostty_surface_t? {
              surfaceModel?.unsafeCValue
 diff --git a/src/Surface.zig b/src/Surface.zig
-index c57eeab..821058d 100644
+index 7752921..987db82 100644
 --- a/src/Surface.zig
 +++ b/src/Surface.zig
-@@ -336,6 +336,7 @@ const DerivedConfig = struct {
+@@ -337,6 +337,7 @@ const DerivedConfig = struct {
      links: []DerivedConfig.Link,
      link_osc8: bool,
      link_previews: configpkg.LinkPreviews,
@@ -264,7 +264,7 @@ index c57eeab..821058d 100644
      scroll_to_bottom: configpkg.Config.ScrollToBottom,
      notify_on_command_finish: configpkg.Config.NotifyOnCommandFinish,
      notify_on_command_finish_action: configpkg.Config.NotifyOnCommandFinishAction,
-@@ -416,6 +417,10 @@ const DerivedConfig = struct {
+@@ -417,6 +418,10 @@ const DerivedConfig = struct {
              .links = links,
              .link_osc8 = config.@"link-osc8",
              .link_previews = config.@"link-previews",
@@ -275,7 +275,7 @@ index c57eeab..821058d 100644
              .scroll_to_bottom = config.@"scroll-to-bottom",
              .notify_on_command_finish = config.@"notify-on-command-finish",
              .notify_on_command_finish_action = config.@"notify-on-command-finish-action",
-@@ -5709,6 +5714,24 @@ const WriteScreenLoc = enum {
+@@ -5690,6 +5695,24 @@ const WriteScreenLoc = enum {
      selection, // Selected text
  };
  
@@ -300,7 +300,7 @@ index c57eeab..821058d 100644
  fn writeScreenFile(
      self: *Surface,
      loc: WriteScreenLoc,
-@@ -5759,15 +5782,14 @@ fn writeScreenFile(
+@@ -5740,15 +5763,14 @@ fn writeScreenFile(
          const pages = &self.io.terminal.screens.active.pages;
          const sel_: ?terminal.Selection = switch (loc) {
              .history => history: {
@@ -323,7 +323,7 @@ index c57eeab..821058d 100644
                          break :history null,
                      false,
                  );
-@@ -5828,13 +5850,44 @@ fn writeScreenFile(
+@@ -5809,13 +5831,44 @@ fn writeScreenFile(
                  .data = pathZ,
              }}, false);
          },
@@ -375,7 +375,7 @@ index c57eeab..821058d 100644
          .paste => self.queueIo(try termio.Message.writeReq(
              self.alloc,
              path,
-@@ -5845,6 +5898,32 @@ fn writeScreenFile(
+@@ -5826,6 +5879,32 @@ fn writeScreenFile(
      retain_tmp_dir = true;
  }
  
@@ -405,9 +405,9 @@ index c57eeab..821058d 100644
 +    );
 +}
 +
- /// Call this to complete a clipboard request sent to apprt. This should
- /// only be called once for each request. The data is immediately copied so
- /// it is safe to free the data after this call.
+ /// The payload for completing a clipboard request with
+ /// completeClipboardRequest.
+ pub const CompleteClipboard = struct {
 diff --git a/src/apprt/action.zig b/src/apprt/action.zig
 index 7e902e5..f4ddff3 100644
 --- a/src/apprt/action.zig
@@ -665,10 +665,10 @@ index ca74371..5110a72 100644
          const tree = self.getTree() orelse return;
          var it = tree.iterator();
 diff --git a/src/config/Config.zig b/src/config/Config.zig
-index 5b2466d..501dd50 100644
+index bf4e75f..856efed 100644
 --- a/src/config/Config.zig
 +++ b/src/config/Config.zig
-@@ -1431,6 +1431,24 @@ input: RepeatableReadableIO = .{},
+@@ -1437,6 +1437,24 @@ input: RepeatableReadableIO = .{},
  /// already compressed remain compressed until their contents are accessed.
  @"scrollback-compression": bool = true,
  
@@ -693,7 +693,7 @@ index 5b2466d..501dd50 100644
  /// Control when the scrollbar is shown to scroll the scrollback buffer.
  ///
  /// The default value is `system`.
-@@ -11036,6 +11054,26 @@ test "scrollback limits" {
+@@ -11135,6 +11153,26 @@ test "clipboard write limit" {
      );
  }
  
