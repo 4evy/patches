@@ -1,6 +1,6 @@
-From 9234420a1a8adc68d79072eb7a93342b3de44b4b Mon Sep 17 00:00:00 2001
+From c6ffe9d2daffde2e5fb3d199a285ee2cb2cff297 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Thu, 1 Jan 1970 00:00:00 +0000
+Date: Sat, 5 Sep 2026 13:00:00 +0300
 Subject: test: update operation IDs for fetched ref state
 
 Persisting fetched refs changes repository-view serialization and
@@ -102,7 +102,7 @@ index dc1f7121ccef1863c0f1aaff34647ef4fb167638..3cd72646fb2c6d0ab81406dc19c147d8
      [EOF]
      ------- stderr -------
 diff --git a/cli/tests/test_commit_template.rs b/cli/tests/test_commit_template.rs
-index 56f0effe8fdc39fcc0be545aaa2cf46977fcb3e2..24091e60f71c4971ce14a64cd96e5211b3582bed 100644
+index f5d88a6b13c5d1f4701a2729cf8fd43f58178b7f..33508a53a174c3eaedb131269255e5980d71aef2 100644
 --- a/cli/tests/test_commit_template.rs
 +++ b/cli/tests/test_commit_template.rs
 @@ -607,13 +607,13 @@ fn test_log_evolog_divergence() {
@@ -667,7 +667,7 @@ index 1b679a23be1c86d19a1919a55b5743acd2093ac6..c68304f9abed3a3ab418a1012f1589a0
      Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
      [EOF]
 diff --git a/cli/tests/test_global_opts.rs b/cli/tests/test_global_opts.rs
-index b63439c0aa137141f82300347e3d79bb7c30d0e2..39cdcaa0a56629b25955be8900b0252865b4bf20 100644
+index b49174850831bb2d222d9888b52a0ec3d1481667..ae55a6e4333c52a672b05c137d002ba01a47f82e 100644
 --- a/cli/tests/test_global_opts.rs
 +++ b/cli/tests/test_global_opts.rs
 @@ -251,8 +251,8 @@ fn test_no_integrate_operation() {
@@ -1314,7 +1314,7 @@ index 2020822aa08db8ace966334e63018a01d0bb643c..7688aa0271fc92bcf82db92b3658d069
      Normal { exec_bit: ExecBit(false) }           313 <timestamp> Some(MaterializedConflictData { conflict_marker_len: 11 }) "file"
      [EOF]
 diff --git a/cli/tests/test_workspaces.rs b/cli/tests/test_workspaces.rs
-index be7256dea408de668c0a915a1aa0f3b6a6c19891..b847af5e3453cd9111629bb00c860fb7f342fa31 100644
+index 54602287f6ea04a3d94aba58777f8422b8225376..6991533fd0bbcaf52ebbc287fd677e6002788e77 100644
 --- a/cli/tests/test_workspaces.rs
 +++ b/cli/tests/test_workspaces.rs
 @@ -649,7 +649,7 @@ fn test_workspace_add_override_path_in_store() {

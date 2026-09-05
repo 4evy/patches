@@ -1,6 +1,6 @@
-From 00ce2a3f2494f71f87d55be7065caeca618176c1 Mon Sep 17 00:00:00 2001
+From deac8cb9783b998ad61eef966cc71ce89cb96c25 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Thu, 1 Jan 1970 00:00:00 +0000
+Date: Sat, 5 Sep 2026 13:00:00 +0300
 Subject: git ref fetch: support patterns and commit IDs
 
 Accept multiple refs in one atomic operation, expand one-wildcard ref
@@ -9,10 +9,10 @@ anonymously. Keep list/forget name handling consistent and document the
 batch behavior
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index 721bb753aa7cc31b5905ef843a58a1298831bcab..d5822d9b8919b6f88a2dd07c2852b96505dda044 100644
+index 37439f36cbc5d4c3e11ac3bd8ba828367eb48754..e313a3fb4c3f3d6cb66f58ca9bbce8fe102a6f65 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -181,9 +181,10 @@ None
+@@ -206,9 +206,10 @@ None
  
  ### New features
  
@@ -518,7 +518,7 @@ index c13a4ca743c129278f77643409a76dac86e52bdc..532feeaf01ec58d98ca53f683490df36
      ui: &mut Ui,
      command: &CommandHelper,
 diff --git a/cli/tests/cli-reference@.md.snap b/cli/tests/cli-reference@.md.snap
-index b1724e20d0166dae1e7d4ec97cbb47dc8ee4863c..0ce595c9902928c9f0585de538c114268a68d572 100644
+index 53bb5683a8a7a27cf207a7e3ae666386f7db64e1..16c53cbb741628485cf4c8049371a1e7be61718c 100644
 --- a/cli/tests/cli-reference@.md.snap
 +++ b/cli/tests/cli-reference@.md.snap
 @@ -1,6 +1,5 @@
@@ -715,7 +715,7 @@ index b1724e20d0166dae1e7d4ec97cbb47dc8ee4863c..0ce595c9902928c9f0585de538c11426
  
  
 diff --git a/cli/tests/test_commit_template.rs b/cli/tests/test_commit_template.rs
-index 24091e60f71c4971ce14a64cd96e5211b3582bed..78d960efd15e95d12e3691f510c517017608c809 100644
+index 33508a53a174c3eaedb131269255e5980d71aef2..409cbae0085f589e33c85c497c051686ff01c2fd 100644
 --- a/cli/tests/test_commit_template.rs
 +++ b/cli/tests/test_commit_template.rs
 @@ -622,13 +622,13 @@ fn test_log_evolog_divergence() {
@@ -853,84 +853,10 @@ index 7677557e7cd0bdc085990af94d006108dab5eb10..a41de891976cae8489cda76d1b4c14b5
      // Simulate a concurrent operation that began from the "initial" operation
      // (before the "child1" snapshot) but finished after the "child1"
 diff --git a/cli/tests/test_converge_command.rs b/cli/tests/test_converge_command.rs
-index 3e2268fefa429b14262d73ae6689e7e516b7ed06..eb1a95d170236b28c328e48a2b9f74b6cad9b7e8 100644
+index f413d77e50d747d6e963bb00095f0fc37b8152a3..eb1a95d170236b28c328e48a2b9f74b6cad9b7e8 100644
 --- a/cli/tests/test_converge_command.rs
 +++ b/cli/tests/test_converge_command.rs
-@@ -890,40 +890,46 @@ fn test_converge_description_changed_inconsistently(invoke_text_editor: bool) ->
-     create_commit_with_files(&work_dir, "d", &["b1"], &[("file3", "3")]);
- 
-     // Test the setup (commit B is duplicated)
--    insta::assert_snapshot!(get_long_log_output(&work_dir), @r"
--    @  d  yostqsxw  a906f67a - description: d
--    ○  b1  zsuskuln/0  0ec69b7a - description: bar
--    │ ○  b2  zsuskuln/1  08117b18 - description: foo
--    ├─╯
--    ○  a  rlvkpnrz  e9a731d9 - description: a
--    ◆    zzzzzzzz  00000000
--    [EOF]
--    ");
-+    insta::allow_duplicates! {
-+        insta::assert_snapshot!(get_long_log_output(&work_dir), @r"
-+        @  d  yostqsxw  a906f67a - description: d
-+        ○  b1  zsuskuln/0  0ec69b7a - description: bar
-+        │ ○  b2  zsuskuln/1  08117b18 - description: foo
-+        ├─╯
-+        ○  a  rlvkpnrz  e9a731d9 - description: a
-+        ◆    zzzzzzzz  00000000
-+        [EOF]
-+        ");
-+    }
- 
--    insta::assert_snapshot!(get_evolog(&work_dir, "b2"), @r"
--    ○  zsuskuln/1 08117b18 (divergent) foo
--    ○  zsuskuln/2 59a77004 (hidden) b2
--    ○  zsuskuln/3 b2852eb2 (hidden) (empty) b2
--    [EOF]
--    ");
-+    insta::allow_duplicates! {
-+        insta::assert_snapshot!(get_evolog(&work_dir, "b2"), @r"
-+        ○  zsuskuln/1 08117b18 (divergent) foo
-+        ○  zsuskuln/2 59a77004 (hidden) b2
-+        ○  zsuskuln/3 b2852eb2 (hidden) (empty) b2
-+        [EOF]
-+        ");
-+    }
- 
-     // First check behavior in non-interactive mode.
-     let output =
-         work_dir.run_jj_with(|cmd| force_interactive(cmd).args(["converge", "--no-interactive"]));
--    insta::assert_snapshot!(output, @r"
--    ------- stderr -------
--    Found 1 divergent change(s) in the specified revset:
--    - Change: zsuskulnrvyr with 2 commits:
--        zsuskuln/0 0ec69b7a b1 | (divergent) bar
--        zsuskuln/1 08117b18 b2 | (divergent) foo
-+    insta::allow_duplicates! {
-+        insta::assert_snapshot!(output, @r"
-+        ------- stderr -------
-+        Found 1 divergent change(s) in the specified revset:
-+        - Change: zsuskulnrvyr with 2 commits:
-+            zsuskuln/0 0ec69b7a b1 | (divergent) bar
-+            zsuskuln/1 08117b18 b2 | (divergent) foo
- 
--    Attempting to converge change zsuskulnrvyr...
-+        Attempting to converge change zsuskulnrvyr...
- 
--    Could not determine which description to use.
--    Error: Could not converge change
--    [EOF]
--    [exit status: 1]
--    ");
-+        Could not determine which description to use.
-+        Error: Could not converge change
-+        [EOF]
-+        [exit status: 1]
-+        ");
-+    }
- 
-     // Now check behavior in interactive mode.
-     if invoke_text_editor {
-@@ -1523,8 +1529,8 @@ fn test_converge_two_divergent_commits_with_unrelated_commit_in_between() -> Tes
+@@ -1529,8 +1529,8 @@ fn test_converge_two_divergent_commits_with_unrelated_commit_in_between() -> Tes
      Parent commit (@-)      : qpvuntsm 60580828 b2 b3 | (empty) my-merged-description
      ");
  
@@ -1999,7 +1925,7 @@ index f21f27512646b84deec763a82697d68d1d78e4e0..1351d652113950ef64d1a758c7514eb3
         (empty) original
      [EOF]
 diff --git a/cli/tests/test_global_opts.rs b/cli/tests/test_global_opts.rs
-index 39cdcaa0a56629b25955be8900b0252865b4bf20..5fda7422366d59124d6031f1f0df4fcefa0bcd55 100644
+index ae55a6e4333c52a672b05c137d002ba01a47f82e..851429c3321d9c1ffed98639198c8c37e42a810f 100644
 --- a/cli/tests/test_global_opts.rs
 +++ b/cli/tests/test_global_opts.rs
 @@ -277,19 +277,19 @@ fn test_no_integrate_operation() {
@@ -3661,7 +3587,7 @@ index 7688aa0271fc92bcf82db92b3658d069b1bd3e11..adcb6400f48f5c1eb259ae48e5b62aca
      Normal { exec_bit: ExecBit(false) }           130 <timestamp> None "file"
      [EOF]
 diff --git a/cli/tests/test_workspaces.rs b/cli/tests/test_workspaces.rs
-index b847af5e3453cd9111629bb00c860fb7f342fa31..f02ad0b6e6cc14bed1030a19538c168f45cdcf34 100644
+index 6991533fd0bbcaf52ebbc287fd677e6002788e77..7a8d9de9344175e71d8114109a1575e1f6ca9f22 100644
 --- a/cli/tests/test_workspaces.rs
 +++ b/cli/tests/test_workspaces.rs
 @@ -748,7 +748,7 @@ fn test_workspaces_conflicting_edits() {
@@ -3772,10 +3698,10 @@ index 280d46790f926085e9d4b7ef6e607ef0cad071a3..98edab9549c6c2189458dc5c5c1e5ec7
  In an existing shallow repository, the `git.fetch-depth` setting supplies the
  default depth for both `jj git fetch` and `jj git ref fetch`.
 diff --git a/lib/src/git.rs b/lib/src/git.rs
-index 0073cc21d9eabbbb9fcb8b5e7c03293deec7d34d..54a6e59cdc70853a4b0719a204fc8e0efaf17878 100644
+index 335ade92b6bfca56a9b2581e397b72e935b03dca..868a2c000ccbd853cd0692d9d61a62d6fb6d9436 100644
 --- a/lib/src/git.rs
 +++ b/lib/src/git.rs
-@@ -3583,6 +3583,158 @@ pub fn fetch_commits_with_options(
+@@ -3690,6 +3690,158 @@ pub fn fetch_commits_with_options(
      (result, shallow_boundary_changed)
  }
  
@@ -3934,7 +3860,7 @@ index 0073cc21d9eabbbb9fcb8b5e7c03293deec7d34d..54a6e59cdc70853a4b0719a204fc8e0e
  fn delete_temporary_fetch_ref(
      git_repo: &gix::Repository,
      ref_name: &GitRefName,
-@@ -3604,6 +3756,37 @@ fn delete_temporary_fetch_ref(
+@@ -3711,6 +3863,37 @@ fn delete_temporary_fetch_ref(
      Ok(())
  }
  
@@ -3973,10 +3899,10 @@ index 0073cc21d9eabbbb9fcb8b5e7c03293deec7d34d..54a6e59cdc70853a4b0719a204fc8e0e
  pub enum GitPushError {
      #[error("No git remote named '{}'", .0.as_symbol())]
 diff --git a/lib/src/git_subprocess.rs b/lib/src/git_subprocess.rs
-index 7b702b49be86d386ca6192aa84df4ac0d0900492..364254f453be530dbc2b7972eb975decbd12fa2c 100644
+index 1a4fca780f88ed9902895e8c787472b98891ab44..079e59e09f883f4ec2a5dffdd4a091ea988b1466 100644
 --- a/lib/src/git_subprocess.rs
 +++ b/lib/src/git_subprocess.rs
-@@ -455,7 +455,6 @@ pub struct GitRefUpdates {
+@@ -495,7 +495,6 @@ pub struct GitRefUpdates {
      ///
      /// `old_oid`/`new_oid` may be null or point to non-commit objects such as
      /// tags.

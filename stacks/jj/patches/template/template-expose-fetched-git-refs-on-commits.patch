@@ -1,6 +1,6 @@
-From 8bca816f2d832bf10e263e884a20da73802ac602 Mon Sep 17 00:00:00 2001
+From 0a11c75906fd699e701dbc3ca5645dabd6dda4fc Mon Sep 17 00:00:00 2001
 From: Josh McKinney <joshka@users.noreply.github.com>
-Date: Thu, 1 Jan 1970 00:00:00 +0000
+Date: Sat, 5 Sep 2026 13:00:00 +0300
 Subject: template: expose fetched Git refs on commits
 
 Add a commit template method for displaying fetched Git refs so log
@@ -8,7 +8,7 @@ output can show refs like refs/pull/123/head@origin directly on the
 commits they name.
 
 diff --git a/cli/src/commit_templater.rs b/cli/src/commit_templater.rs
-index eec1dc5c4807f3937072c2b92194b483e6efcd7f..77bd437b5cbfbe98dfd0b3de5e6ba9b706acc461 100644
+index 42ad53fe0d6e5e31a918335f445be13c689ee995..6f2f0ad42e8a71a9697fe88edc910753a6286183 100644
 --- a/cli/src/commit_templater.rs
 +++ b/cli/src/commit_templater.rs
 @@ -17,6 +17,7 @@
@@ -29,7 +29,7 @@ index eec1dc5c4807f3937072c2b92194b483e6efcd7f..77bd437b5cbfbe98dfd0b3de5e6ba9b7
  use jj_lib::ref_name::WorkspaceName;
  use jj_lib::ref_name::WorkspaceNameBuf;
  use jj_lib::repo::Repo;
-@@ -1000,6 +1003,7 @@ pub struct CommitKeywordCache<'repo> {
+@@ -992,6 +995,7 @@ pub struct CommitKeywordCache<'repo> {
      bookmarks_index: OnceCell<Rc<CommitRefsIndex>>,
      tags_index: OnceCell<Rc<CommitRefsIndex>>,
      git_refs_index: OnceCell<Rc<CommitRefsIndex>>,
@@ -37,7 +37,7 @@ index eec1dc5c4807f3937072c2b92194b483e6efcd7f..77bd437b5cbfbe98dfd0b3de5e6ba9b7
      is_immutable_fn: OnceCell<Rc<RevsetContainingFn<'repo>>>,
  }
  
-@@ -1019,6 +1023,11 @@ impl<'repo> CommitKeywordCache<'repo> {
+@@ -1011,6 +1015,11 @@ impl<'repo> CommitKeywordCache<'repo> {
              .get_or_init(|| Rc::new(build_commit_refs_index(repo.view().git_refs())))
      }
  
@@ -49,7 +49,7 @@ index eec1dc5c4807f3937072c2b92194b483e6efcd7f..77bd437b5cbfbe98dfd0b3de5e6ba9b7
      pub fn is_immutable_fn(
          &self,
          language: &CommitTemplateLanguage<'repo>,
-@@ -1206,6 +1215,18 @@ fn builtin_commit_methods<'repo>() -> CommitTemplateBuildMethodFnMap<'repo, Comm
+@@ -1198,6 +1207,18 @@ fn builtin_commit_methods<'repo>() -> CommitTemplateBuildMethodFnMap<'repo, Comm
              Ok(out_property.into_dyn_wrapped())
          },
      );
@@ -68,7 +68,7 @@ index eec1dc5c4807f3937072c2b92194b483e6efcd7f..77bd437b5cbfbe98dfd0b3de5e6ba9b7
      map.insert(
          "tags",
          |language, _diagnostics, _build_ctx, self_property, function| {
-@@ -2019,6 +2040,22 @@ fn build_commit_refs_index<'a, K: Into<String>>(
+@@ -2011,6 +2032,22 @@ fn build_commit_refs_index<'a, K: Into<String>>(
      index
  }
  
@@ -92,7 +92,7 @@ index eec1dc5c4807f3937072c2b92194b483e6efcd7f..77bd437b5cbfbe98dfd0b3de5e6ba9b7
      commit_refs
          .iter()
 diff --git a/cli/tests/test_commit_template.rs b/cli/tests/test_commit_template.rs
-index c525721b7682356bda5120e3e8b4d68c372d214f..56f0effe8fdc39fcc0be545aaa2cf46977fcb3e2 100644
+index 98f89dbec179fdf90ebbc8dbe83bfc1ec4e425d9..f5d88a6b13c5d1f4701a2729cf8fd43f58178b7f 100644
 --- a/cli/tests/test_commit_template.rs
 +++ b/cli/tests/test_commit_template.rs
 @@ -15,9 +15,34 @@

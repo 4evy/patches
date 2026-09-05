@@ -1,15 +1,15 @@
-From 8172cae3f4f1840d0f33cd691a316942e5ac3679 Mon Sep 17 00:00:00 2001
+From 810aeb3f18086132fbc6681b25399b723ff6bab3 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Thu, 1 Jan 1970 00:00:00 +0000
+Date: Sat, 5 Sep 2026 13:00:00 +0300
 Subject: metaedit: set exact committer timestamps
 
 Add --committer-timestamp for setting the committer timestamp directly and --timestamp as shorthand for setting both author and committer timestamps. Avoid rewriting when the requested values already match the commit.
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index 403c94a358f7d68bd6463f1a7842b735906a4378..449b40f5154672b5c725bb500dad74acc201009d 100644
+index 1f7a2a951fe6c759cc32df1636e753af66209593..19e0a3d35bdf223d68e10e3935dc7de1b3a6636c 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -51,6 +51,9 @@ None
+@@ -76,6 +76,9 @@ None
    back to prompting the user if the heuristics are inconclusive. It can also run
    in non-interactive mode, which aborts if prompting would be needed.
  
@@ -117,7 +117,7 @@ index 89cd8acb428a812bff18fd881347b785affeff0e..be88bfd0f7ee6bf8a13600cfb1826b32
                      && description != commit_builder.description()
                  {
 diff --git a/cli/tests/cli-reference@.md.snap b/cli/tests/cli-reference@.md.snap
-index 0ce595c9902928c9f0585de538c114268a68d572..276ab04464edc72b4771c037351050b96e7431b8 100644
+index 16c53cbb741628485cf4c8049371a1e7be61718c..2c5309ca8321db050923cd5d871d1b2a89b680bd 100644
 --- a/cli/tests/cli-reference@.md.snap
 +++ b/cli/tests/cli-reference@.md.snap
 @@ -2358,6 +2358,16 @@ Whenever any metadata is updated, the committer name, email, and timestamp are a

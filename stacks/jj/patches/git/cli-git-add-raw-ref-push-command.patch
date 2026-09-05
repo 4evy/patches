@@ -1,6 +1,6 @@
-From ad91bca2b08662514c0b216bf36392a18194982e Mon Sep 17 00:00:00 2001
+From f8b07971d129a15fab513e6bee0561d5a3d76980 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Thu, 1 Jan 1970 00:00:00 +0000
+Date: Sat, 5 Sep 2026 13:00:00 +0300
 Subject: cli: git: add raw ref push command
 
 Code review systems and other Git applications accept commits through
@@ -19,10 +19,10 @@ the eligibility checks and `git.sign-on-push` behavior of `jj git push`
 Closes #4388
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index 68e0bfa7874c7752c094001899210e1d6332d505..4e352cf44ffa5d6695a33166e14ad09b37589ee7 100644
+index a94a11e3113ac0f14ef7bf48d0780388e0659797..660e91368c5e80714fd4d10a475d9d46286c2715 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -64,6 +64,10 @@ None
+@@ -89,6 +89,10 @@ None
    remote. The fetched commits become visible without creating bookmarks or
    remote-tracking refs.
  
@@ -291,10 +291,10 @@ index 0000000000000000000000000000000000000000..c4fa0d3eb0647c560516da33eb2f7fb1
 +    Ok(())
 +}
 diff --git a/cli/src/git_util.rs b/cli/src/git_util.rs
-index 5cfc34b747fd2a427d93a4efa3cdc57213a019ba..01880ff93b6b8969d169c74285431c30e2ff7584 100644
+index 38e14aa3f75ac582e7ee8244179f2bc29d023d75..d85480a0fe9ff4f9c175dc1f2cdaf2d43362d595 100644
 --- a/cli/src/git_util.rs
 +++ b/cli/src/git_util.rs
-@@ -545,6 +545,32 @@ pub fn print_git_export_stats(ui: &Ui, stats: &GitExportStats) -> Result<(), std
+@@ -548,6 +548,32 @@ pub fn print_git_export_stats(ui: &Ui, stats: &GitExportStats) -> Result<(), std
  }
  
  pub fn print_push_stats(ui: &Ui, stats: &GitPushStats) -> io::Result<()> {
@@ -327,7 +327,7 @@ index 5cfc34b747fd2a427d93a4efa3cdc57213a019ba..01880ff93b6b8969d169c74285431c30
      if !stats.rejected.is_empty() {
          writeln!(
              ui.warning_default(),
-@@ -560,11 +586,7 @@ pub fn print_push_stats(ui: &Ui, stats: &GitPushStats) -> io::Result<()> {
+@@ -563,11 +589,7 @@ pub fn print_push_stats(ui: &Ui, stats: &GitPushStats) -> io::Result<()> {
              writeln!(formatter)?;
          }
          drop(formatter);
@@ -340,7 +340,7 @@ index 5cfc34b747fd2a427d93a4efa3cdc57213a019ba..01880ff93b6b8969d169c74285431c30
      }
      if !stats.remote_rejected.is_empty() {
          writeln!(
-@@ -581,10 +603,7 @@ pub fn print_push_stats(ui: &Ui, stats: &GitPushStats) -> io::Result<()> {
+@@ -584,10 +606,7 @@ pub fn print_push_stats(ui: &Ui, stats: &GitPushStats) -> io::Result<()> {
              writeln!(formatter)?;
          }
          drop(formatter);
@@ -353,7 +353,7 @@ index 5cfc34b747fd2a427d93a4efa3cdc57213a019ba..01880ff93b6b8969d169c74285431c30
      if !stats.unexported_bookmarks.is_empty() {
          writeln!(
 diff --git a/cli/tests/cli-reference@.md.snap b/cli/tests/cli-reference@.md.snap
-index 6291338576599304b1c153e379cc13021da73798..05ab2a4928d13c9ed86424490ed53c2b9ec8f89b 100644
+index c48784d4e0077f3c76a4a0fe8099e562122b36d0..91c8b50e25108240c8e349ca982a4f2d93966a0d 100644
 --- a/cli/tests/cli-reference@.md.snap
 +++ b/cli/tests/cli-reference@.md.snap
 @@ -68,6 +68,7 @@ This document contains the help content for the `jj` command-line program.

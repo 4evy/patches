@@ -1,14 +1,13 @@
-From 413e6025594b2f856dee6bfee9d39d96daf4bb65 Mon Sep 17 00:00:00 2001
+From 9dd30bd92b33fe30df75227bbaaeed0ab043a276 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Thu, 1 Jan 1970 00:00:00 +0000
+Date: Sat, 5 Sep 2026 13:00:00 +0300
 Subject: git push: preserve redated metadata while signing
 
-
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index fd3bce89b42e0cc3018938fd0de98167ebf2f7b0..72e4d70bce5ad18f1ed75e8145551fbc5f705114 100644
+index 931217d8dc9c5fb99008b82690271302583c29cb..8bfc7c761ed028cae5121668590602b3f9092783 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -94,6 +94,10 @@ None
+@@ -119,6 +119,10 @@ None
    when the commit stack is taller than the terminal.
    [#9033](https://github.com/jj-vcs/jj/issues/9033).
  

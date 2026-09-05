@@ -1,6 +1,6 @@
-From 948c63cf859bd3ac5a4a00b984f0cb6126e66ba7 Mon Sep 17 00:00:00 2001
+From b8f9f8a66222c5be4193e61721a7d463fd716a50 Mon Sep 17 00:00:00 2001
 From: Josh McKinney <joshka@users.noreply.github.com>
-Date: Thu, 1 Jan 1970 00:00:00 +0000
+Date: Sat, 5 Sep 2026 13:00:00 +0300
 Subject: git: persist fetched refs in repo view
 
 Store fetched Git refs in the view so one-off fetches can survive
@@ -21,10 +21,10 @@ index ee158d940c60edb7fafca1f6b292f9ad72a93e4c..e10c6d9dbe7297d85fe456809a95407f
      }
  }
 diff --git a/lib/src/git.rs b/lib/src/git.rs
-index 5676a8a533c8089f08336df17c8a36344d4f6b92..a7a9768d87723ac03815d6048273f49a5695132d 100644
+index c565fddc2c2deae560ddf0cc68a27bc3c704db30..2a663407f071042f854f709a597bf8036c10de27 100644
 --- a/lib/src/git.rs
 +++ b/lib/src/git.rs
-@@ -1162,16 +1162,26 @@ fn default_remote_ref_state_for(
+@@ -1166,16 +1166,26 @@ fn default_remote_ref_state_for(
      }
  }
  

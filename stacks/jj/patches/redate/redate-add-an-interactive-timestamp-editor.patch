@@ -1,6 +1,6 @@
-From 75060e871751def1631a8cfcf7e8f9600c7f80a1 Mon Sep 17 00:00:00 2001
+From e162b6033b8f81db1adbbd7b0bae62fc0f79c90e Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Thu, 1 Jan 1970 00:00:00 +0000
+Date: Sat, 5 Sep 2026 13:00:00 +0300
 Subject: redate: add an interactive timestamp editor
 
 Add a revision picker that renders jj's topologically grouped graph with the configured graph style, log node template, and a command-specific row template. Use the same working-copy-oriented default revset as other history-editing commands.
@@ -8,10 +8,10 @@ Add a revision picker that renders jj's topologically grouped graph with the con
 Apply exact timestamps through the shared metadata transaction. Preserve descendant metadata with jj's standard keep signing behavior, and make signing selected revisions opt-in with --sign.
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index 449b40f5154672b5c725bb500dad74acc201009d..fd3bce89b42e0cc3018938fd0de98167ebf2f7b0 100644
+index 19e0a3d35bdf223d68e10e3935dc7de1b3a6636c..931217d8dc9c5fb99008b82690271302583c29cb 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -81,6 +81,10 @@ None
+@@ -106,6 +106,10 @@ None
    repositories. `jj git ref fetch --shallow-exclude` can fetch a review stack
    plus one parent generation for a usable diff base.
  
@@ -642,7 +642,7 @@ index a619b5bd35724e15108ffcd5daec619f05546546..46fe90e0bb9b318cb4bdf20e5abb9125
  file_annotate = '''
  join(" ",
 diff --git a/cli/tests/cli-reference@.md.snap b/cli/tests/cli-reference@.md.snap
-index 276ab04464edc72b4771c037351050b96e7431b8..a525422ce05893890387ada99f81ccb096d3d599 100644
+index 2c5309ca8321db050923cd5d871d1b2a89b680bd..43692c714da1c56bdc1350517b4813a5f9762389 100644
 --- a/cli/tests/cli-reference@.md.snap
 +++ b/cli/tests/cli-reference@.md.snap
 @@ -95,6 +95,7 @@ This document contains the help content for the `jj` command-line program.

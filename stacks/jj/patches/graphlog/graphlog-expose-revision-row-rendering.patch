@@ -1,6 +1,6 @@
-From 88897d375dcdd929d179e383e96bd064d0f126b5 Mon Sep 17 00:00:00 2001
+From c791034f45502fc1c560f8ce341139e752c2e7bb Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Thu, 1 Jan 1970 00:00:00 +0000
+Date: Sat, 5 Sep 2026 13:00:00 +0300
 Subject: graphlog: expose revision row rendering
 
 Factor the stateful graph renderer from the writer-backed GraphLog adapter. Terminal interfaces can now render one topology row at a time while jj log continues to use the same renderer and output.

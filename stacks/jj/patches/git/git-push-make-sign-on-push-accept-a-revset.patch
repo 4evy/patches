@@ -1,6 +1,6 @@
-From bf11d74556601a5606fe67bc80cb93aa29a3d2e1 Mon Sep 17 00:00:00 2001
+From 21bfb143b0bff5c3209192cb12c08964f7f8bad2 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Thu, 1 Jan 1970 00:00:00 +0000
+Date: Sat, 5 Sep 2026 13:00:00 +0300
 Subject: git push: make sign-on-push accept a revset
 
 Let users define signing policy with the same revset language used by other jj configuration. Intersect the configured selector with commits outgoing to the pushed references and force-sign exactly the selected commits.
@@ -8,10 +8,10 @@ Let users define signing policy with the same revset language used by other jj c
 Default to none() and migrate boolean values for six releases so existing configurations keep their old mutable, unsigned, own-commit behavior.
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index 7773be29919b0e33b1d02d76a2c422556168a253..d51fc1f3bde5a97820b472598bcd51dc3bb553f6 100644
+index 818f0fffaebd63d86e9ce2eb9aa75c9475434a66..48f98087a38062b64768fac7b6b250a351b2a12e 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -35,6 +35,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+@@ -60,6 +60,10 @@ published.
  * `jj git import` in non-colocated repositories no longer imports commits from a
    detached Git HEAD branch.
  

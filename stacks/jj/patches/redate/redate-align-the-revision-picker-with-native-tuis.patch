@@ -1,6 +1,6 @@
-From e93357a1c988857d0f17876ff383ffc07d441079 Mon Sep 17 00:00:00 2001
+From 58259a9c976979a49b81f39b7ca9e9d9629e3efb Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Thu, 1 Jan 1970 00:00:00 +0000
+Date: Sat, 5 Sep 2026 13:00:00 +0300
 Subject: redate: align the revision picker with native TUIs
 
 Use a borderless title/main/status layout with stable checked markers and a full-row focus highlight so graph glyphs only describe topology. Keep the focused revision timestamp in the title bar, make key hints responsive, and add select-all, boundary navigation, anchored Shift range selection, and the standard c-to-confirm binding.

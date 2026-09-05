@@ -1,6 +1,6 @@
-From bff04044b8fe9b996669969ac5c925d293a60d7e Mon Sep 17 00:00:00 2001
+From 4eb316e95adacdbea4994d5c1b8fc76c4063be16 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Thu, 1 Jan 1970 00:00:00 +0000
+Date: Sat, 5 Sep 2026 13:00:00 +0300
 Subject: tui: share alternate-screen setup
 
 Centralize crossterm raw-mode and alternate-screen setup for ratatui commands. Restore the terminal through a cleanup guard on success, cancellation, and errors, and move arrange onto the shared runner.

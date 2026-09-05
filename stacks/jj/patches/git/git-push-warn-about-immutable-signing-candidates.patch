@@ -1,15 +1,15 @@
-From 006ecb1bfb12029dd3f7aea04813ec2626035382 Mon Sep 17 00:00:00 2001
+From 9819132783e6af5acc88bfbab28363db956f7e62 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Thu, 1 Jan 1970 00:00:00 +0000
+Date: Sat, 5 Sep 2026 13:00:00 +0300
 Subject: git push: warn about immutable signing candidates
 
 Evaluate the configured sign-on-push revset across every outgoing commit, then exclude immutable matches from rewriting and list them in a warning. This follows the same immutability boundary as other history-editing commands while making skipped signatures visible.
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index d51fc1f3bde5a97820b472598bcd51dc3bb553f6..403c94a358f7d68bd6463f1a7842b735906a4378 100644
+index 48f98087a38062b64768fac7b6b250a351b2a12e..1f7a2a951fe6c759cc32df1636e753af66209593 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -87,6 +87,9 @@ None
+@@ -112,6 +112,9 @@ None
    when the commit stack is taller than the terminal.
    [#9033](https://github.com/jj-vcs/jj/issues/9033).
  

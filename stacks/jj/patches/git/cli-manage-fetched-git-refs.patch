@@ -1,6 +1,6 @@
-From 9aa19d419d9c5d10594040d53b616a202ff2464a Mon Sep 17 00:00:00 2001
+From a8c6871c330edd082e77db4ee476f0132e318fcd Mon Sep 17 00:00:00 2001
 From: Josh McKinney <joshka@users.noreply.github.com>
-Date: Thu, 1 Jan 1970 00:00:00 +0000
+Date: Sat, 5 Sep 2026 13:00:00 +0300
 Subject: cli: manage fetched Git refs
 
 Record arbitrary fetched refs as durable review refs and add commands to
@@ -365,7 +365,7 @@ index ce9771feaaee603e2b20908b7d3c3c30234dddf6..c13a4ca743c129278f77643409a76dac
      }
  }
 diff --git a/cli/tests/cli-reference@.md.snap b/cli/tests/cli-reference@.md.snap
-index 05ab2a4928d13c9ed86424490ed53c2b9ec8f89b..c668accd631df49656d70def3ac8e4edda22575f 100644
+index 91c8b50e25108240c8e349ca982a4f2d93966a0d..2b49ef3ff8ace45835bc0ce52c58d1d2d07153b0 100644
 --- a/cli/tests/cli-reference@.md.snap
 +++ b/cli/tests/cli-reference@.md.snap
 @@ -1,5 +1,6 @@
