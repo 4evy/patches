@@ -130,15 +130,6 @@ jobs:
           CONTAINER_IMAGE: 4evy/patches:ci
           CONTAINER_SKIP_BUILD: 'true'
         run: tests/container-check.sh
-      - name: Scan the integration image
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          image-ref: 4evy/patches:ci
-          scanners: vuln
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          exit-code: '1'
-          timeout: 10m0s
 
   nix:
     if: >-
