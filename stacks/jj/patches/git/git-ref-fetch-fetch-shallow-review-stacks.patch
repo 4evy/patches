@@ -1,6 +1,6 @@
-From adb2874b1781f0b9209c5a806b4bb563265ad453 Mon Sep 17 00:00:00 2001
+From ceaa7867938d1443d0d1840ff5a6cfff25364f72 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Thu, 1 Jan 1970 00:00:00 +0000
+Date: Sat, 5 Sep 2026 13:00:00 +0300
 Subject: git ref fetch: fetch shallow review stacks
 
 Expose depth and shallow-exclusion controls on `jj git ref fetch`. Fetch
@@ -263,10 +263,10 @@ index 75f37b4300869fcc1ea316aa1918b3bb5bfe2561..16eb5b982f44a67064991fe6a8e999b7
 +    (result, shallow_boundary_changed)
  }
 diff --git a/cli/tests/cli-reference@.md.snap b/cli/tests/cli-reference@.md.snap
-index 8ff66fafd72ea65235f2357afdb8e3829c9e272e..b1724e20d0166dae1e7d4ec97cbb47dc8ee4863c 100644
+index 820732e8b612362eeade18262e94cf0d9401257a..b1b366f244d4f7f628662444245bef65d73a86b2 100644
 --- a/cli/tests/cli-reference@.md.snap
 +++ b/cli/tests/cli-reference@.md.snap
-@@ -1931,6 +1931,12 @@ If a working-copy commit gets abandoned, it will be given a new, empty commit. T
+@@ -1933,6 +1933,12 @@ If a working-copy commit gets abandoned, it will be given a new, empty commit. T
  * `--edit` — Edit the fetched commit directly
  * `--bookmark <NAME>` — Set a local bookmark to the fetched commit
  * `--replace` — Allow --bookmark to move an existing local bookmark
@@ -280,7 +280,7 @@ index 8ff66fafd72ea65235f2357afdb8e3829c9e272e..b1724e20d0166dae1e7d4ec97cbb47dc
  
  
 diff --git a/cli/tests/test_git_fetch.rs b/cli/tests/test_git_fetch.rs
-index a8020bc2987d73495daafc22acf3d4fb35a24789..d6c908769396228018ecb5dcec138e2cc45ee667 100644
+index a3cf34e5d6acade1b445657994c6a1ed5eb16890..1d7bd61f9bfc35daad0d5c698eedd5eaf4397511 100644
 --- a/cli/tests/test_git_fetch.rs
 +++ b/cli/tests/test_git_fetch.rs
 @@ -337,6 +337,98 @@ fn test_git_ref_fetch_pull_request_ref() {
@@ -383,10 +383,10 @@ index a8020bc2987d73495daafc22acf3d4fb35a24789..d6c908769396228018ecb5dcec138e2c
  fn test_git_ref_fetch_default_remote_from_config_glob() {
      let test_env = TestEnvironment::default();
 diff --git a/lib/src/git.rs b/lib/src/git.rs
-index de2a69071cf4608f017feacd6dfff55b88ee41b8..0073cc21d9eabbbb9fcb8b5e7c03293deec7d34d 100644
+index 646e2834b8579126584ad083b5e9ff68995ce5ca..8289df2e27346861c3973ed8c7e3383b395cde6c 100644
 --- a/lib/src/git.rs
 +++ b/lib/src/git.rs
-@@ -48,6 +48,7 @@ use crate::file_util::PathError;
+@@ -50,6 +50,7 @@ use crate::file_util::is_empty_dir;
  use crate::git_backend::GitBackend;
  use crate::git_subprocess::GitFetchStatus;
  pub use crate::git_subprocess::GitProgress;
@@ -394,7 +394,7 @@ index de2a69071cf4608f017feacd6dfff55b88ee41b8..0073cc21d9eabbbb9fcb8b5e7c03293d
  pub use crate::git_subprocess::GitSidebandLineTerminator;
  pub use crate::git_subprocess::GitSubprocessCallback;
  use crate::git_subprocess::GitSubprocessContext;
-@@ -3410,23 +3411,78 @@ pub fn fetch_commits(
+@@ -3569,23 +3570,78 @@ pub fn fetch_commits(
      callback: &mut dyn GitSubprocessCallback,
      depth: Option<NonZeroU32>,
  ) -> Result<Vec<CommitId>, GitFetchError> {
@@ -480,7 +480,7 @@ index de2a69071cf4608f017feacd6dfff55b88ee41b8..0073cc21d9eabbbb9fcb8b5e7c03293d
      }
      let git_ctx = GitSubprocessContext::from_git_backend(git_backend, subprocess_options);
  
-@@ -3449,17 +3505,22 @@ pub fn fetch_commits(
+@@ -3608,17 +3664,22 @@ pub fn fetch_commits(
          .map(|(&source, temporary_ref_name)| RefSpec::forced(source, temporary_ref_name.as_str()))
          .collect_vec();
      let no_negative_refspecs = [];
@@ -513,7 +513,7 @@ index de2a69071cf4608f017feacd6dfff55b88ee41b8..0073cc21d9eabbbb9fcb8b5e7c03293d
              GitFetchStatus::NoRemoteRef(fetch_source) => {
                  return Err(GitFetchError::NoSuchSource {
                      remote: remote_name.to_owned(),
-@@ -3467,9 +3528,27 @@ pub fn fetch_commits(
+@@ -3626,9 +3687,27 @@ pub fn fetch_commits(
                  });
              }
          };
@@ -544,7 +544,7 @@ index de2a69071cf4608f017feacd6dfff55b88ee41b8..0073cc21d9eabbbb9fcb8b5e7c03293d
          }
  
          sources
-@@ -3496,11 +3575,12 @@ pub fn fetch_commits(
+@@ -3655,11 +3734,12 @@ pub fn fetch_commits(
      let cleanup_result = temporary_ref_names
          .iter()
          .try_for_each(|ref_name| delete_temporary_fetch_ref(&git_repo, ref_name));

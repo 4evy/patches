@@ -1,6 +1,6 @@
-From 3658cd2c542c76f53596e7a70046c7b986af3639 Mon Sep 17 00:00:00 2001
+From 9d34e87706d9ead3784cd9124d3b5a6c689e03eb Mon Sep 17 00:00:00 2001
 From: Josh McKinney <joshka@users.noreply.github.com>
-Date: Thu, 1 Jan 1970 00:00:00 +0000
+Date: Sat, 5 Sep 2026 13:00:00 +0300
 Subject: git: keep fetched ref targets visible
 
 Fetched Git refs are durable labels for the commit imported from the
@@ -32,7 +32,7 @@ second fetch, and verify that the fetched ref still resolves to the original
 non-hidden commit.
 
 diff --git a/cli/tests/test_git_fetch.rs b/cli/tests/test_git_fetch.rs
-index 2ea53e4e062c736e6b82ec78b9a55d572a4de219..5a4456b10cd24ba527ea8752c793b92533caba2c 100644
+index 18214a9ae167dbb05d4e85392b8645d600ac651b..67eb582d20c14453cccc39cc2a79d75ed736a7bd 100644
 --- a/cli/tests/test_git_fetch.rs
 +++ b/cli/tests/test_git_fetch.rs
 @@ -933,6 +933,65 @@ fn test_git_ref_fetch_undo_and_op_restore() {

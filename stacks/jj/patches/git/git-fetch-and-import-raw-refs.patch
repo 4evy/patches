@@ -1,0 +1,398 @@
+From 0df17dfc2051ae7497391870748c828e870024fd Mon Sep 17 00:00:00 2001
+From: Benjamin Tan <benjamin@dev.ofcr.se>
+Date: Sat, 5 Sep 2026 13:00:00 +0300
+Subject: git: fetch and import raw refs
+
+Code review systems expose commits through refs outside the branch and
+tag namespaces. Some Git servers also let clients fetch full commit IDs
+
+Add a one-shot fetch path for raw refs or full commit IDs. Import the
+targets as visible heads without creating remote-tracking refs
+
+Use a unique temporary ref for each fetched source. This keeps concurrent
+fetches independent and preserves any existing internal refs
+
+Refs #4388
+
+Co-authored-by: 4evy <git@evy.pink>
+
+diff --git a/cli/src/command_error.rs b/cli/src/command_error.rs
+index e7c410aa33b7f9c6558d930468c6476669929f96..c36a2909561ab57f8cd6fb2e310960ee1cdf6398 100644
+--- a/cli/src/command_error.rs
++++ b/cli/src/command_error.rs
+@@ -583,11 +583,17 @@ jj currently does not support partial clones. To use jj with this repository, tr
+     impl From<GitFetchError> for CommandError {
+         fn from(err: GitFetchError) -> Self {
+             match err {
+-                GitFetchError::NoSuchRemote(_) => user_error(err),
++                GitFetchError::NoSuchRemote(_)
++                | GitFetchError::InvalidSource { .. }
++                | GitFetchError::NoSuchSource { .. }
++                | GitFetchError::NotACommit { .. } => user_error(err),
+                 GitFetchError::RemoteName(_) => {
+                     user_error(err).hinted("Run `jj git remote rename` to give a different name.")
+                 }
+-                GitFetchError::RejectedUpdates(_) | GitFetchError::Subprocess(_) => user_error(err),
++                GitFetchError::RejectedUpdates(_)
++                | GitFetchError::TemporaryRefCleanup { .. }
++                | GitFetchError::UnexpectedBackend(_)
++                | GitFetchError::Subprocess(_) => user_error(err),
+             }
+         }
+     }
+diff --git a/lib/src/git.rs b/lib/src/git.rs
+index 55081a8f80e7ab59636be68f00758bab3710e919..04ac9170f2729afb75a95f6bcd23b7ea8ef7c1ec 100644
+--- a/lib/src/git.rs
++++ b/lib/src/git.rs
+@@ -94,6 +94,8 @@ pub const RESERVED_REMOTE_REF_NAMESPACE: &str = "refs/remotes/git/";
+ const REMOTE_BOOKMARK_REF_NAMESPACE: &str = "refs/remotes/";
+ /// Git ref prefix where remote tags will be temporarily fetched.
+ const REMOTE_TAG_REF_NAMESPACE: &str = "refs/jj/remote-tags/";
++/// Git ref prefix for one-off raw ref fetches.
++const TEMPORARY_FETCH_REF_NAMESPACE: &str = "refs/jj/fetch/";
+ /// Ref name used as a placeholder to unset HEAD without a commit.
+ ///
+ /// This is not a normal branch ref, and is deliberately left unborn: HEAD is
+@@ -779,6 +781,22 @@ async fn import_refs_inner(
+     Ok(stats)
+ }
+ 
++/// Imports a single commit from the underlying Git repo into the Jujutsu repo.
++pub async fn import_commit(
++    mut_repo: &mut MutableRepo,
++    commit_id: CommitId,
++) -> Result<Commit, GitImportError> {
++    let store = mut_repo.store();
++    let git_backend = get_git_backend(store)?;
++    let index = mut_repo.index();
++    if !index.has_id(&commit_id).await? {
++        git_backend.import_head_commits([&commit_id])?;
++    }
++    let commit = store.get_commit_async(&commit_id).await?;
++    mut_repo.add_head(&commit).await?;
++    Ok(commit)
++}
++
+ /// Finds commits that used to be reachable in git that no longer are reachable.
+ /// Those commits will be recorded as abandoned in the `MutableRepo`.
+ async fn abandon_unreachable_commits(
+@@ -2910,8 +2928,28 @@ const INVALID_REFSPEC_CHARS: [char; 5] = [':', '^', '?', '[', ']'];
+ pub enum GitFetchError {
+     #[error("No git remote named '{}'", .0.as_symbol())]
+     NoSuchRemote(RemoteNameBuf),
++    #[error("Invalid Git ref or commit ID: {fetch_source}")]
++    InvalidSource { fetch_source: String },
++    #[error("Git remote '{}' has no ref or commit ID matching '{fetch_source}'", remote.as_symbol())]
++    NoSuchSource {
++        remote: RemoteNameBuf,
++        fetch_source: String,
++    },
++    #[error("Ref or object ID '{fetch_source}' on Git remote '{}' does not resolve to a commit", remote.as_symbol())]
++    NotACommit {
++        remote: RemoteNameBuf,
++        fetch_source: String,
++    },
++    #[error("Failed to clean up temporary Git ref '{}'", ref_name.as_str())]
++    TemporaryRefCleanup {
++        ref_name: GitRefNameBuf,
++        #[source]
++        source: Box<dyn std::error::Error + Send + Sync>,
++    },
+     #[error(transparent)]
+     RemoteName(#[from] GitRemoteNameError),
++    #[error(transparent)]
++    UnexpectedBackend(#[from] UnexpectedGitBackendError),
+     #[error("Failed to update refs: {}", .0.iter().map(|n| n.as_symbol()).join(", "))]
+     RejectedUpdates(Vec<GitRefNameBuf>),
+     #[error(transparent)]
+@@ -3410,6 +3448,127 @@ impl<'a> GitFetch<'a> {
+     }
+ }
+ 
++/// Fetches the commits identified by raw refs or full commit IDs.
++#[tracing::instrument(skip(store, subprocess_options, callback))]
++pub fn fetch_commits(
++    store: &Store,
++    subprocess_options: GitSubprocessOptions,
++    remote_name: &RemoteName,
++    sources: &[&str],
++    callback: &mut dyn GitSubprocessCallback,
++    depth: Option<NonZeroU32>,
++) -> Result<Vec<CommitId>, GitFetchError> {
++    validate_remote_name(remote_name)?;
++    for &source in sources {
++        // The source may be an object ID rather than a ref name. Full hexadecimal
++        // object IDs are valid partial ref names too, so this validation accepts
++        // both supported forms while rejecting malformed fetch input.
++        if gix::validate::reference::name_partial(BStr::new(source)).is_err() {
++            return Err(GitFetchError::InvalidSource {
++                fetch_source: source.to_owned(),
++            });
++        }
++    }
++
++    let git_backend = get_git_backend(store)?;
++    let git_repo = git_backend.git_repo();
++    if try_find_active_remote_inner(&git_repo, remote_name).is_none() {
++        return Err(GitFetchError::NoSuchRemote(remote_name.to_owned()));
++    }
++    let git_ctx = GitSubprocessContext::from_git_backend(git_backend, subprocess_options);
++
++    // Use unique destinations so concurrent fetches can't share or delete the
++    // same temporary refs. This also avoids overwriting pre-existing internal
++    // refs.
++    let temporary_ref_names = sources
++        .iter()
++        .map(|_| {
++            let random_bytes = rand::random::<[u8; 16]>();
++            GitRefNameBuf::from(format!(
++                "{TEMPORARY_FETCH_REF_NAMESPACE}{}",
++                crate::hex_util::encode_hex(&random_bytes)
++            ))
++        })
++        .collect_vec();
++    let refspecs = sources
++        .iter()
++        .zip(&temporary_ref_names)
++        .map(|(&source, temporary_ref_name)| RefSpec::forced(source, temporary_ref_name.as_str()))
++        .collect_vec();
++    let no_negative_refspecs = [];
++    let fetch_result = (|| {
++        let updates = match git_ctx.spawn_fetch(
++            remote_name,
++            &refspecs,
++            &no_negative_refspecs,
++            callback,
++            depth,
++        )? {
++            GitFetchStatus::Updates(updates) => updates,
++            GitFetchStatus::NoRemoteRef(fetch_source) => {
++                return Err(GitFetchError::NoSuchSource {
++                    remote: remote_name.to_owned(),
++                    fetch_source,
++                });
++            }
++        };
++        if !updates.rejected.is_empty() {
++            let names = updates.rejected.into_iter().map(|(name, _)| name).collect();
++            return Err(GitFetchError::RejectedUpdates(names));
++        }
++
++        sources
++            .iter()
++            .zip(&temporary_ref_names)
++            .map(|(&source, temporary_ref_name)| {
++                let reference = git_repo
++                    .find_reference(temporary_ref_name.as_str())
++                    .map_err(|_| GitFetchError::NoSuchSource {
++                        remote: remote_name.to_owned(),
++                        fetch_source: source.to_owned(),
++                    })?;
++                let commit_id =
++                    resolve_git_ref_to_commit_id(&reference, None).ok_or_else(|| {
++                        GitFetchError::NotACommit {
++                            remote: remote_name.to_owned(),
++                            fetch_source: source.to_owned(),
++                        }
++                    })?;
++                Ok(CommitId::from_bytes(commit_id.as_bytes()))
++            })
++            .collect()
++    })();
++    let cleanup_result = temporary_ref_names
++        .iter()
++        .try_for_each(|ref_name| delete_temporary_fetch_ref(&git_repo, ref_name));
++    match (fetch_result, cleanup_result) {
++        (Ok(commit_ids), Ok(())) => Ok(commit_ids),
++        (Err(err), _) => Err(err),
++        (Ok(_), Err(err)) => Err(err),
++    }
++}
++
++fn delete_temporary_fetch_ref(
++    git_repo: &gix::Repository,
++    ref_name: &GitRefName,
++) -> Result<(), GitFetchError> {
++    let reference = git_repo
++        .try_find_reference(ref_name.as_str())
++        .map_err(|source| GitFetchError::TemporaryRefCleanup {
++            ref_name: ref_name.to_owned(),
++            source: Box::new(source),
++        })?;
++    if let Some(reference) = reference {
++        reference
++            .delete()
++            .map_err(|source| GitFetchError::TemporaryRefCleanup {
++                ref_name: ref_name.to_owned(),
++                source: Box::new(source),
++            })?;
++    }
++    Ok(())
++}
++
+ #[derive(Error, Debug)]
+ pub enum GitPushError {
+     #[error("No git remote named '{}'", .0.as_symbol())]
+diff --git a/lib/tests/test_git.rs b/lib/tests/test_git.rs
+index 50f396f07353eaeed23a5e184b413ca75f00fe1c..2ef8eb428fef67e0de9eebc7aa66e3995b050a18 100644
+--- a/lib/tests/test_git.rs
++++ b/lib/tests/test_git.rs
+@@ -4193,6 +4193,158 @@ fn test_fetch_empty_repo() -> TestResult {
+     Ok(())
+ }
+ 
++#[test]
++fn test_fetch_commits_from_refs() -> TestResult {
++    let test_data = GitRepoData::create();
++    let commit_id1 = empty_git_commit(&test_data.origin_repo, "refs/pull/123/head", &[]);
++    let commit_id2 = empty_git_commit(&test_data.origin_repo, "refs/changes/456", &[]);
++    // A one-off fetch must not overwrite or delete a pre-existing internal ref.
++    let existing_ref_name = "refs/jj/fetch/origin/refs/pull/123/head";
++    let existing_ref_target = test_data.git_repo.write_blob(b"keep this ref")?.detach();
++    test_data.git_repo.reference(
++        existing_ref_name,
++        existing_ref_target,
++        gix::refs::transaction::PreviousValue::MustNotExist,
++        "test existing ref",
++    )?;
++    let subprocess_options = GitSubprocessOptions::from_settings(test_data.repo.settings())?;
++    let fetched_ids = git::fetch_commits(
++        test_data.repo.store(),
++        subprocess_options,
++        "origin".as_ref(),
++        &["refs/pull/123/head", "refs/changes/456"],
++        &mut NullCallback,
++        None,
++    )?;
++
++    assert_eq!(fetched_ids, [jj_id(commit_id1), jj_id(commit_id2)]);
++    assert_eq!(
++        test_data.git_repo.find_reference(existing_ref_name)?.id(),
++        existing_ref_target
++    );
++    assert_eq!(
++        test_data
++            .git_repo
++            .references()?
++            .prefixed("refs/jj/fetch/")?
++            .count(),
++        1
++    );
++    let mut tx = test_data.repo.start_transaction();
++    for fetched_id in fetched_ids {
++        let commit = git::import_commit(tx.repo_mut(), fetched_id).block_on()?;
++        assert!(tx.repo().view().heads().contains(commit.id()));
++    }
++    Ok(())
++}
++
++#[test]
++fn test_fetch_commit_by_id() -> TestResult {
++    let test_data = GitRepoData::create();
++    let commit_id = empty_git_commit(&test_data.origin_repo, "refs/hidden/review", &[]);
++    let subprocess_options = GitSubprocessOptions::from_settings(test_data.repo.settings())?;
++    let commit_id_string = commit_id.to_string();
++    let [fetched_id] = git::fetch_commits(
++        test_data.repo.store(),
++        subprocess_options,
++        "origin".as_ref(),
++        &[&commit_id_string],
++        &mut NullCallback,
++        None,
++    )?
++    .try_into()
++    .unwrap();
++
++    assert_eq!(fetched_id, jj_id(commit_id));
++    let mut tx = test_data.repo.start_transaction();
++    let commit = git::import_commit(tx.repo_mut(), fetched_id).block_on()?;
++    assert!(tx.repo().view().heads().contains(commit.id()));
++    Ok(())
++}
++
++#[test]
++fn test_fetch_commit_cleans_up_non_commit_target() -> TestResult {
++    let test_data = GitRepoData::create();
++    let blob_id = test_data.origin_repo.write_blob(b"not a commit")?.detach();
++    test_data.origin_repo.reference(
++        "refs/meta/blob",
++        blob_id,
++        gix::refs::transaction::PreviousValue::MustNotExist,
++        "create non-commit ref",
++    )?;
++    let subprocess_options = GitSubprocessOptions::from_settings(test_data.repo.settings())?;
++    let result = git::fetch_commits(
++        test_data.repo.store(),
++        subprocess_options,
++        "origin".as_ref(),
++        &["refs/meta/blob"],
++        &mut NullCallback,
++        None,
++    );
++
++    assert_matches!(result, Err(GitFetchError::NotACommit { .. }));
++    assert!(
++        test_data
++            .git_repo
++            .references()?
++            .prefixed("refs/jj/fetch/")?
++            .next()
++            .is_none()
++    );
++    Ok(())
++}
++
++#[test]
++fn test_fetch_commits_cleans_up_if_source_is_missing() -> TestResult {
++    let test_data = GitRepoData::create();
++    empty_git_commit(&test_data.origin_repo, "refs/pull/123/head", &[]);
++    let subprocess_options = GitSubprocessOptions::from_settings(test_data.repo.settings())?;
++    let result = git::fetch_commits(
++        test_data.repo.store(),
++        subprocess_options,
++        "origin".as_ref(),
++        &["refs/pull/123/head", "refs/pull/missing/head"],
++        &mut NullCallback,
++        None,
++    );
++
++    assert_matches!(
++        result,
++        Err(GitFetchError::NoSuchSource { fetch_source, .. })
++            if fetch_source == "refs/pull/missing/head"
++    );
++    assert!(
++        test_data
++            .git_repo
++            .references()?
++            .prefixed("refs/jj/fetch/")?
++            .next()
++            .is_none()
++    );
++    Ok(())
++}
++
++#[test]
++fn test_fetch_commit_rejects_invalid_source() -> TestResult {
++    let test_data = GitRepoData::create();
++    let subprocess_options = GitSubprocessOptions::from_settings(test_data.repo.settings())?;
++    let result = git::fetch_commits(
++        test_data.repo.store(),
++        subprocess_options,
++        "origin".as_ref(),
++        &["refs/pull/../head"],
++        &mut NullCallback,
++        None,
++    );
++
++    assert_matches!(
++        result,
++        Err(GitFetchError::InvalidSource { fetch_source })
++            if fetch_source == "refs/pull/../head"
++    );
++    Ok(())
++}
++
+ #[test]
+ fn test_fetch_initial_commit_head_is_not_set() -> TestResult {
+     let test_data = GitRepoData::create();

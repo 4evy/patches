@@ -1,6 +1,6 @@
-From 19a8cc53998ca3491cc0b361be2d88426fb4eeed Mon Sep 17 00:00:00 2001
+From 026604b6cae0f5640edf41b1e9db27a8dd7962dd Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Thu, 1 Jan 1970 00:00:00 +0000
+Date: Sat, 5 Sep 2026 13:00:00 +0300
 Subject: docs: document fetched Git refs and shallow fetching
 
 Document durable fetched refs, their revset and template surfaces, and
@@ -8,10 +8,10 @@ shallow-fetch workflows. Add changelog entries for raw-ref fetching,
 configurable depth, and review-stack fetching
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index 4e352cf44ffa5d6695a33166e14ad09b37589ee7..721bb753aa7cc31b5905ef843a58a1298831bcab 100644
+index f1ab4594fc88557a9fa0a24bdf629dec98587b69..8f7d49f666b249474f30519a5b3da147cde751b9 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -181,6 +181,15 @@ None
+@@ -229,6 +229,15 @@ None
  
  ### New features
  

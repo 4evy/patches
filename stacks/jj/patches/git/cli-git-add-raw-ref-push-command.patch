@@ -1,6 +1,6 @@
-From ad91bca2b08662514c0b216bf36392a18194982e Mon Sep 17 00:00:00 2001
+From 56d04bed781c9ca3719cc313cbaa6ad89ab28561 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Thu, 1 Jan 1970 00:00:00 +0000
+Date: Sat, 5 Sep 2026 13:00:00 +0300
 Subject: cli: git: add raw ref push command
 
 Code review systems and other Git applications accept commits through
@@ -19,10 +19,10 @@ the eligibility checks and `git.sign-on-push` behavior of `jj git push`
 Closes #4388
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index 68e0bfa7874c7752c094001899210e1d6332d505..4e352cf44ffa5d6695a33166e14ad09b37589ee7 100644
+index d81e062ce619f30bbe5a1a079a1f07edef1bca5d..f1ab4594fc88557a9fa0a24bdf629dec98587b69 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -64,6 +64,10 @@ None
+@@ -112,6 +112,10 @@ None
    remote. The fetched commits become visible without creating bookmarks or
    remote-tracking refs.
  
@@ -34,18 +34,18 @@ index 68e0bfa7874c7752c094001899210e1d6332d505..4e352cf44ffa5d6695a33166e14ad09b
  
  * [The default `immutable_heads()` set](docs/config.md#set-of-immutable-commits)
 diff --git a/cli/src/commands/git/push.rs b/cli/src/commands/git/push.rs
-index d6784889367372d5dae1bb69960fddcd80c2dee7..860ef6ccdb7d70935fff4d3a801675f25d5e6338 100644
+index 09a69dd6f178b5e589df59c38e9791dd302b68e2..f243e8956acda48393dda8625af2fb3060d3f40a 100644
 --- a/cli/src/commands/git/push.rs
 +++ b/cli/src/commands/git/push.rs
-@@ -991,7 +991,7 @@ async fn print_commits_ready_to_push(
+@@ -1100,7 +1100,7 @@ async fn print_commits_ready_to_push(
      Ok(())
  }
  
--fn get_default_push_remote(
-+pub(super) fn get_default_push_remote(
+-fn get_default_push_remotes(
++pub(super) fn get_default_push_remotes(
      ui: &Ui,
      workspace_command: &WorkspaceCommandHelper,
- ) -> Result<RemoteNameBuf, CommandError> {
+ ) -> Result<StringExpression, CommandError> {
 diff --git a/cli/src/commands/git/ref/mod.rs b/cli/src/commands/git/ref/mod.rs
 index 6735e67925d0463f13f5ba2acbfb3986b5d1debf..ce9771feaaee603e2b20908b7d3c3c30234dddf6 100644
 --- a/cli/src/commands/git/ref/mod.rs
@@ -82,10 +82,10 @@ index 6735e67925d0463f13f5ba2acbfb3986b5d1debf..ce9771feaaee603e2b20908b7d3c3c30
  }
 diff --git a/cli/src/commands/git/ref/push.rs b/cli/src/commands/git/ref/push.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..c4fa0d3eb0647c560516da33eb2f7fb1b399740b
+index 0000000000000000000000000000000000000000..490d30866cc7990a7ca5e8de2aec89c094feed63
 --- /dev/null
 +++ b/cli/src/commands/git/ref/push.rs
-@@ -0,0 +1,204 @@
+@@ -0,0 +1,216 @@
 +// Copyright 2026 The Jujutsu Authors
 +//
 +// Licensed under the Apache License, Version 2.0 (the "License");
@@ -118,7 +118,7 @@ index 0000000000000000000000000000000000000000..c4fa0d3eb0647c560516da33eb2f7fb1
 +use crate::cli_util::RevisionArg;
 +use crate::command_error::CommandError;
 +use crate::command_error::user_error;
-+use crate::commands::git::push::get_default_push_remote;
++use crate::commands::git::push::get_default_push_remotes;
 +use crate::complete;
 +use crate::git_util::GitSubprocessUi;
 +use crate::git_util::print_git_ref_push_stats;
@@ -188,7 +188,19 @@ index 0000000000000000000000000000000000000000..c4fa0d3eb0647c560516da33eb2f7fb1
 +    git::get_git_backend(workspace_command.repo().store())?;
 +    let remote = match &args.remote {
 +        Some(remote) => remote.clone(),
-+        None => get_default_push_remote(ui, &workspace_command)?,
++        None => {
++            let expression = get_default_push_remotes(ui, &workspace_command)?;
++            let matcher = expression.to_matcher();
++            let remotes = git::get_all_remote_names(workspace_command.repo().store())?;
++            let mut matching = remotes.into_iter().filter(|r| matcher.is_match(r.as_str()));
++            let remote = matching
++                .next()
++                .ok_or_else(|| user_error("No matching push remote; specify --remote"))?;
++            if matching.next().is_some() {
++                return Err(user_error("Multiple push remotes match; specify --remote"));
++            }
++            remote
++        }
 +    };
 +
 +    if !args.ref_name.starts_with("refs/")
@@ -291,10 +303,10 @@ index 0000000000000000000000000000000000000000..c4fa0d3eb0647c560516da33eb2f7fb1
 +    Ok(())
 +}
 diff --git a/cli/src/git_util.rs b/cli/src/git_util.rs
-index 5cfc34b747fd2a427d93a4efa3cdc57213a019ba..01880ff93b6b8969d169c74285431c30e2ff7584 100644
+index 38e14aa3f75ac582e7ee8244179f2bc29d023d75..d85480a0fe9ff4f9c175dc1f2cdaf2d43362d595 100644
 --- a/cli/src/git_util.rs
 +++ b/cli/src/git_util.rs
-@@ -545,6 +545,32 @@ pub fn print_git_export_stats(ui: &Ui, stats: &GitExportStats) -> Result<(), std
+@@ -548,6 +548,32 @@ pub fn print_git_export_stats(ui: &Ui, stats: &GitExportStats) -> Result<(), std
  }
  
  pub fn print_push_stats(ui: &Ui, stats: &GitPushStats) -> io::Result<()> {
@@ -327,7 +339,7 @@ index 5cfc34b747fd2a427d93a4efa3cdc57213a019ba..01880ff93b6b8969d169c74285431c30
      if !stats.rejected.is_empty() {
          writeln!(
              ui.warning_default(),
-@@ -560,11 +586,7 @@ pub fn print_push_stats(ui: &Ui, stats: &GitPushStats) -> io::Result<()> {
+@@ -563,11 +589,7 @@ pub fn print_push_stats(ui: &Ui, stats: &GitPushStats) -> io::Result<()> {
              writeln!(formatter)?;
          }
          drop(formatter);
@@ -340,7 +352,7 @@ index 5cfc34b747fd2a427d93a4efa3cdc57213a019ba..01880ff93b6b8969d169c74285431c30
      }
      if !stats.remote_rejected.is_empty() {
          writeln!(
-@@ -581,10 +603,7 @@ pub fn print_push_stats(ui: &Ui, stats: &GitPushStats) -> io::Result<()> {
+@@ -584,10 +606,7 @@ pub fn print_push_stats(ui: &Ui, stats: &GitPushStats) -> io::Result<()> {
              writeln!(formatter)?;
          }
          drop(formatter);
@@ -353,7 +365,7 @@ index 5cfc34b747fd2a427d93a4efa3cdc57213a019ba..01880ff93b6b8969d169c74285431c30
      if !stats.unexported_bookmarks.is_empty() {
          writeln!(
 diff --git a/cli/tests/cli-reference@.md.snap b/cli/tests/cli-reference@.md.snap
-index 6291338576599304b1c153e379cc13021da73798..05ab2a4928d13c9ed86424490ed53c2b9ec8f89b 100644
+index dcf8c5cf64dccc49ba80bd83735b974066d90130..cb0ca7a79cb02fdbbb8048d563781ef464c1d505 100644
 --- a/cli/tests/cli-reference@.md.snap
 +++ b/cli/tests/cli-reference@.md.snap
 @@ -68,6 +68,7 @@ This document contains the help content for the `jj` command-line program.
@@ -364,7 +376,7 @@ index 6291338576599304b1c153e379cc13021da73798..05ab2a4928d13c9ed86424490ed53c2b
  * [`jj git remote`↴](#jj-git-remote)
  * [`jj git remote add`↴](#jj-git-remote-add)
  * [`jj git remote list`↴](#jj-git-remote-list)
-@@ -1960,6 +1961,7 @@ Manage raw Git refs
+@@ -1966,6 +1967,7 @@ Manage raw Git refs
  ###### **Subcommands:**
  
  * `fetch` — Fetch raw refs or full commit IDs from a Git remote
@@ -372,7 +384,7 @@ index 6291338576599304b1c153e379cc13021da73798..05ab2a4928d13c9ed86424490ed53c2b
  
  
  
-@@ -1983,6 +1985,35 @@ Each source can be a fully qualified remote ref such as GitHub's `refs/pull/123/
+@@ -1989,6 +1991,35 @@ Each source can be a fully qualified remote ref such as GitHub's `refs/pull/123/
  
  
  
@@ -409,7 +421,7 @@ index 6291338576599304b1c153e379cc13021da73798..05ab2a4928d13c9ed86424490ed53c2b
  
  Manage Git remotes
 diff --git a/cli/tests/test_git_push.rs b/cli/tests/test_git_push.rs
-index 35de0bee209ea62d8ad433cab31b2cea17686bad..23b83e59334fb1ca7505f4373faf4c02ee0939e4 100644
+index 7a0a80d8e3309fcece3dede2adf51845ac9ff510..47b7c72428607f3708cb4bc1d8c96366fd32e488 100644
 --- a/cli/tests/test_git_push.rs
 +++ b/cli/tests/test_git_push.rs
 @@ -63,6 +63,357 @@ fn set_up(test_env: &TestEnvironment) {

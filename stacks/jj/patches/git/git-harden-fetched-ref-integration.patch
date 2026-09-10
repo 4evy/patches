@@ -1,15 +1,15 @@
-From 4c6369f6553cca857f81f477dec076069ccec8de Mon Sep 17 00:00:00 2001
+From e35d9ac32b1907d76dd7d441220d182746e4eb7e Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Thu, 1 Jan 1970 00:00:00 +0000
+Date: Sat, 5 Sep 2026 13:00:00 +0300
 Subject: git: harden fetched ref integration
 
 Reuse canonical fetched-ref iteration and raw-fetch plumbing, normalize object IDs, preserve accurate cleanup errors, report merged ref conflicts, and avoid shallow-index rebuilds for order-only changes.
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index d5822d9b8919b6f88a2dd07c2852b96505dda044..7773be29919b0e33b1d02d76a2c422556168a253 100644
+index 57838260e048a7f9a633783a0684e6fefd1a3a83..8b9746ad9cc24f65f9b790cde851c3d30b3cd2f6 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -60,14 +60,20 @@ None
+@@ -108,14 +108,20 @@ None
    directory or loaded via `--config-file`). This allows precise file targeting
    and avoids interactive prompts when multiple config files exist.
  
@@ -33,7 +33,7 @@ index d5822d9b8919b6f88a2dd07c2852b96505dda044..7773be29919b0e33b1d02d76a2c42255
  ### Fixed bugs
  
  * [The default `immutable_heads()` set](docs/config.md#set-of-immutable-commits)
-@@ -181,16 +187,6 @@ None
+@@ -229,16 +235,6 @@ None
  
  ### New features
  
@@ -51,10 +51,10 @@ index d5822d9b8919b6f88a2dd07c2852b96505dda044..7773be29919b0e33b1d02d76a2c42255
    point where multiple branches merge.
  
 diff --git a/cli/src/command_error.rs b/cli/src/command_error.rs
-index 54d81243a6d5eea2657aa5d798abf63a4cc4f45d..f0c2d447b5c0d18fd3ef5c6543330a5d90a15732 100644
+index 87e31d94cedd40c51f0090ab053ad8bb932d0f35..00a298f769c13edc596aabb72395ce32bd3db4bb 100644
 --- a/cli/src/command_error.rs
 +++ b/cli/src/command_error.rs
-@@ -589,6 +589,7 @@ jj currently does not support partial clones. To use jj with this repository, tr
+@@ -592,6 +592,7 @@ jj currently does not support partial clones. To use jj with this repository, tr
                  }
                  GitFetchError::RejectedUpdates(_)
                  | GitFetchError::TemporaryRefCleanup { .. }
@@ -259,7 +259,7 @@ index 84d2b21a909fb3be94382924d43b1d78f27bd7b5..dbe8b692c13d5ab8440841dde0c652b8
                  .write(formatter, async |formatter| {
                      writeln!(
 diff --git a/cli/src/commit_templater.rs b/cli/src/commit_templater.rs
-index 77bd437b5cbfbe98dfd0b3de5e6ba9b706acc461..5560221548c87e66a56e3b729185049a790ee0c6 100644
+index 6f2f0ad42e8a71a9697fe88edc910753a6286183..e7d2ab64a0fd162bdc3542acc2037b50de947930 100644
 --- a/cli/src/commit_templater.rs
 +++ b/cli/src/commit_templater.rs
 @@ -17,7 +17,6 @@
@@ -282,7 +282,7 @@ index 77bd437b5cbfbe98dfd0b3de5e6ba9b706acc461..5560221548c87e66a56e3b729185049a
  use jj_lib::ref_name::WorkspaceName;
  use jj_lib::ref_name::WorkspaceNameBuf;
  use jj_lib::repo::Repo;
-@@ -1024,8 +1023,11 @@ impl<'repo> CommitKeywordCache<'repo> {
+@@ -1016,8 +1015,11 @@ impl<'repo> CommitKeywordCache<'repo> {
      }
  
      pub fn fetched_git_refs_index(&self, repo: &dyn Repo) -> &Rc<CommitRefsIndex> {
@@ -296,7 +296,7 @@ index 77bd437b5cbfbe98dfd0b3de5e6ba9b706acc461..5560221548c87e66a56e3b729185049a
      }
  
      pub fn is_immutable_fn(
-@@ -2041,17 +2043,13 @@ fn build_commit_refs_index<'a, K: Into<String>>(
+@@ -2033,17 +2035,13 @@ fn build_commit_refs_index<'a, K: Into<String>>(
  }
  
  fn build_fetched_git_refs_index<'a>(
@@ -320,7 +320,7 @@ index 77bd437b5cbfbe98dfd0b3de5e6ba9b706acc461..5560221548c87e66a56e3b729185049a
      index
  }
 diff --git a/cli/tests/test_git_fetch.rs b/cli/tests/test_git_fetch.rs
-index 1351d652113950ef64d1a758c7514eb318a3cc17..6d35c50f43e86b6053ce79aea3b1a48657c99c9d 100644
+index da1deeff99e8e3357c4827f16be1d62513718a2b..f57278df98f13e2f7801e2854d3d189dc13469cd 100644
 --- a/cli/tests/test_git_fetch.rs
 +++ b/cli/tests/test_git_fetch.rs
 @@ -716,7 +716,9 @@ fn test_git_ref_fetch_non_commit_ref_deletes_temporary_ref() -> TestResult {
@@ -426,10 +426,10 @@ index 1351d652113950ef64d1a758c7514eb318a3cc17..6d35c50f43e86b6053ce79aea3b1a486
  fn test_git_ref_fetch_keeps_rewritten_target_visible_after_undo() {
      let test_env = TestEnvironment::default();
 diff --git a/lib/src/git.rs b/lib/src/git.rs
-index 54a6e59cdc70853a4b0719a204fc8e0efaf17878..203c8dc5e761ccbea1a6af20b0b7b0121a555f93 100644
+index 1c2f199cac5340cfc4a8a8dc25526b1e36ca2030..d63d6acd13e535e0faa1da1ddd20111089d75488 100644
 --- a/lib/src/git.rs
 +++ b/lib/src/git.rs
-@@ -2806,6 +2806,12 @@ pub enum GitFetchError {
+@@ -2965,6 +2965,12 @@ pub enum GitFetchError {
          #[source]
          source: Box<dyn std::error::Error + Send + Sync>,
      },
@@ -442,7 +442,7 @@ index 54a6e59cdc70853a4b0719a204fc8e0efaf17878..203c8dc5e761ccbea1a6af20b0b7b012
      #[error(transparent)]
      RemoteName(#[from] GitRemoteNameError),
      #[error(transparent)]
-@@ -3760,33 +3766,31 @@ fn delete_temporary_fetch_refs(
+@@ -3919,33 +3925,31 @@ fn delete_temporary_fetch_refs(
      git_repo: &gix::Repository,
      prefix: &str,
  ) -> Result<(), GitFetchError> {
@@ -656,10 +656,10 @@ index 93c1758534972faaa179752c384fb535219578dc..1d4d92d0ca103689771165de4da0d8fd
      }
  
 diff --git a/lib/tests/test_git.rs b/lib/tests/test_git.rs
-index a5d91430448e874116b487b06ff093c3b48916d6..d935260a8670757b4863330318bbb045d787f13a 100644
+index 2a9c70eadfa44ebcc854588865d1011c7e2b2f31..f0323ea32cfed1f8411c0b769d09af3a5476c02e 100644
 --- a/lib/tests/test_git.rs
 +++ b/lib/tests/test_git.rs
-@@ -4350,6 +4350,71 @@ fn test_fetch_commit_rejects_invalid_source() -> TestResult {
+@@ -4345,6 +4345,71 @@ fn test_fetch_commit_rejects_invalid_source() -> TestResult {
      Ok(())
  }
  

@@ -1,6 +1,6 @@
-From 948c63cf859bd3ac5a4a00b984f0cb6126e66ba7 Mon Sep 17 00:00:00 2001
+From 2bac3741a5e86bc380b4a6418d1172d2a18193ab Mon Sep 17 00:00:00 2001
 From: Josh McKinney <joshka@users.noreply.github.com>
-Date: Thu, 1 Jan 1970 00:00:00 +0000
+Date: Sat, 5 Sep 2026 13:00:00 +0300
 Subject: git: persist fetched refs in repo view
 
 Store fetched Git refs in the view so one-off fetches can survive
@@ -21,10 +21,10 @@ index ee158d940c60edb7fafca1f6b292f9ad72a93e4c..e10c6d9dbe7297d85fe456809a95407f
      }
  }
 diff --git a/lib/src/git.rs b/lib/src/git.rs
-index 5676a8a533c8089f08336df17c8a36344d4f6b92..a7a9768d87723ac03815d6048273f49a5695132d 100644
+index 2be78816975739b363f8245155489381284b65d6..618fdea5266828c0fc8cde2b9e420c23c288703b 100644
 --- a/lib/src/git.rs
 +++ b/lib/src/git.rs
-@@ -1162,16 +1162,26 @@ fn default_remote_ref_state_for(
+@@ -1168,16 +1168,26 @@ fn default_remote_ref_state_for(
      }
  }
  
@@ -57,10 +57,10 @@ index 5676a8a533c8089f08336df17c8a36344d4f6b92..a7a9768d87723ac03815d6048273f49a
  
  /// Commits referenced by untracked remote bookmarks/tags including hidden ones.
 diff --git a/lib/src/op_store.rs b/lib/src/op_store.rs
-index 70f20a90de8904234475ad2f5227986626e63d4c..1c632e11bf9250afd718cf871bd8ff47c3433ed6 100644
+index 206f6daf8664cedb2d85dc8a0c5e01000cd641a4..ecb789430d4a971aeb2cc6ed7331f30eb940df0a 100644
 --- a/lib/src/op_store.rs
 +++ b/lib/src/op_store.rs
-@@ -253,6 +253,9 @@ pub struct View {
+@@ -252,6 +252,9 @@ pub struct View {
      pub local_tags: BTreeMap<RefNameBuf, RefTarget>,
      pub remote_views: BTreeMap<RemoteNameBuf, RemoteView>,
      pub git_refs: BTreeMap<GitRefNameBuf, RefTarget>,
@@ -70,7 +70,7 @@ index 70f20a90de8904234475ad2f5227986626e63d4c..1c632e11bf9250afd718cf871bd8ff47
      /// The commit each workspace's Git HEAD points to, keyed by workspace name.
      // TODO: Do we want to store the current bookmark name too?
      pub git_heads: BTreeMap<WorkspaceNameBuf, RefTarget>,
-@@ -271,6 +274,7 @@ impl View {
+@@ -270,6 +273,7 @@ impl View {
              local_tags: BTreeMap::new(),
              remote_views: BTreeMap::new(),
              git_refs: BTreeMap::new(),

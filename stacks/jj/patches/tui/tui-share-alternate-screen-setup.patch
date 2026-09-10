@@ -1,6 +1,6 @@
-From bff04044b8fe9b996669969ac5c925d293a60d7e Mon Sep 17 00:00:00 2001
+From 25c12001194764ddf8b0d8eb56d29737cc4410dd Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Thu, 1 Jan 1970 00:00:00 +0000
+Date: Sat, 5 Sep 2026 13:00:00 +0300
 Subject: tui: share alternate-screen setup
 
 Centralize crossterm raw-mode and alternate-screen setup for ratatui commands. Restore the terminal through a cleanup guard on success, cancellation, and errors, and move arrange onto the shared runner.
@@ -72,10 +72,10 @@ index 70fa8ed5c5d7a168e308cd1241b66df1032027d6..5316df48b97f3acea427a337f339e5ac
      if let Some(new_state) = result? {
          let mut tx = workspace_command.start_transaction();
 diff --git a/cli/src/lib.rs b/cli/src/lib.rs
-index eff94476a5e2e343d06c7d798e5b7427b93e43e7..39826de70fa151d22d0607f1c507912a1d8455ef 100644
+index 9418f049ace4f684a53f1a1662af02875082f872..a087ac67ac8d08c1c16af4dc3b5e047efe13329d 100644
 --- a/cli/src/lib.rs
 +++ b/cli/src/lib.rs
-@@ -39,4 +39,5 @@ pub mod template_parser;
+@@ -40,4 +40,5 @@ pub mod template_parser;
  pub mod templater;
  pub mod text_util;
  pub mod time_util;

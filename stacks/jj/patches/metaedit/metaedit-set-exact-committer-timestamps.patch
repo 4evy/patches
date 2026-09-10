@@ -1,15 +1,15 @@
-From 8172cae3f4f1840d0f33cd691a316942e5ac3679 Mon Sep 17 00:00:00 2001
+From d2417acd1cd8d90cd4e41b98eff47d0464bf9979 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Thu, 1 Jan 1970 00:00:00 +0000
+Date: Sat, 5 Sep 2026 13:00:00 +0300
 Subject: metaedit: set exact committer timestamps
 
 Add --committer-timestamp for setting the committer timestamp directly and --timestamp as shorthand for setting both author and committer timestamps. Avoid rewriting when the requested values already match the commit.
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index 403c94a358f7d68bd6463f1a7842b735906a4378..449b40f5154672b5c725bb500dad74acc201009d 100644
+index 7f5a02a54e38002ae2dce30472d57dfabd9d36aa..de91325ecb329b4ee4f9b5e343ff89d6299f7579 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -51,6 +51,9 @@ None
+@@ -99,6 +99,9 @@ None
    back to prompting the user if the heuristics are inconclusive. It can also run
    in non-interactive mode, which aborts if prompting would be needed.
  
@@ -117,10 +117,10 @@ index 89cd8acb428a812bff18fd881347b785affeff0e..be88bfd0f7ee6bf8a13600cfb1826b32
                      && description != commit_builder.description()
                  {
 diff --git a/cli/tests/cli-reference@.md.snap b/cli/tests/cli-reference@.md.snap
-index 0ce595c9902928c9f0585de538c114268a68d572..276ab04464edc72b4771c037351050b96e7431b8 100644
+index 49b8b06615a2f154797dfeac8cd0038c74e2708f..3f0e018fb00fc2740b5b4876118edb840d0b63bb 100644
 --- a/cli/tests/cli-reference@.md.snap
 +++ b/cli/tests/cli-reference@.md.snap
-@@ -2358,6 +2358,16 @@ Whenever any metadata is updated, the committer name, email, and timestamp are a
+@@ -2364,6 +2364,16 @@ Whenever any metadata is updated, the committer name, email, and timestamp are a
  
     [RFC2822]: https://datatracker.ietf.org/doc/html/rfc2822
  
@@ -138,7 +138,7 @@ index 0ce595c9902928c9f0585de538c114268a68d572..276ab04464edc72b4771c037351050b9
  * `--force-rewrite` — Rewrite the commit, even if no other metadata changed
  
 diff --git a/cli/tests/test_metaedit_command.rs b/cli/tests/test_metaedit_command.rs
-index 1a3a0b5a017f3bd1c946506e04e0ce800259924e..c41493d0a40ae5b032b786c21274ed5e32c0cf26 100644
+index 8acaf1adba807e0a703fba7be39213f5f84647e6..11c2a751865d643ed947e03466646e090b8e1063 100644
 --- a/cli/tests/test_metaedit_command.rs
 +++ b/cli/tests/test_metaedit_command.rs
 @@ -816,6 +816,100 @@ fn test_metaedit_set_same_timestamp_twice() {

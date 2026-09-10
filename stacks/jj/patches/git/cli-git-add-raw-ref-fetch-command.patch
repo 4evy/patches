@@ -1,0 +1,648 @@
+From 36300947fb45717f196d0e003b896ee70d859542 Mon Sep 17 00:00:00 2001
+From: Benjamin Tan <benjamin@dev.ofcr.se>
+Date: Sat, 5 Sep 2026 13:00:00 +0300
+Subject: cli: git: add raw ref fetch command
+
+Reviewers often need commits from forge refs such as
+`refs/pull/123/head`
+
+Add `jj git ref fetch` for raw refs or full commit IDs from a named
+remote. The command reports the imported commits and leaves them visible
+without bookmarks, remote-tracking refs, or durable raw ref names
+
+Use the fetch configuration only when it matches one remote. Require
+`--remote` when it matches more than one remote
+
+Refs #4388
+
+Co-authored-by: 4evy <git@evy.pink>
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 896706a6739c97e2683306bdf19d1fc19671751c..d81e062ce619f30bbe5a1a079a1f07edef1bca5d 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -108,6 +108,10 @@ None
+   directory or loaded via `--config-file`). This allows precise file targeting
+   and avoids interactive prompts when multiple config files exist.
+ 
++* `jj git ref fetch` can fetch raw Git refs or full commit IDs from a configured
++  remote. The fetched commits become visible without creating bookmarks or
++  remote-tracking refs.
++
+ ### Fixed bugs
+ 
+ * [The default `immutable_heads()` set](docs/config.md#set-of-immutable-commits)
+diff --git a/cli/src/commands/git/fetch.rs b/cli/src/commands/git/fetch.rs
+index b62f2a3ad90d04b04d4a32163688ce06683e6a92..2514757320d4a616f1cf13cde21c756c96e474e1 100644
+--- a/cli/src/commands/git/fetch.rs
++++ b/cli/src/commands/git/fetch.rs
+@@ -16,7 +16,6 @@ use std::io;
+ 
+ use clap_complete::ArgValueCandidates;
+ use itertools::Itertools as _;
+-use jj_lib::config::ConfigGetResultExt as _;
+ use jj_lib::git;
+ use jj_lib::git::GitFetch;
+ use jj_lib::git::GitFetchRefExpression;
+@@ -32,14 +31,13 @@ use jj_lib::repo::Repo as _;
+ use jj_lib::str_util::StringExpression;
+ 
+ use crate::cli_util::CommandHelper;
+-use crate::cli_util::WorkspaceCommandHelper;
+ use crate::cli_util::WorkspaceCommandTransaction;
+ use crate::command_error::CommandError;
+ use crate::command_error::cli_error;
+ use crate::command_error::user_error;
+-use crate::commands::git::get_single_remote;
+ use crate::complete;
+ use crate::git_util::GitSubprocessUi;
++use crate::git_util::get_default_fetch_remotes;
+ use crate::git_util::load_git_import_options;
+ use crate::git_util::print_git_import_stats;
+ use crate::revset_util::parse_remote_fetch_bookmarks;
+@@ -262,33 +260,6 @@ pub async fn cmd_git_fetch(
+     Ok(())
+ }
+ 
+-const DEFAULT_REMOTE: &RemoteName = RemoteName::new("origin");
+-
+-fn get_default_fetch_remotes(
+-    ui: &Ui,
+-    workspace_command: &WorkspaceCommandHelper,
+-) -> Result<StringExpression, CommandError> {
+-    const KEY: &str = "git.fetch";
+-    let settings = workspace_command.settings();
+-    if let Ok(remotes) = settings.get::<Vec<String>>(KEY) {
+-        parse_union_name_patterns(ui, &remotes)
+-    } else if let Some(remote) = settings.get_string(KEY).optional()? {
+-        parse_union_name_patterns(ui, [&remote])
+-    } else if let Some(remote) = get_single_remote(workspace_command.repo().store())? {
+-        // if nothing was explicitly configured, try to guess
+-        if remote != DEFAULT_REMOTE {
+-            writeln!(
+-                ui.hint_default(),
+-                "Fetching from the only existing remote: {remote}",
+-                remote = remote.as_symbol()
+-            )?;
+-        }
+-        Ok(StringExpression::exact(remote))
+-    } else {
+-        Ok(StringExpression::exact(DEFAULT_REMOTE))
+-    }
+-}
+-
+ fn warn_if_branches_not_found(
+     ui: &mut Ui,
+     tx: &WorkspaceCommandTransaction,
+diff --git a/cli/src/commands/git/mod.rs b/cli/src/commands/git/mod.rs
+index e87926aafa34ad9405796a225b7d2931cf97566f..83495bf3e73f14b0f142f8626d4a4ee427d2e439 100644
+--- a/cli/src/commands/git/mod.rs
++++ b/cli/src/commands/git/mod.rs
+@@ -19,6 +19,7 @@ mod fetch;
+ mod import;
+ mod init;
+ mod push;
++mod r#ref;
+ mod remote;
+ mod root;
+ 
+@@ -28,14 +29,12 @@ use clap::Subcommand;
+ use jj_lib::config::ConfigFile;
+ use jj_lib::config::ConfigLayer;
+ use jj_lib::config::ConfigSource;
+-use jj_lib::git;
+-use jj_lib::git::UnexpectedGitBackendError;
+ use jj_lib::ref_name::RemoteName;
+-use jj_lib::ref_name::RemoteNameBuf;
+ use jj_lib::ref_name::RemoteRefSymbol;
+ use jj_lib::ref_name::RemoteRefSymbolBuf;
+ use jj_lib::revset;
+-use jj_lib::store::Store;
++use r#ref::RefCommand;
++use r#ref::cmd_git_ref;
+ 
+ use self::clone::GitCloneArgs;
+ use self::clone::cmd_git_clone;
+@@ -85,6 +84,8 @@ pub enum GitCommand {
+     Init(GitInitArgs),
+     Push(GitPushArgs),
+     #[command(subcommand)]
++    Ref(RefCommand),
++    #[command(subcommand)]
+     Remote(RemoteCommand),
+     Root(GitRootArgs),
+ }
+@@ -102,6 +103,7 @@ pub async fn cmd_git(
+         GitCommand::Import(args) => cmd_git_import(ui, command, args).await,
+         GitCommand::Init(args) => cmd_git_init(ui, command, args).await,
+         GitCommand::Push(args) => cmd_git_push(ui, command, args).await,
++        GitCommand::Ref(args) => cmd_git_ref(ui, command, args).await,
+         GitCommand::Remote(args) => cmd_git_remote(ui, command, args).await,
+         GitCommand::Root(args) => cmd_git_root(ui, command, args).await,
+     }
+@@ -122,14 +124,6 @@ pub fn maybe_add_gitignore(workspace_command: &WorkspaceCommandHelper) -> Result
+     }
+ }
+ 
+-fn get_single_remote(store: &Store) -> Result<Option<RemoteNameBuf>, UnexpectedGitBackendError> {
+-    let mut names = git::get_all_remote_names(store)?;
+-    Ok(match names.len() {
+-        1 => names.pop(),
+-        _ => None,
+-    })
+-}
+-
+ const TRUNK_CONFIG_NAME: [&str; 2] = ["revset-aliases", "trunk()"];
+ 
+ #[derive(Clone, Copy, Debug)]
+diff --git a/cli/src/commands/git/push.rs b/cli/src/commands/git/push.rs
+index 58c973c34b41837e105eb11eb3ce3c03539e424b..09a69dd6f178b5e589df59c38e9791dd302b68e2 100644
+--- a/cli/src/commands/git/push.rs
++++ b/cli/src/commands/git/push.rs
+@@ -73,10 +73,10 @@ use crate::command_error::cli_error;
+ use crate::command_error::cli_error_with_message;
+ use crate::command_error::user_error;
+ use crate::command_error::user_error_with_message;
+-use crate::commands::git::get_single_remote;
+ use crate::complete;
+ use crate::formatter::Formatter;
+ use crate::git_util::GitSubprocessUi;
++use crate::git_util::get_single_remote;
+ use crate::git_util::print_push_stats;
+ use crate::progress::ProgressWriter;
+ use crate::revset_util::parse_bookmark_name;
+diff --git a/cli/src/commands/git/ref/fetch.rs b/cli/src/commands/git/ref/fetch.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..4d800eba32fbf28e8b933a90d2f3a0a8ba6b0f40
+--- /dev/null
++++ b/cli/src/commands/git/ref/fetch.rs
+@@ -0,0 +1,130 @@
++// Copyright 2026 The Jujutsu Authors
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++// https://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++use clap_complete::ArgValueCandidates;
++use itertools::Itertools as _;
++use jj_lib::git;
++use jj_lib::git::GitSettings;
++use jj_lib::git::import_commit;
++use jj_lib::ref_name::RemoteName;
++use jj_lib::ref_name::RemoteNameBuf;
++use jj_lib::repo::Repo as _;
++
++use crate::cli_util::CommandHelper;
++use crate::cli_util::WorkspaceCommandHelper;
++use crate::cli_util::WorkspaceCommandTransaction;
++use crate::command_error::CommandError;
++use crate::command_error::user_error;
++use crate::complete;
++use crate::git_util::GitSubprocessUi;
++use crate::git_util::get_default_fetch_remotes;
++use crate::ui::Ui;
++
++/// Fetch raw refs or full commit IDs from a Git remote
++///
++/// Each source can be a fully qualified remote ref such as GitHub's
++/// `refs/pull/123/head`, or a full Git commit ID.
++#[derive(clap::Args, Clone, Debug)]
++pub struct GitRefFetchArgs {
++    /// The remote to fetch from (only named remotes are supported)
++    ///
++    /// By default, this uses the `git.fetch` setting when it matches exactly
++    /// one remote. If that is not configured, the only remote or the remote
++    /// named "origin" is used.
++    #[arg(
++        long = "remote",
++        value_name = "REMOTE",
++        add = ArgValueCandidates::new(complete::git_remotes),
++    )]
++    remote: Option<RemoteNameBuf>,
++    /// The remote refs or full Git commit IDs to fetch
++    #[arg(value_name = "REF", num_args = 1.., required = true)]
++    sources: Vec<String>,
++}
++
++#[tracing::instrument(skip(ui, command))]
++pub async fn cmd_git_ref_fetch(
++    ui: &mut Ui,
++    command: &CommandHelper,
++    args: &GitRefFetchArgs,
++) -> Result<(), CommandError> {
++    let mut workspace_command = command.workspace_helper(ui).await?;
++    let remote_name = if let Some(remote_name) = &args.remote {
++        remote_name.clone()
++    } else {
++        get_default_fetch_remote(ui, &workspace_command)?
++    };
++    let mut tx = workspace_command.start_transaction();
++    do_fetch(ui, &mut tx, remote_name.as_ref(), &args.sources).await?;
++    tx.finish(
++        ui,
++        format!(
++            "fetch refs or commit IDs {} from git remote {}",
++            args.sources.iter().join(", "),
++            remote_name.as_symbol()
++        ),
++    )
++    .await?;
++    Ok(())
++}
++
++fn get_default_fetch_remote(
++    ui: &Ui,
++    workspace_command: &WorkspaceCommandHelper,
++) -> Result<RemoteNameBuf, CommandError> {
++    let remote_expr = get_default_fetch_remotes(ui, workspace_command)?;
++    let remote_matcher = remote_expr.to_matcher();
++    let matching_remotes = git::get_all_remote_names(workspace_command.repo().store())?
++        .into_iter()
++        .filter(|remote| remote_matcher.is_match(remote.as_str()))
++        .collect_vec();
++    match matching_remotes.as_slice() {
++        [] => Err(user_error("No git remotes to fetch from")),
++        [remote] => Ok(remote.clone()),
++        _ => Err(
++            user_error("Default git fetch configuration matches multiple remotes")
++                .hinted("Use `--remote` to select one remote for `jj git ref fetch`."),
++        ),
++    }
++}
++
++async fn do_fetch(
++    ui: &mut Ui,
++    tx: &mut WorkspaceCommandTransaction<'_>,
++    remote_name: &RemoteName,
++    sources: &[String],
++) -> Result<(), CommandError> {
++    let git_settings = GitSettings::from_settings(tx.settings())?;
++    let sources = sources.iter().map(String::as_str).collect_vec();
++    let mut callback = GitSubprocessUi::new(ui);
++    let commit_ids = git::fetch_commits(
++        tx.repo().store(),
++        git_settings.to_subprocess_options(),
++        remote_name,
++        &sources,
++        &mut callback,
++        None,
++    )?;
++
++    for (source, commit_id) in sources.into_iter().zip(commit_ids) {
++        let commit = import_commit(tx.repo_mut(), commit_id).await?;
++        if let Some(mut formatter) = ui.status_formatter() {
++            write!(formatter, "Fetched {source} as ")?;
++            tx.write_commit_summary(formatter.as_mut(), &commit)?;
++            writeln!(formatter)?;
++        }
++    }
++
++    Ok(())
++}
+diff --git a/cli/src/commands/git/ref/mod.rs b/cli/src/commands/git/ref/mod.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..6735e67925d0463f13f5ba2acbfb3986b5d1debf
+--- /dev/null
++++ b/cli/src/commands/git/ref/mod.rs
+@@ -0,0 +1,39 @@
++// Copyright 2026 The Jujutsu Authors
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++// https://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++mod fetch;
++
++use clap::Subcommand;
++
++use self::fetch::GitRefFetchArgs;
++use self::fetch::cmd_git_ref_fetch;
++use crate::cli_util::CommandHelper;
++use crate::command_error::CommandError;
++use crate::ui::Ui;
++
++/// Manage raw Git refs
++#[derive(Subcommand, Clone, Debug)]
++pub enum RefCommand {
++    Fetch(GitRefFetchArgs),
++}
++
++pub async fn cmd_git_ref(
++    ui: &mut Ui,
++    command: &CommandHelper,
++    subcommand: &RefCommand,
++) -> Result<(), CommandError> {
++    match subcommand {
++        RefCommand::Fetch(args) => cmd_git_ref_fetch(ui, command, args).await,
++    }
++}
+diff --git a/cli/src/git_util.rs b/cli/src/git_util.rs
+index f32b4d0ee48d078e6e19b26a64ecc03bebf05f38..38e14aa3f75ac582e7ee8244179f2bc29d023d75 100644
+--- a/cli/src/git_util.rs
++++ b/cli/src/git_util.rs
+@@ -29,6 +29,7 @@ use crossterm::terminal::Clear;
+ use crossterm::terminal::ClearType;
+ use indoc::writedoc;
+ use itertools::Itertools as _;
++use jj_lib::config::ConfigGetResultExt as _;
+ use jj_lib::git;
+ use jj_lib::git::FailedRefExportReason;
+ use jj_lib::git::GitExportStats;
+@@ -44,14 +45,18 @@ use jj_lib::git::GitSubprocessCallback;
+ use jj_lib::git::GitSubprocessOptions;
+ use jj_lib::git_backend::GitRepoAtWorkdirError;
+ use jj_lib::op_store::RemoteRefState;
++use jj_lib::ref_name::RemoteName;
++use jj_lib::ref_name::RemoteNameBuf;
+ use jj_lib::repo::ReadonlyRepo;
+ use jj_lib::repo::Repo;
+ use jj_lib::settings::RemoteSettingsMap;
+ use jj_lib::store::Store;
++use jj_lib::str_util::StringExpression;
+ use jj_lib::workspace::Workspace;
+ use unicode_width::UnicodeWidthStr as _;
+ 
+ use crate::cleanup_guard::CleanupGuard;
++use crate::cli_util::WorkspaceCommandHelper;
+ use crate::cli_util::WorkspaceCommandTransaction;
+ use crate::cli_util::print_updated_commits;
+ use crate::command_error::CommandError;
+@@ -61,9 +66,47 @@ use crate::command_error::user_error;
+ use crate::formatter::Formatter;
+ use crate::formatter::FormatterExt as _;
+ use crate::revset_util::parse_remote_auto_track_bookmarks_map;
++use crate::revset_util::parse_union_name_patterns;
+ use crate::ui::ProgressOutput;
+ use crate::ui::Ui;
+ 
++const DEFAULT_FETCH_REMOTE: &RemoteName = RemoteName::new("origin");
++
++pub fn get_default_fetch_remotes(
++    ui: &Ui,
++    workspace_command: &WorkspaceCommandHelper,
++) -> Result<StringExpression, CommandError> {
++    const KEY: &str = "git.fetch";
++    let settings = workspace_command.settings();
++    if let Ok(remotes) = settings.get::<Vec<String>>(KEY) {
++        parse_union_name_patterns(ui, &remotes)
++    } else if let Some(remote) = settings.get_string(KEY).optional()? {
++        parse_union_name_patterns(ui, [&remote])
++    } else if let Some(remote) = get_single_remote(workspace_command.repo().store())? {
++        // if nothing was explicitly configured, try to guess
++        if remote != DEFAULT_FETCH_REMOTE {
++            writeln!(
++                ui.hint_default(),
++                "Fetching from the only existing remote: {remote}",
++                remote = remote.as_symbol()
++            )?;
++        }
++        Ok(StringExpression::exact(remote))
++    } else {
++        Ok(StringExpression::exact(DEFAULT_FETCH_REMOTE))
++    }
++}
++
++pub fn get_single_remote(
++    store: &Store,
++) -> Result<Option<RemoteNameBuf>, git::UnexpectedGitBackendError> {
++    let mut names = git::get_all_remote_names(store)?;
++    Ok(match names.len() {
++        1 => names.pop(),
++        _ => None,
++    })
++}
++
+ pub fn is_colocated_git_workspace(workspace: &Workspace) -> Result<bool, CommandError> {
+     let Ok(git_backend) = git::get_git_backend(workspace.repo_loader().store()) else {
+         return Ok(false);
+diff --git a/cli/tests/cli-reference@.md.snap b/cli/tests/cli-reference@.md.snap
+index f1d1e0da524c59b90c4ea48dfe808a7f1e19aed6..dcf8c5cf64dccc49ba80bd83735b974066d90130 100644
+--- a/cli/tests/cli-reference@.md.snap
++++ b/cli/tests/cli-reference@.md.snap
+@@ -66,6 +66,8 @@ This document contains the help content for the `jj` command-line program.
+ * [`jj git import`↴](#jj-git-import)
+ * [`jj git init`↴](#jj-git-init)
+ * [`jj git push`↴](#jj-git-push)
++* [`jj git ref`↴](#jj-git-ref)
++* [`jj git ref fetch`↴](#jj-git-ref-fetch)
+ * [`jj git remote`↴](#jj-git-remote)
+ * [`jj git remote add`↴](#jj-git-remote-add)
+ * [`jj git remote list`↴](#jj-git-remote-list)
+@@ -1660,6 +1662,7 @@ See this [comparison], including a [table of commands].
+ * `import` — Update repo with changes made in the underlying Git repo
+ * `init` — Create a new Git backed repo
+ * `push` — Push to a Git remote
++* `ref` — Manage raw Git refs
+ * `remote` — Manage Git remotes
+ * `root` — Show the underlying Git directory of a repository using the Git backend
+ 
+@@ -1954,6 +1957,38 @@ Before the command actually moves, creates, or deletes a remote bookmark, it mak
+ 
+ 
+ 
++## `jj git ref`
++
++Manage raw Git refs
++
++**Usage:** `jj git ref <COMMAND>`
++
++###### **Subcommands:**
++
++* `fetch` — Fetch raw refs or full commit IDs from a Git remote
++
++
++
++## `jj git ref fetch`
++
++Fetch raw refs or full commit IDs from a Git remote
++
++Each source can be a fully qualified remote ref such as GitHub's `refs/pull/123/head`, or a full Git commit ID.
++
++**Usage:** `jj git ref fetch [OPTIONS] <REF>...`
++
++###### **Arguments:**
++
++* `<REF>` — The remote refs or full Git commit IDs to fetch
++
++###### **Options:**
++
++* `--remote <REMOTE>` — The remote to fetch from (only named remotes are supported)
++
++   By default, this uses the `git.fetch` setting when it matches exactly one remote. If that is not configured, the only remote or the remote named "origin" is used.
++
++
++
+ ## `jj git remote`
+ 
+ Manage Git remotes
+diff --git a/cli/tests/test_git_fetch.rs b/cli/tests/test_git_fetch.rs
+index e78532b1a5d4bb802ac975b66b3a8cee898f3085..289657be573996c817c2945d0c20b1aa5fe3cee5 100644
+--- a/cli/tests/test_git_fetch.rs
++++ b/cli/tests/test_git_fetch.rs
+@@ -148,6 +148,132 @@ fn test_git_fetch_with_default_config() {
+     ");
+ }
+ 
++#[test]
++fn test_git_ref_fetch_imports_anonymous_heads() -> TestResult {
++    let test_env = TestEnvironment::default();
++    test_env.run_jj_in(".", ["git", "init", "repo"]).success();
++    let work_dir = test_env.work_dir("repo");
++    let git_repo = add_git_remote(&test_env, &work_dir, "origin");
++    git::add_commit(
++        &git_repo,
++        "refs/pull/123/head",
++        "pr123",
++        b"pr123",
++        "pull request 123",
++        &[],
++    );
++    git::add_commit(
++        &git_repo,
++        "refs/changes/456",
++        "change456",
++        b"change456",
++        "change 456",
++        &[],
++    );
++
++    insta::assert_snapshot!(
++        work_dir.run_jj([
++            "git",
++            "ref",
++            "fetch",
++            "refs/pull/123/head",
++            "refs/changes/456",
++        ]),
++        @r"
++    ------- stderr -------
++    Fetched refs/pull/123/head as spovxuoz 84c6f409 pull request 123
++    Fetched refs/changes/456 as pmuwoskk 6085075a change 456
++    [EOF]
++    "
++    );
++    insta::assert_snapshot!(
++        work_dir.run_jj([
++            "log",
++            "--no-graph",
++            "-r",
++            r#"visible_heads() & (description(exact:"pull request 123") | description(exact:"change 456"))"#,
++            "-T=description.first_line() ++ '\n'",
++        ]),
++        @r"
++    change 456
++    pull request 123
++    [EOF]
++    "
++    );
++    let bookmark_output = get_bookmark_output(&work_dir).success();
++    assert!(bookmark_output.stdout.raw().is_empty());
++    assert!(bookmark_output.stderr.raw().is_empty());
++    Ok(())
++}
++
++#[test]
++fn test_git_ref_fetch_missing_source() {
++    let test_env = TestEnvironment::default();
++    test_env.run_jj_in(".", ["git", "init", "repo"]).success();
++    let work_dir = test_env.work_dir("repo");
++    add_git_remote(&test_env, &work_dir, "origin");
++
++    insta::assert_snapshot!(
++        work_dir.run_jj([
++            "git",
++            "ref",
++            "fetch",
++            "--remote=origin",
++            "refs/pull/missing/head",
++        ]),
++        @r"
++    ------- stderr -------
++    Error: Git remote 'origin' has no ref or commit ID matching 'refs/pull/missing/head'
++    [EOF]
++    [exit status: 1]
++    "
++    );
++}
++
++#[test]
++fn test_git_ref_fetch_requires_source() {
++    let test_env = TestEnvironment::default();
++
++    insta::assert_snapshot!(
++        test_env.run_jj_in(".", ["git", "ref", "fetch"]),
++        @r"
++    ------- stderr -------
++    error: the following required arguments were not provided:
++      <REF>...
++
++    Usage: jj git ref fetch <REF>...
++
++    For more information, try '--help'.
++    [EOF]
++    [exit status: 2]
++    "
++    );
++}
++
++#[test]
++fn test_git_ref_fetch_invalid_source() {
++    let test_env = TestEnvironment::default();
++    test_env.run_jj_in(".", ["git", "init", "repo"]).success();
++    let work_dir = test_env.work_dir("repo");
++    add_git_remote(&test_env, &work_dir, "origin");
++
++    insta::assert_snapshot!(
++        work_dir.run_jj([
++            "git",
++            "ref",
++            "fetch",
++            "--remote=origin",
++            "refs/pull/../head",
++        ]),
++        @r"
++    ------- stderr -------
++    Error: Invalid Git ref or commit ID: refs/pull/../head
++    [EOF]
++    [exit status: 1]
++    "
++    );
++}
++
+ #[test]
+ fn test_git_fetch_default_remote() {
+     let test_env = TestEnvironment::default();
+diff --git a/docs/git-compatibility.md b/docs/git-compatibility.md
+index c9726fe82ddf00ba3d5b47cbde8e1c326894a9c2..862c69fe27159d8eaaf3ac57c550b13eefea97e2 100644
+--- a/docs/git-compatibility.md
++++ b/docs/git-compatibility.md
+@@ -97,6 +97,13 @@ into a directory by the same name.
+ By default, the remote repository will be named `origin`. You can use a name of
+ your choice by adding `--remote <remote name>` to the `jj git clone` command.
+ 
++## Fetching refs that are not branches or tags
++
++Use `jj git ref fetch --remote <remote> <ref-or-commit-id>...` to fetch raw Git
++refs, such as GitHub pull request refs, or full Git commit IDs. The fetched
++commits become visible without names. The command does not create bookmarks or
++remote-tracking refs.
++
+ ## <a name="colocated-jujutsugit-repos"></a>Colocated Jujutsu/Git workspaces
+ 
+ A colocated Jujutsu workspace is a hybrid Jujutsu/Git workspace. This is the

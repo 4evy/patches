@@ -1,6 +1,6 @@
-From 8dc63974aeee831233e586c8604f525e08e3d1bc Mon Sep 17 00:00:00 2001
+From c3e5840ae528ca7c905cf72083e2f44dab605046 Mon Sep 17 00:00:00 2001
 From: Josh McKinney <joshka@users.noreply.github.com>
-Date: Thu, 1 Jan 1970 00:00:00 +0000
+Date: Sat, 5 Sep 2026 13:00:00 +0300
 Subject: git: expose fetched refs to queries
 
 Allow stored fetched Git refs to be resolved from revsets and reported

@@ -1,17 +1,17 @@
-From 75060e871751def1631a8cfcf7e8f9600c7f80a1 Mon Sep 17 00:00:00 2001
+From 7bd2d04a1b3d5068fd3ee5ae48e8ab94a26d7af9 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Thu, 1 Jan 1970 00:00:00 +0000
+Date: Sat, 5 Sep 2026 13:00:00 +0300
 Subject: redate: add an interactive timestamp editor
 
-Add a revision picker that renders jj's topologically grouped graph with the configured graph style, log node template, and a command-specific row template. Use the same working-copy-oriented default revset as other history-editing commands.
+Add a revision picker that renders jj's topologically grouped graph with the configured graph style, log node template, and a command-specific row template. Offer all mutable revisions by default, including sibling branches when the working copy starts at the trunk.
 
 Apply exact timestamps through the shared metadata transaction. Preserve descendant metadata with jj's standard keep signing behavior, and make signing selected revisions opt-in with --sign.
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index 449b40f5154672b5c725bb500dad74acc201009d..fd3bce89b42e0cc3018938fd0de98167ebf2f7b0 100644
+index de91325ecb329b4ee4f9b5e343ff89d6299f7579..8090b146847d422cd867e1ca193de346f6fa8ac0 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -81,6 +81,10 @@ None
+@@ -129,6 +129,10 @@ None
    repositories. `jj git ref fetch --shallow-exclude` can fetch a review stack
    plus one parent generation for a usable diff base.
  
@@ -570,22 +570,22 @@ index 0000000000000000000000000000000000000000..974c35f5f684e68ab72ea2a0e9bb9d8f
 +    }
 +}
 diff --git a/cli/src/config-schema.json b/cli/src/config-schema.json
-index 3f2d1f30cc0f1b763d5c26cadabf4cf449567cfe..c915a7b0b9218abdbaf2653b0a04b129f06f0ef7 100644
+index 2aee503bad83264761ce2bf33a8e83e51fe86e77..921e6db33810609fea5032702a71ece059b325d7 100644
 --- a/cli/src/config-schema.json
 +++ b/cli/src/config-schema.json
-@@ -742,6 +742,11 @@
+@@ -752,6 +752,11 @@
                      "description": "Default set of revisions to run a command on when no explicit revset is given for jj run",
                      "default": "reachable(@, mutable())"
                  },
 +                "redate": {
 +                    "type": "string",
 +                    "description": "Default set of revisions to offer in the jj redate TUI",
-+                    "default": "reachable(@, mutable())"
++                    "default": "mutable()"
 +                },
                  "simplify-parents": {
                      "type": "string",
                      "description": "Default set of revisions to simplify when no explicit revset is given for jj simplify-parents",
-@@ -1075,6 +1080,10 @@
+@@ -1088,6 +1093,10 @@
                      "type": "string",
                      "description": "`jj arrange``'s template for commits in the main view"
                  },
@@ -612,14 +612,14 @@ index 76e5534287fced1d1293b762601710fd28f58949..6172ab4413f4bd9981731ad0ef5e14b2
 +"redate commit empty" = { fg = "bright black", italic = true }
 +"redate commit timestamp" = "bright black"
 diff --git a/cli/src/config/revsets.toml b/cli/src/config/revsets.toml
-index 43ff7cc8c8c6d46793da9b214297f8ebfb89977b..a144183e69165651c08359c8cd1be1d12c40cf80 100644
+index 43ff7cc8c8c6d46793da9b214297f8ebfb89977b..53d5375acdf93ab86939a362a6afa48c67271493 100644
 --- a/cli/src/config/revsets.toml
 +++ b/cli/src/config/revsets.toml
 @@ -7,6 +7,7 @@ converge = "mutable() & divergent()"
  fix = "reachable(@, mutable())"
  run = "reachable(@, mutable())"
  simplify-parents = "reachable(@, mutable())"
-+redate = "reachable(@, mutable())"
++redate = "mutable()"
  # log revset is also used as the default short-prefixes. If it failed to
  # evaluate, lengthy warning messages would be printed. Use present(expr) if
  # symbols in expr might not always exist.
@@ -642,7 +642,7 @@ index a619b5bd35724e15108ffcd5daec619f05546546..46fe90e0bb9b318cb4bdf20e5abb9125
  file_annotate = '''
  join(" ",
 diff --git a/cli/tests/cli-reference@.md.snap b/cli/tests/cli-reference@.md.snap
-index 276ab04464edc72b4771c037351050b96e7431b8..a525422ce05893890387ada99f81ccb096d3d599 100644
+index 3f0e018fb00fc2740b5b4876118edb840d0b63bb..aa80200f7a6d17d698e401b73ac223cd577264f4 100644
 --- a/cli/tests/cli-reference@.md.snap
 +++ b/cli/tests/cli-reference@.md.snap
 @@ -95,6 +95,7 @@ This document contains the help content for the `jj` command-line program.
@@ -661,7 +661,7 @@ index 276ab04464edc72b4771c037351050b96e7431b8..a525422ce05893890387ada99f81ccb0
  * `redo` — Redo the most recently undone operation
  * `resolve` — Resolve conflicted files with an external merge tool
  * `restore` — Restore paths from another revision
-@@ -3103,6 +3105,22 @@ J           J
+@@ -3109,6 +3111,22 @@ J           J
  
  
  
@@ -846,7 +846,7 @@ index 0000000000000000000000000000000000000000..0f29d396f89d652ae2d824dc86fb0d47
 +        .to_owned()
 +}
 diff --git a/docs/config.md b/docs/config.md
-index 076bf44df428f387215362bb0da24f7f2d94494d..50eb6e6b00b468728ad7ce710de064a37004ca32 100644
+index e0f2f3b6a435f91f4ef1436b24720dd0480fb516..372502ad1b45c0ccdc0580acad43052abba56491 100644
 --- a/docs/config.md
 +++ b/docs/config.md
 @@ -1597,6 +1597,32 @@ this setting for a single invocation:
@@ -862,11 +862,11 @@ index 076bf44df428f387215362bb0da24f7f2d94494d..50eb6e6b00b468728ad7ce710de064a3
 +`jj metaedit --timestamp` when interactive selection is not wanted.
 +
 +When no revisions are specified in a terminal, the picker uses
-+`revsets.redate`. Its default is `reachable(@, mutable())`, matching the
-+working-copy-oriented defaults used by other history-editing commands. The
-+picker renders revision topology with the same `ui.graph.style` and
-+`templates.log_node` settings as `jj log`; `templates.redate` controls the
-+details shown beside each graph node.
++`revsets.redate`. Its default is `mutable()`, so the picker includes revisions
++on other branches even when the working copy starts at the trunk. Press `c`
++to confirm the selection. The picker renders revision topology with the same
++`ui.graph.style` and `templates.log_node` settings as `jj log`;
++`templates.redate` controls the details shown beside each graph node.
 +
 +```toml
 +[revsets]
