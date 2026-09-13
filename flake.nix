@@ -31,6 +31,28 @@
 
       packagesFor = system: (pkgsFor system).callPackage ./nix/packages.nix { };
 
+      stackSources =
+        lib.mapAttrs
+          (
+            name: _:
+            let
+              manifest = lib.importJSON (./stacks + "/${name}/stack.json");
+            in
+            {
+              inherit (manifest.source)
+                canonical
+                revision
+                trackingRef
+                vcs
+                ;
+            }
+          )
+          (
+            lib.filterAttrs (
+              name: type: type == "directory" && builtins.pathExists (./stacks + "/${name}/stack.json")
+            ) (builtins.readDir ./stacks)
+          );
+
       preCommitFor =
         system:
         git-hooks.lib.${system}.run {
@@ -204,6 +226,8 @@
         ) moduleTargets;
     in
     {
+      inherit stackSources;
+
       nixosModules.default = ./modules/nixos.nix;
       homeManagerModules.default = ./modules/home-manager.nix;
       darwinModules.default = ./modules/darwin.nix;
