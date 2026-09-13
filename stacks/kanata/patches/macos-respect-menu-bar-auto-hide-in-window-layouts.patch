@@ -1,0 +1,139 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: 4evy <git@evy.pink>
+Date: Thu, 1 Jan 1970 00:00:00 +0000
+Subject: macos: respect menu-bar auto-hide in window layouts
+
+---
+ docs/config.adoc           |  3 +-
+ src/kanata/macos_window.rs | 76 +++++++++++++++++++++++++++++++++++++-
+ 2 files changed, 76 insertions(+), 3 deletions(-)
+
+diff --git a/docs/config.adoc b/docs/config.adoc
+index 833d021..c6ebab2 100644
+--- a/docs/config.adoc
++++ b/docs/config.adoc
+@@ -1785,7 +1785,8 @@ window's current display:
+ `(x y width height)`, where `10000` means 100%.
+ All four values are signed integers; `width` and `height` must be positive.
+ Negative positions and positions beyond `10000` are allowed.
+-The visible work area excludes the menu bar, Dock, and camera housing.
++The visible work area excludes the visible menu bar, Dock, and camera housing.
++An auto-hidden menu bar does not reserve space, including when Kanata runs as root.
+ The `center` and `move-*` presets preserve the current window size unless it is
+ larger than the work area.
+ 
+diff --git a/src/kanata/macos_window.rs b/src/kanata/macos_window.rs
+index 66f9b85..0a624f3 100644
+--- a/src/kanata/macos_window.rs
++++ b/src/kanata/macos_window.rs
+@@ -61,6 +61,57 @@ unsafe impl Encode for NSRect {
+     }
+ }
+ 
++#[repr(C)]
++#[derive(Clone, Copy)]
++struct NSEdgeInsets {
++    top: f64,
++    left: f64,
++    bottom: f64,
++    right: f64,
++}
++
++unsafe impl Encode for NSEdgeInsets {
++    fn encode() -> Encoding {
++        // AppKit uses four CGFloat fields, which are doubles on 64-bit macOS.
++        unsafe { Encoding::from_str("{NSEdgeInsets=dddd}") }
++    }
++}
++
++type MainConnectionId = unsafe extern "C" fn() -> i32;
++type GetMenuBarAutohideEnabled = unsafe extern "C" fn(i32, *mut u8) -> i32;
++
++fn menu_bar_autohides() -> bool {
++    static API: OnceLock<Option<(MainConnectionId, GetMenuBarAutohideEnabled)>> = OnceLock::new();
++    let Some(&(connection, autohide)) = API
++        .get_or_init(|| unsafe {
++            // CoreGraphics re-exports these SkyLight entry points. Resolve them optionally so an
++            // unavailable private API leaves the public NSScreen geometry intact.
++            let connection = libc::dlsym(libc::RTLD_DEFAULT, c"CGSMainConnectionID".as_ptr());
++            let autohide =
++                libc::dlsym(libc::RTLD_DEFAULT, c"CGSGetMenuBarAutohideEnabled".as_ptr());
++            if connection.is_null() || autohide.is_null() {
++                log::debug!("macos-window menu-bar state API unavailable; using NSScreen bounds");
++                return None;
++            }
++            Some((
++                std::mem::transmute::<*mut c_void, MainConnectionId>(connection),
++                std::mem::transmute::<*mut c_void, GetMenuBarAutohideEnabled>(autohide),
++            ))
++        })
++        .as_ref()
++    else {
++        return false;
++    };
++    // The output is a one-byte Boolean, verified against SkyLight on macOS 26.6.2.
++    // Query on every action: the user's setting can change while the worker is running.
++    let mut enabled = 0u8;
++    let error = unsafe { autohide(connection(), &mut enabled) };
++    if error != 0 {
++        log::debug!("macos-window menu-bar state query failed: {error}");
++    }
++    error == 0 && enabled != 0
++}
++
+ #[derive(Clone, Copy, Debug)]
+ struct Screen {
+     full_frame: CGRect,
+@@ -278,6 +329,10 @@ fn apply_window_layouts(request: WindowRequest, cycle_state: &mut CycleState) ->
+         request.requested_at,
+     );
+     let requested_frame = resolve_layout(screen, current_frame, request.layouts[step]);
++    log::debug!(
++        "macos-window pid={} screen={screen:?} current={current_frame:?} requested={requested_frame:?}",
++        request.pid,
++    );
+     let achieved_frame = set_window_frame(window.element, current_frame, requested_frame)?;
+     cycle_state.record(
+         &request.layouts,
+@@ -506,7 +561,7 @@ fn rect_max_y(rect: CGRect) -> f64 {
+ }
+ 
+ fn active_screens() -> Result<Vec<Screen>> {
+-    // NSScreen.visibleFrame is the public source for the usable area after the menu bar and Dock.
++    // Start with NSScreen geometry, correcting its process-local menu-bar preference below.
+     // Core Graphics only provides the full display bounds, so use that solely as a fallback.
+     let screens = appkit_visible_screens();
+     if !screens.is_empty() {
+@@ -540,6 +595,7 @@ fn appkit_visible_screens() -> Vec<Screen> {
+         let zero_frame: NSRect = msg_send![zero_screen, frame];
+         let zero_screen_top = zero_frame.origin.y + zero_frame.size.height;
+         let mut result = Vec::with_capacity(count);
++        let menu_bar_hidden = menu_bar_autohides();
+ 
+         for index in 0..count {
+             let screen: *mut Object = msg_send![screens, objectAtIndex: index];
+@@ -548,7 +604,23 @@ fn appkit_visible_screens() -> Vec<Screen> {
+             }
+ 
+             let ns_frame: NSRect = msg_send![screen, frame];
+-            let visible_frame: NSRect = msg_send![screen, visibleFrame];
++            let mut visible_frame: NSRect = msg_send![screen, visibleFrame];
++            if menu_bar_hidden {
++                // visibleFrame consults this process's preferences. A root LaunchDaemon can
++                // reserve the menu bar even when the console user has enabled auto-hide.
++                // Reclaim only the top inset; retain the Dock's bottom/side reservation and
++                // the camera housing's safe area on displays that have one.
++                let has_safe_area: bool =
++                    msg_send![screen, respondsToSelector: sel!(safeAreaInsets)];
++                let safe_top = if has_safe_area {
++                    let insets: NSEdgeInsets = msg_send![screen, safeAreaInsets];
++                    insets.top
++                } else {
++                    0.0
++                };
++                let usable_top = ns_frame.origin.y + ns_frame.size.height - safe_top;
++                visible_frame.size.height = (usable_top - visible_frame.origin.y).max(0.0);
++            }
+             result.push(Screen {
+                 full_frame: appkit_rect_to_ax_rect(ns_frame, zero_screen_top),
+                 work_area: appkit_rect_to_ax_rect(visible_frame, zero_screen_top),

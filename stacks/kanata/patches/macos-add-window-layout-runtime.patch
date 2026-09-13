@@ -4,21 +4,23 @@ Date: Thu, 1 Jan 1970 00:00:00 +0000
 Subject: feat(macos): add window layout runtime
 
 ---
- Cargo.lock                  |   10 
- Cargo.toml                  |    1 
- parser/src/custom_action.rs |   66 ++
- src/kanata/macos_window.rs  | 1093 ++++++++++++++++++++++++++++++++++++++++++++
- src/kanata/mod.rs           |   12 
+ Cargo.lock                  |   10 +
+ Cargo.toml                  |    1 +
+ parser/src/custom_action.rs |   66 +++
+ src/kanata/macos_window.rs  | 1093 +++++++++++++++++++++++++++++++++++
+ src/kanata/mod.rs           |   12 +
  5 files changed, 1182 insertions(+)
  create mode 100644 src/kanata/macos_window.rs
 
 diff --git a/Cargo.lock b/Cargo.lock
+index d7232fd..ac1ba53 100644
 --- a/Cargo.lock
 +++ b/Cargo.lock
-@@ -3,6 +3,15 @@
+@@ -2,6 +2,15 @@
+ # It is not intended for manual editing.
  version = 4
  
- [[package]]
++[[package]]
 +name = "accessibility-sys"
 +version = "0.2.0"
 +source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -27,10 +29,9 @@ diff --git a/Cargo.lock b/Cargo.lock
 + "core-foundation-sys",
 +]
 +
-+[[package]]
+ [[package]]
  name = "addr2line"
  version = "0.24.2"
- source = "registry+https://github.com/rust-lang/crates.io-index"
 @@ -719,6 +728,7 @@ dependencies = [
  name = "kanata"
  version = "1.12.1-prerelease-1"
@@ -40,17 +41,19 @@ diff --git a/Cargo.lock b/Cargo.lock
   "arboard",
   "clap",
 diff --git a/Cargo.toml b/Cargo.toml
+index 3da0836..5370f08 100644
 --- a/Cargo.toml
 +++ b/Cargo.toml
-@@ -63,6 +63,7 @@ kanata-tcp-protocol = { path = "tcp_prot
+@@ -63,6 +63,7 @@ kanata-tcp-protocol = { path = "tcp_protocol", version = "0.1121.0" }
  arboard = "3.4"
  
  [target.'cfg(target_os = "macos")'.dependencies]
 +accessibility-sys = "0.2.0"
  karabiner-driverkit = "0.4.0"
  objc = "0.2.7"
- core-graphics = "0.24.0"
+ core-graphics = "0.25.0"
 diff --git a/parser/src/custom_action.rs b/parser/src/custom_action.rs
+index 38b9466..3a7a396 100644
 --- a/parser/src/custom_action.rs
 +++ b/parser/src/custom_action.rs
 @@ -55,6 +55,7 @@ pub enum CustomAction {
@@ -61,10 +64,11 @@ diff --git a/parser/src/custom_action.rs b/parser/src/custom_action.rs
      SequenceCancel,
      SequenceLeader(u16, SequenceInputMode),
      /// Purpose:
-@@ -101,6 +102,71 @@ pub enum CustomAction {
+@@ -100,6 +101,71 @@ pub enum CustomAction {
+     ClipboardSaveSwap(u16, u16),
  }
  
- #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
++#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 +pub enum MacosWindowLayout {
 +    Frame(MacosWindowFrame),
 +    Preset(MacosWindowPreset),
@@ -129,12 +133,12 @@ diff --git a/parser/src/custom_action.rs b/parser/src/custom_action.rs
 +    MoveBottom,
 +}
 +
-+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+ #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
  pub enum Btn {
      Left,
-     Right,
 diff --git a/src/kanata/macos_window.rs b/src/kanata/macos_window.rs
 new file mode 100644
+index 0000000..66f9b85
 --- /dev/null
 +++ b/src/kanata/macos_window.rs
 @@ -0,0 +1,1093 @@
@@ -1232,6 +1236,7 @@ new file mode 100644
 +    }
 +}
 diff --git a/src/kanata/mod.rs b/src/kanata/mod.rs
+index 2f8fc3e..6085744 100644
 --- a/src/kanata/mod.rs
 +++ b/src/kanata/mod.rs
 @@ -119,6 +119,9 @@ mod linux;
@@ -1244,7 +1249,7 @@ diff --git a/src/kanata/mod.rs b/src/kanata/mod.rs
  mod output_logic;
  use output_logic::*;
  
-@@ -1643,6 +1646,15 @@ impl Kanata {
+@@ -1721,6 +1724,15 @@ impl Kanata {
                              self.move_mouse_speed_modifiers
                          );
                      }

@@ -1,5 +1,5 @@
 macos-add-window-layout-runtime.patch
 parser-parse-macos-window-layouts.patch
 macos-document-window-management-action.patch
-macos-actually-suppress-mapped-mouse-events.patch
 build-satisfy-rust-1.98-clippy.patch
+macos-respect-menu-bar-auto-hide-in-window-layouts.patch

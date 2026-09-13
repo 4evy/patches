@@ -7,14 +7,10 @@ Adopt the slice chunk APIs and test assertion forms required by current stable
 Clippy. Move test modules after non-test items so the full platform-specific
 lint matrix stays warning-free.
 ---
- keyberon/src/action/switch.rs | 43 ++++++++--------------
- parser/src/cfg/chord.rs       |  5 ++-
- parser/src/cfg/deflayer.rs    |  5 ++-
- parser/src/cfg/layer_opts.rs  |  5 ++-
- parser/src/cfg/zippychord.rs  | 12 +++----
- parser/src/keys/mod.rs        | 52 +++++++++++++--------------
- src/oskbd/macos.rs            | 68 +++++++++++++++++------------------
- 7 files changed, 85 insertions(+), 105 deletions(-)
+ keyberon/src/action/switch.rs | 43 +++++++--------------
+ parser/src/keys/mod.rs        | 52 +++++++++++++-------------
+ src/oskbd/macos.rs            | 70 +++++++++++++++++------------------
+ 3 files changed, 75 insertions(+), 90 deletions(-)
 
 diff --git a/keyberon/src/action/switch.rs b/keyberon/src/action/switch.rs
 index 54eb134..673a88e 100644
@@ -150,138 +146,6 @@ index 54eb134..673a88e 100644
      }
  
      #[test]
-diff --git a/parser/src/cfg/chord.rs b/parser/src/cfg/chord.rs
-index 9c88bb7..ecf55d9 100644
---- a/parser/src/cfg/chord.rs
-+++ b/parser/src/cfg/chord.rs
-@@ -18,7 +18,7 @@ pub(crate) fn parse_defchordv2(
-         );
-     }
- 
--    let mut chunks = exprs[1..].chunks_exact(5);
-+    let (chunks, rem) = exprs[1..].as_chunks::<5>();
-     let mut chords_container = ChordsForKeys::<'static, KanataCustom> {
-         mapping: FxHashMap::default(),
-     };
-@@ -26,7 +26,7 @@ pub(crate) fn parse_defchordv2(
-     let mut all_participating_key_sets = FxHashSet::default();
- 
-     let all_chords = chunks
--        .by_ref()
-+        .iter()
-         .flat_map(|chunk| match chunk[0] {
-             // Match a line like
-             // (include filename.txt) () 100 all-released (layer1 layer2)
-@@ -80,7 +80,6 @@ pub(crate) fn parse_defchordv2(
-                 .push(s.a.sref(chord.clone()));
-         }
-     }
--    let rem = chunks.remainder();
-     if !rem.is_empty() {
-         bail_expr!(
-             rem.last().unwrap(),
-diff --git a/parser/src/cfg/deflayer.rs b/parser/src/cfg/deflayer.rs
-index 5aad47e..2e806c4 100644
---- a/parser/src/cfg/deflayer.rs
-+++ b/parser/src/cfg/deflayer.rs
-@@ -142,12 +142,12 @@ pub(crate) fn parse_layers(
-             }
-             LayerExprs::CustomMapping(layer) => {
-                 // Parse actions as input output pairs
--                let mut pairs = layer[2..].chunks_exact(2);
-+                let (pairs, rem) = layer[2..].as_chunks::<2>();
-                 let mut layer_mapped_keys = HashSet::default();
-                 let mut defsrc_anykey_used = false;
-                 let mut unmapped_anykey_used = false;
-                 let mut both_anykey_used = false;
--                for pair in pairs.by_ref() {
-+                for pair in pairs {
-                     let input = &pair[0];
-                     let action = &pair[1];
- 
-@@ -220,7 +220,6 @@ pub(crate) fn parse_layers(
-                         layers_cfg[layer_level][0][usize::from(input_key)] = *action;
-                     }
-                 }
--                let rem = pairs.remainder();
-                 if !rem.is_empty() {
-                     bail_expr!(&rem[0], "input must by followed by an action");
-                 }
-diff --git a/parser/src/cfg/layer_opts.rs b/parser/src/cfg/layer_opts.rs
-index 5584794..2c05d84 100644
---- a/parser/src/cfg/layer_opts.rs
-+++ b/parser/src/cfg/layer_opts.rs
-@@ -6,8 +6,8 @@ pub(crate) type LayerIcons = HashMap<String, Option<String>>;
- 
- pub fn parse_layer_opts(list: &[SExpr]) -> Result<HashMap<String, String>> {
-     let mut layer_opts: HashMap<String, String> = HashMap::default();
--    let mut opts = list.chunks_exact(2);
--    for kv in opts.by_ref() {
-+    let (opts, rem) = list.as_chunks::<2>();
-+    for kv in opts {
-         let key_expr = &kv[0];
-         let val_expr = &kv[1];
-         // Read k-v pairs from the configuration
-@@ -41,7 +41,6 @@ pub fn parse_layer_opts(list: &[SExpr]) -> Result<HashMap<String, String>> {
-         })?;
-         layer_opts.insert(opt_key.to_owned(), opt_val.to_owned());
-     }
--    let rem = opts.remainder();
-     if !rem.is_empty() {
-         bail_expr!(&rem[0], "This option is missing a value.");
-     }
-diff --git a/parser/src/cfg/zippychord.rs b/parser/src/cfg/zippychord.rs
-index 5fd7762..011491a 100644
---- a/parser/src/cfg/zippychord.rs
-+++ b/parser/src/cfg/zippychord.rs
-@@ -335,8 +335,8 @@ mod inner {
-         let mut smart_space_punctuation_val_expr = None;
- 
-         let mut user_cfg_char_to_output: HashMap<char, Vec<ZchOutput>> = HashMap::default();
--        let mut pairs = exprs[2..].chunks_exact(2);
--        for pair in pairs.by_ref() {
-+        let (pairs, rem) = exprs[2..].as_chunks::<2>();
-+        for pair in pairs {
-             let config_name = &pair[0];
-             let config_value = &pair[1];
- 
-@@ -411,7 +411,7 @@ mod inner {
-                         );
-                     }
-                     key_name_mappings_seen = true;
--                    let mut mappings = config_value
-+                    let (mappings, rem) = config_value
-                         .list(s.vars())
-                         .ok_or_else(|| {
-                             anyhow_expr!(
-@@ -419,9 +419,9 @@ mod inner {
-                                 "{KEY_NAME_MAPPINGS} must be followed by a list"
-                             )
-                         })?
--                        .chunks_exact(2);
-+                        .as_chunks::<2>();
- 
--                    for mapping_pair in mappings.by_ref() {
-+                    for mapping_pair in mappings {
-                         let input = mapping_pair[0]
-                             .atom(None)
-                             .ok_or_else(|| {
-@@ -512,7 +512,6 @@ mod inner {
-                         }
-                     }
- 
--                    let rem = mappings.remainder();
-                     if !rem.is_empty() {
-                         bail_expr!(&rem[0], "zippy input is missing its output mapping");
-                     }
-@@ -521,7 +520,6 @@ mod inner {
-             }
-         }
- 
--        let rem = pairs.remainder();
-         if !rem.is_empty() {
-             bail_expr!(&rem[0], "zippy config name is missing its value");
-         }
 diff --git a/parser/src/keys/mod.rs b/parser/src/keys/mod.rs
 index af41ed6..3345759 100644
 --- a/parser/src/keys/mod.rs
@@ -350,10 +214,10 @@ index af41ed6..3345759 100644
 +    }
 +}
 diff --git a/src/oskbd/macos.rs b/src/oskbd/macos.rs
-index de598d5..d0e1751 100644
+index 78c0b36..d352045 100644
 --- a/src/oskbd/macos.rs
 +++ b/src/oskbd/macos.rs
-@@ -933,40 +933,6 @@ fn validate_and_register_devices(include_names: &[String]) -> Vec<String> {
+@@ -981,40 +981,6 @@ fn validate_and_register_devices(include_names: &[String]) -> Vec<String> {
          .collect()
  }
  
@@ -394,7 +258,16 @@ index de598d5..d0e1751 100644
  impl fmt::Display for InputEvent {
      fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
          use kanata_keyberon::key_code::KeyCode;
-@@ -2277,3 +2243,37 @@ mod mouse_move_tests {
+@@ -1348,7 +1314,7 @@ impl KbdOut {
+             }
+ 
+             attempt += 1;
+-            if attempt % 10 == 0 {
++            if attempt.is_multiple_of(10) {
+                 if let Some(timeout) = timeout {
+                     log::info!(
+                         "Waiting for DriverKit virtual keyboard... ({:.1}s/{:.1}s)",
+@@ -2709,3 +2675,37 @@ mod mouse_move_tests {
          );
      }
  }

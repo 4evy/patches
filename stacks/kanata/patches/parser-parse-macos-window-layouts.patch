@@ -4,17 +4,18 @@ Date: Thu, 1 Jan 1970 00:00:00 +0000
 Subject: feat(parser): parse macOS window layouts
 
 ---
- parser/src/cfg/list_actions.rs |    2 
- parser/src/cfg/macos_window.rs |  205 +++++++++++++++++++++++++++++++++++++++++
- parser/src/cfg/mod.rs          |    3 
- parser/src/cfg/tests.rs        |   84 ++++++++++++++++
+ parser/src/cfg/list_actions.rs |   2 +
+ parser/src/cfg/macos_window.rs | 205 +++++++++++++++++++++++++++++++++
+ parser/src/cfg/mod.rs          |   3 +
+ parser/src/cfg/tests.rs        |  84 ++++++++++++++
  4 files changed, 294 insertions(+)
  create mode 100644 parser/src/cfg/macos_window.rs
 
 diff --git a/parser/src/cfg/list_actions.rs b/parser/src/cfg/list_actions.rs
+index 5f376d1..5e1582c 100644
 --- a/parser/src/cfg/list_actions.rs
 +++ b/parser/src/cfg/list_actions.rs
-@@ -98,6 +98,7 @@ pub const MOVEMOUSE_ACCEL_RIGHT_A: &str
+@@ -98,6 +98,7 @@ pub const MOVEMOUSE_ACCEL_RIGHT_A: &str = "🖱accel→";
  pub const MOVEMOUSE_SPEED_A: &str = "🖱speed";
  pub const SETMOUSE: &str = "setmouse";
  pub const SETMOUSE_A: &str = "set🖱";
@@ -22,7 +23,7 @@ diff --git a/parser/src/cfg/list_actions.rs b/parser/src/cfg/list_actions.rs
  pub const DYNAMIC_MACRO_RECORD: &str = "dynamic-macro-record";
  pub const DYNAMIC_MACRO_PLAY: &str = "dynamic-macro-play";
  pub const ARBITRARY_CODE: &str = "arbitrary-code";
-@@ -232,6 +233,7 @@ pub fn is_list_action(ac: &str) -> bool
+@@ -232,6 +233,7 @@ pub fn is_list_action(ac: &str) -> bool {
          MOVEMOUSE_SPEED_A,
          SETMOUSE,
          SETMOUSE_A,
@@ -32,6 +33,7 @@ diff --git a/parser/src/cfg/list_actions.rs b/parser/src/cfg/list_actions.rs
          ARBITRARY_CODE,
 diff --git a/parser/src/cfg/macos_window.rs b/parser/src/cfg/macos_window.rs
 new file mode 100644
+index 0000000..66311f3
 --- /dev/null
 +++ b/parser/src/cfg/macos_window.rs
 @@ -0,0 +1,205 @@
@@ -241,6 +243,7 @@ new file mode 100644
 +    }
 +}
 diff --git a/parser/src/cfg/mod.rs b/parser/src/cfg/mod.rs
+index c110578..596c219 100644
 --- a/parser/src/cfg/mod.rs
 +++ b/parser/src/cfg/mod.rs
 @@ -91,6 +91,8 @@ pub mod list_actions;
@@ -252,7 +255,7 @@ diff --git a/parser/src/cfg/mod.rs b/parser/src/cfg/mod.rs
  mod mouse;
  use mouse::*;
  mod multi;
-@@ -1652,6 +1654,7 @@ fn parse_action_list(ac: &[SExpr], s: &P
+@@ -1682,6 +1684,7 @@ fn parse_action_list(ac: &[SExpr], s: &ParserState) -> Result<&'static KanataAct
          }
          MOVEMOUSE_SPEED | MOVEMOUSE_SPEED_A => parse_move_mouse_speed(&ac[1..], s),
          SETMOUSE | SETMOUSE_A => parse_set_mouse(&ac[1..], s),
@@ -261,12 +264,14 @@ diff --git a/parser/src/cfg/mod.rs b/parser/src/cfg/mod.rs
          DYNAMIC_MACRO_PLAY => parse_dynamic_macro_play(&ac[1..], s),
          ARBITRARY_CODE => parse_arbitrary_code(&ac[1..], s),
 diff --git a/parser/src/cfg/tests.rs b/parser/src/cfg/tests.rs
+index c3c5f4f..2cc7ab9 100644
 --- a/parser/src/cfg/tests.rs
 +++ b/parser/src/cfg/tests.rs
-@@ -542,6 +542,90 @@ fn recursive_multi_is_flattened() {
+@@ -603,6 +603,90 @@ fn recursive_multi_is_flattened() {
+     }
  }
  
- #[test]
++#[test]
 +fn parse_macos_window_presets_and_frames() {
 +    let source = r#"
 +(defsrc a b c)
@@ -350,7 +355,6 @@ diff --git a/parser/src/cfg/tests.rs b/parser/src/cfg/tests.rs
 +    }
 +}
 +
-+#[test]
+ #[test]
  fn test_parse_sequence_a_b() {
      let seq = parse_sequence_keys(
-         &parse("(a b)", "test").expect("parses")[0].t,

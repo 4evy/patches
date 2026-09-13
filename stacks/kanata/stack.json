@@ -5,7 +5,7 @@
   "source": {
     "vcs": "git",
     "canonical": "https://github.com/jtroo/kanata.git",
-    "revision": "565d5070e9e61992af5b4e844d512a9ce2f2d8c1",
+    "revision": "568b8e37ef13b265fa82248243b0bdec8ada6f01",
     "trackingRef": "refs/heads/main",
     "endpoints": [
       {
