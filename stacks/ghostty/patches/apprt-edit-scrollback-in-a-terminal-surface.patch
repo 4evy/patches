@@ -665,7 +665,7 @@ index ca74371..5110a72 100644
          const tree = self.getTree() orelse return;
          var it = tree.iterator();
 diff --git a/src/config/Config.zig b/src/config/Config.zig
-index bf4e75f..856efed 100644
+index 877c437..efb87f3 100644
 --- a/src/config/Config.zig
 +++ b/src/config/Config.zig
 @@ -1437,6 +1437,24 @@ input: RepeatableReadableIO = .{},
@@ -693,7 +693,7 @@ index bf4e75f..856efed 100644
  /// Control when the scrollbar is shown to scroll the scrollback buffer.
  ///
  /// The default value is `system`.
-@@ -11135,6 +11153,26 @@ test "clipboard write limit" {
+@@ -11165,6 +11183,26 @@ test "clipboard write limit" {
      );
  }
  

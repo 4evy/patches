@@ -15,7 +15,7 @@ else
       owner = "ghostty-org";
       repo = "ghostty";
       rev = revision;
-      hash = "sha256-F4/7xhoQZ5CxRtAQF9vQnZJMDl3QMm8/g/r2E/zuLw8=";
+      hash = "sha256-vxeC7PvGRR07vtNkEs+TtPAWTNrNFJSPba7pRksmyLE=";
     };
   in
   (callPackage (source + "/nix/package.nix") {

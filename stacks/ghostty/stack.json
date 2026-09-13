@@ -5,7 +5,7 @@
   "source": {
     "vcs": "git",
     "canonical": "https://github.com/ghostty-org/ghostty.git",
-    "revision": "c81f0b26871c7fbbe2fc35549fdad1f64ed29094",
+    "revision": "09a2724c23fd13f7cd24c093c568a4b6792a66a2",
     "trackingRef": "refs/heads/main",
     "endpoints": [
       {
