@@ -1236,7 +1236,7 @@ index 0000000..66f9b85
 +    }
 +}
 diff --git a/src/kanata/mod.rs b/src/kanata/mod.rs
-index 2f8fc3e..6085744 100644
+index 8a32dfb..54eb14b 100644
 --- a/src/kanata/mod.rs
 +++ b/src/kanata/mod.rs
 @@ -119,6 +119,9 @@ mod linux;
@@ -1249,7 +1249,7 @@ index 2f8fc3e..6085744 100644
  mod output_logic;
  use output_logic::*;
  
-@@ -1721,6 +1724,15 @@ impl Kanata {
+@@ -1722,6 +1725,15 @@ impl Kanata {
                              self.move_mouse_speed_modifiers
                          );
                      }

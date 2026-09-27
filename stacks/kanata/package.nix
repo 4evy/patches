@@ -13,7 +13,7 @@ let
     owner = "jtroo";
     repo = "kanata";
     rev = revision;
-    hash = "sha256-/Jat0IIEccetrY2J2bhRYOhP96VhbNtkFry+wfWqJjY=";
+    hash = "sha256-I40ECXVAXJyyOC9QJB27cDOgaQ/zg3729k2t6/6k6IU=";
   };
   patchedSource = applyPatches {
     name = "kanata-${builtins.substring 0 12 revision}-patched-source";
