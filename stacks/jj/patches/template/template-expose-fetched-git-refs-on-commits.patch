@@ -1,4 +1,4 @@
-From 6cbc2ad8c66f73a7cbd2b0ce04237e1d27dc70c7 Mon Sep 17 00:00:00 2001
+From 872bf09b5c980d0ab564740fb502f89e7838569e Mon Sep 17 00:00:00 2001
 From: Josh McKinney <joshka@users.noreply.github.com>
 Date: Sat, 5 Sep 2026 13:00:00 +0300
 Subject: template: expose fetched Git refs on commits
@@ -6,9 +6,13 @@ Subject: template: expose fetched Git refs on commits
 Add a commit template method for displaying fetched Git refs so log
 output can show refs like refs/pull/123/head@origin directly on the
 commits they name.
+---
+ cli/src/commit_templater.rs       | 37 ++++++++++++
+ cli/tests/test_commit_template.rs | 96 +++++++++++++++++++++++++++++++
+ 2 files changed, 133 insertions(+)
 
 diff --git a/cli/src/commit_templater.rs b/cli/src/commit_templater.rs
-index 42ad53fe0d6e5e31a918335f445be13c689ee995..6f2f0ad42e8a71a9697fe88edc910753a6286183 100644
+index 2c1daccad..bbc11fd99 100644
 --- a/cli/src/commit_templater.rs
 +++ b/cli/src/commit_templater.rs
 @@ -17,6 +17,7 @@
@@ -19,7 +23,7 @@ index 42ad53fe0d6e5e31a918335f445be13c689ee995..6f2f0ad42e8a71a9697fe88edc910753
  use std::collections::HashMap;
  use std::fmt;
  use std::fmt::Display;
-@@ -62,7 +63,9 @@ use jj_lib::op_store::LocalRemoteRefTarget;
+@@ -64,7 +65,9 @@ use jj_lib::op_store::LocalRemoteRefTarget;
  use jj_lib::op_store::OperationId;
  use jj_lib::op_store::RefTarget;
  use jj_lib::op_store::RemoteRef;
@@ -29,7 +33,7 @@ index 42ad53fe0d6e5e31a918335f445be13c689ee995..6f2f0ad42e8a71a9697fe88edc910753
  use jj_lib::ref_name::WorkspaceName;
  use jj_lib::ref_name::WorkspaceNameBuf;
  use jj_lib::repo::Repo;
-@@ -992,6 +995,7 @@ pub struct CommitKeywordCache<'repo> {
+@@ -1029,6 +1032,7 @@ pub struct CommitKeywordCache<'repo> {
      bookmarks_index: OnceCell<Rc<CommitRefsIndex>>,
      tags_index: OnceCell<Rc<CommitRefsIndex>>,
      git_refs_index: OnceCell<Rc<CommitRefsIndex>>,
@@ -37,7 +41,7 @@ index 42ad53fe0d6e5e31a918335f445be13c689ee995..6f2f0ad42e8a71a9697fe88edc910753
      is_immutable_fn: OnceCell<Rc<RevsetContainingFn<'repo>>>,
  }
  
-@@ -1011,6 +1015,11 @@ impl<'repo> CommitKeywordCache<'repo> {
+@@ -1048,6 +1052,11 @@ impl<'repo> CommitKeywordCache<'repo> {
              .get_or_init(|| Rc::new(build_commit_refs_index(repo.view().git_refs())))
      }
  
@@ -49,7 +53,7 @@ index 42ad53fe0d6e5e31a918335f445be13c689ee995..6f2f0ad42e8a71a9697fe88edc910753
      pub fn is_immutable_fn(
          &self,
          language: &CommitTemplateLanguage<'repo>,
-@@ -1198,6 +1207,18 @@ fn builtin_commit_methods<'repo>() -> CommitTemplateBuildMethodFnMap<'repo, Comm
+@@ -1235,6 +1244,18 @@ fn builtin_commit_methods<'repo>() -> CommitTemplateBuildMethodFnMap<'repo, Comm
              Ok(out_property.into_dyn_wrapped())
          },
      );
@@ -68,7 +72,7 @@ index 42ad53fe0d6e5e31a918335f445be13c689ee995..6f2f0ad42e8a71a9697fe88edc910753
      map.insert(
          "tags",
          |language, _diagnostics, _build_ctx, self_property, function| {
-@@ -2011,6 +2032,22 @@ fn build_commit_refs_index<'a, K: Into<String>>(
+@@ -2049,6 +2070,22 @@ fn build_commit_refs_index<'a, K: Into<String>>(
      index
  }
  
@@ -92,7 +96,7 @@ index 42ad53fe0d6e5e31a918335f445be13c689ee995..6f2f0ad42e8a71a9697fe88edc910753
      commit_refs
          .iter()
 diff --git a/cli/tests/test_commit_template.rs b/cli/tests/test_commit_template.rs
-index 98f89dbec179fdf90ebbc8dbe83bfc1ec4e425d9..f5d88a6b13c5d1f4701a2729cf8fd43f58178b7f 100644
+index 98f89dbec..f5d88a6b1 100644
 --- a/cli/tests/test_commit_template.rs
 +++ b/cli/tests/test_commit_template.rs
 @@ -15,9 +15,34 @@

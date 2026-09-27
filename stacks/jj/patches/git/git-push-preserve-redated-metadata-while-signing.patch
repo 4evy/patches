@@ -1,14 +1,19 @@
-From c0b861711acf6f51bb6d65295672dbd16e70a7c9 Mon Sep 17 00:00:00 2001
+From 6fa689a6a94c1d31d56eaa9551ef29337dc3ec46 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
 Date: Sat, 5 Sep 2026 13:00:00 +0300
 Subject: git push: preserve redated metadata while signing
 
+---
+ CHANGELOG.md                 |  4 ++
+ cli/src/commands/git/push.rs | 27 ++++++-----
+ cli/tests/test_git_push.rs   | 86 ++++++++++++++++++++++++++++++++----
+ 3 files changed, 98 insertions(+), 19 deletions(-)
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index 8090b146847d422cd867e1ca193de346f6fa8ac0..4a0ed23aedb22351c7fe34fc04ee547a193ebfdc 100644
+index fa5a2ec7a..265b8c95b 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -142,6 +142,10 @@ None
+@@ -202,6 +202,10 @@ None
    when the commit stack is taller than the terminal.
    [#9033](https://github.com/jj-vcs/jj/issues/9033).
  
@@ -20,10 +25,10 @@ index 8090b146847d422cd867e1ca193de346f6fa8ac0..4a0ed23aedb22351c7fe34fc04ee547a
    instead of silently leaving them unsigned.
  
 diff --git a/cli/src/commands/git/push.rs b/cli/src/commands/git/push.rs
-index e2b74e925a76c6e2f8aa3549b10431ca3348f889..f23a308b2bd73875721eb6482a84ce0478e1d858 100644
+index 7ee279a15..e7c6ab130 100644
 --- a/cli/src/commands/git/push.rs
 +++ b/cli/src/commands/git/push.rs
-@@ -969,23 +969,30 @@ async fn sign_commits_before_push<'a>(
+@@ -973,23 +973,30 @@ async fn sign_commits_before_push<'a>(
                  async |rewriter: CommitRewriter<'_>| {
                      let old_commit = rewriter.old_commit();
                      let old_commit_id = old_commit.id().clone();
@@ -65,10 +70,10 @@ index e2b74e925a76c6e2f8aa3549b10431ca3348f889..f23a308b2bd73875721eb6482a84ce04
                  },
              )
 diff --git a/cli/tests/test_git_push.rs b/cli/tests/test_git_push.rs
-index 94c13882d202fa5633427520a93e8941a65b7d2b..7e92715e83996f23f84335fcb3a60f4463dd0fcb 100644
+index 5120b1156..34b266467 100644
 --- a/cli/tests/test_git_push.rs
 +++ b/cli/tests/test_git_push.rs
-@@ -3047,9 +3047,9 @@ fn test_git_push_sign_on_push() {
+@@ -3105,9 +3105,9 @@ fn test_git_push_sign_on_push() {
      Updated signatures of 2 commits.
      Rebased 2 descendant commits.
      Changes to push to origin:
@@ -81,7 +86,7 @@ index 94c13882d202fa5633427520a93e8941a65b7d2b..7e92715e83996f23f84335fcb3a60f44
      [EOF]
      ");
      // Only commits which are being pushed should be signed
-@@ -3072,7 +3072,7 @@ fn test_git_push_sign_on_push() {
+@@ -3130,7 +3130,7 @@ fn test_git_push_sign_on_push() {
      let output = work_dir.run_jj(["bookmark", "move", "bookmark2", "--to", "@-"]);
      insta::assert_snapshot!(output, @"
      ------- stderr -------
@@ -90,7 +95,7 @@ index 94c13882d202fa5633427520a93e8941a65b7d2b..7e92715e83996f23f84335fcb3a60f44
      [EOF]
      ");
      test_env.add_config(r#"revset-aliases."immutable_heads()" = "bookmark2""#);
-@@ -3080,9 +3080,9 @@ fn test_git_push_sign_on_push() {
+@@ -3138,9 +3138,9 @@ fn test_git_push_sign_on_push() {
      insta::assert_snapshot!(output, @"
      ------- stderr -------
      Warning: Skipped signing 1 immutable commits:
@@ -102,7 +107,7 @@ index 94c13882d202fa5633427520a93e8941a65b7d2b..7e92715e83996f23f84335fcb3a60f44
      [EOF]
      ");
      let output = work_dir.run_jj(["log", "-T", template, "-r", "::"]);
-@@ -3136,9 +3136,9 @@ fn test_git_push_sign_on_push() {
+@@ -3194,9 +3194,9 @@ fn test_git_push_sign_on_push() {
      ------- stderr -------
      Updated signatures of 1 commits.
      Changes to push to origin:
@@ -115,7 +120,7 @@ index 94c13882d202fa5633427520a93e8941a65b7d2b..7e92715e83996f23f84335fcb3a60f44
      [EOF]
      ");
      let output = work_dir.run_jj(["log", "-T", template]);
-@@ -3157,6 +3157,74 @@ fn test_git_push_sign_on_push() {
+@@ -3215,6 +3215,74 @@ fn test_git_push_sign_on_push() {
      ");
  }
  

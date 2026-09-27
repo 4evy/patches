@@ -1,15 +1,19 @@
-From 23546df26e813704f2c405b48c70866173d93f29 Mon Sep 17 00:00:00 2001
+From bcebab3d9fca7c9f323a743552ac8011fa96e64c Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
 Date: Sat, 5 Sep 2026 13:00:00 +0300
 Subject: git push: warn about immutable signing candidates
 
 Evaluate the configured sign-on-push revset across every outgoing commit, then exclude immutable matches from rewriting and list them in a warning. This follows the same immutability boundary as other history-editing commands while making skipped signatures visible.
+---
+ CHANGELOG.md                 | 3 +++
+ cli/src/commands/git/push.rs | 3 ++-
+ 2 files changed, 5 insertions(+), 1 deletion(-)
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index a78138b2ba2dccb8741be00f6a80e9d665c9efac..7f5a02a54e38002ae2dce30472d57dfabd9d36aa 100644
+index 6169910c5..6eb6033a0 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -135,6 +135,9 @@ None
+@@ -195,6 +195,9 @@ None
    when the commit stack is taller than the terminal.
    [#9033](https://github.com/jj-vcs/jj/issues/9033).
  
@@ -20,10 +24,10 @@ index a78138b2ba2dccb8741be00f6a80e9d665c9efac..7f5a02a54e38002ae2dce30472d57dfa
    Ctrl+C in `less` exits cleanly instead of leaving the terminal in a
    corrupted state (raw mode, visible escape sequences, broken input).
 diff --git a/cli/src/commands/git/push.rs b/cli/src/commands/git/push.rs
-index 208d3d11bfd6436a66eb5ae9dc913d01b4620424..e2b74e925a76c6e2f8aa3549b10431ca3348f889 100644
+index 31995fdd3..7ee279a15 100644
 --- a/cli/src/commands/git/push.rs
 +++ b/cli/src/commands/git/push.rs
-@@ -905,7 +905,8 @@ fn ready_to_push_revset_expression(
+@@ -909,7 +909,8 @@ fn ready_to_push_revset_expression(
  
  /// Signs commits before pushing.
  ///

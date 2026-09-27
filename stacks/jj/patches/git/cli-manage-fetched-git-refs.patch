@@ -1,4 +1,4 @@
-From 810444e72030af0296cd0c1b4599ea4cde8d5655 Mon Sep 17 00:00:00 2001
+From c3eaa34eecd886794d007aaaccbe5aab5a2808e7 Mon Sep 17 00:00:00 2001
 From: Josh McKinney <joshka@users.noreply.github.com>
 Date: Sat, 5 Sep 2026 13:00:00 +0300
 Subject: cli: manage fetched Git refs
@@ -9,9 +9,20 @@ remote selection, temporary backing refs, wildcard rejection, and
 bookmark/new/edit conveniences.
 
 Co-authored-by: 4evy <git@evy.pink>
+---
+ cli/src/commands/git/ref/fetch.rs  |  83 ++-
+ cli/src/commands/git/ref/forget.rs |  77 +++
+ cli/src/commands/git/ref/list.rs   |  74 +++
+ cli/src/commands/git/ref/mod.rs    |  10 +
+ cli/tests/cli-reference@.md.snap   |  76 +++
+ cli/tests/test_git_fetch.rs        | 875 +++++++++++++++++++++++++++++
+ lib/tests/test_view.rs             |  65 +++
+ 7 files changed, 1257 insertions(+), 3 deletions(-)
+ create mode 100644 cli/src/commands/git/ref/forget.rs
+ create mode 100644 cli/src/commands/git/ref/list.rs
 
 diff --git a/cli/src/commands/git/ref/fetch.rs b/cli/src/commands/git/ref/fetch.rs
-index 4d800eba32fbf28e8b933a90d2f3a0a8ba6b0f40..75f37b4300869fcc1ea316aa1918b3bb5bfe2561 100644
+index 4d800eba3..75f37b430 100644
 --- a/cli/src/commands/git/ref/fetch.rs
 +++ b/cli/src/commands/git/ref/fetch.rs
 @@ -14,12 +14,16 @@
@@ -162,7 +173,7 @@ index 4d800eba32fbf28e8b933a90d2f3a0a8ba6b0f40..75f37b4300869fcc1ea316aa1918b3bb
  }
 diff --git a/cli/src/commands/git/ref/forget.rs b/cli/src/commands/git/ref/forget.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..c41b31b1e62173d8c072c5e0be7b2f2d05e22433
+index 0000000000000000000000000000000000000000..c41b31b1e
 --- /dev/null
 +++ b/cli/src/commands/git/ref/forget.rs
 @@ -0,0 +1,77 @@
@@ -245,7 +256,7 @@ index 0000000000000000000000000000000000000000..c41b31b1e62173d8c072c5e0be7b2f2d
 +}
 diff --git a/cli/src/commands/git/ref/list.rs b/cli/src/commands/git/ref/list.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..c2750c06208e8f555163ca649ec69ed340417742
+index 0000000000000000000000000000000000000000..c2750c062
 --- /dev/null
 +++ b/cli/src/commands/git/ref/list.rs
 @@ -0,0 +1,74 @@
@@ -324,7 +335,7 @@ index 0000000000000000000000000000000000000000..c2750c06208e8f555163ca649ec69ed3
 +    Ok(())
 +}
 diff --git a/cli/src/commands/git/ref/mod.rs b/cli/src/commands/git/ref/mod.rs
-index ce9771feaaee603e2b20908b7d3c3c30234dddf6..c13a4ca743c129278f77643409a76dac86e52bdc 100644
+index ce9771fea..c13a4ca74 100644
 --- a/cli/src/commands/git/ref/mod.rs
 +++ b/cli/src/commands/git/ref/mod.rs
 @@ -13,12 +13,18 @@
@@ -365,7 +376,7 @@ index ce9771feaaee603e2b20908b7d3c3c30234dddf6..c13a4ca743c129278f77643409a76dac
      }
  }
 diff --git a/cli/tests/cli-reference@.md.snap b/cli/tests/cli-reference@.md.snap
-index cb0ca7a79cb02fdbbb8048d563781ef464c1d505..d163a22c95549227fa676dcfc541eeddfaa711d9 100644
+index 2cdf38b6b..b6114d5f5 100644
 --- a/cli/tests/cli-reference@.md.snap
 +++ b/cli/tests/cli-reference@.md.snap
 @@ -1,5 +1,6 @@
@@ -386,7 +397,7 @@ index cb0ca7a79cb02fdbbb8048d563781ef464c1d505..d163a22c95549227fa676dcfc541eedd
  * [`jj git push`↴](#jj-git-push)
  * [`jj git ref`↴](#jj-git-ref)
  * [`jj git ref fetch`↴](#jj-git-ref-fetch)
-@@ -1662,6 +1667,7 @@ See this [comparison], including a [table of commands].
+@@ -1669,6 +1674,7 @@ See this [comparison], including a [table of commands].
  * `fetch` — Fetch from a Git remote
  * `import` — Update repo with changes made in the underlying Git repo
  * `init` — Create a new Git backed repo
@@ -394,7 +405,7 @@ index cb0ca7a79cb02fdbbb8048d563781ef464c1d505..d163a22c95549227fa676dcfc541eedd
  * `push` — Push to a Git remote
  * `ref` — Manage raw Git refs
  * `remote` — Manage Git remotes
-@@ -1889,6 +1895,76 @@ Create a new Git backed repo
+@@ -1896,6 +1902,76 @@ Create a new Git backed repo
  
  
  
@@ -472,7 +483,7 @@ index cb0ca7a79cb02fdbbb8048d563781ef464c1d505..d163a22c95549227fa676dcfc541eedd
  
  Push to a Git remote
 diff --git a/cli/tests/test_git_fetch.rs b/cli/tests/test_git_fetch.rs
-index 289657be573996c817c2945d0c20b1aa5fe3cee5..18214a9ae167dbb05d4e85392b8645d600ac651b 100644
+index 289657be5..18214a9ae 100644
 --- a/cli/tests/test_git_fetch.rs
 +++ b/cli/tests/test_git_fetch.rs
 @@ -43,6 +43,30 @@ fn add_commit_to_branch(git_repo: &gix::Repository, branch: &str, message: &str)
@@ -1365,7 +1376,7 @@ index 289657be573996c817c2945d0c20b1aa5fe3cee5..18214a9ae167dbb05d4e85392b8645d6
  fn test_git_fetch_default_remote() {
      let test_env = TestEnvironment::default();
 diff --git a/lib/tests/test_view.rs b/lib/tests/test_view.rs
-index 514fa68d44df73185151bd9b60541f6dc1740974..0013ef51272a876876eb3f97f2fbba0275da6553 100644
+index 514fa68d4..0013ef512 100644
 --- a/lib/tests/test_view.rs
 +++ b/lib/tests/test_view.rs
 @@ -511,6 +511,71 @@ fn test_merge_views_git_refs() -> TestResult {

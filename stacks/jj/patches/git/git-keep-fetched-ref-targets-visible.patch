@@ -1,4 +1,4 @@
-From 9d34e87706d9ead3784cd9124d3b5a6c689e03eb Mon Sep 17 00:00:00 2001
+From 44a00fcf3b1a3c8c15c484075f33cb188d1e3649 Mon Sep 17 00:00:00 2001
 From: Josh McKinney <joshka@users.noreply.github.com>
 Date: Sat, 5 Sep 2026 13:00:00 +0300
 Subject: git: keep fetched ref targets visible
@@ -30,9 +30,13 @@ Add a regression covering the dogfood case: fetch a pull-request ref, edit
 and locally rewrite that fetched commit, fetch the same ref again, undo the
 second fetch, and verify that the fetched ref still resolves to the original
 non-hidden commit.
+---
+ cli/tests/test_git_fetch.rs | 59 +++++++++++++++++++++++++++++++++++++
+ lib/src/repo.rs             | 19 ++++++++++++
+ 2 files changed, 78 insertions(+)
 
 diff --git a/cli/tests/test_git_fetch.rs b/cli/tests/test_git_fetch.rs
-index 18214a9ae167dbb05d4e85392b8645d600ac651b..67eb582d20c14453cccc39cc2a79d75ed736a7bd 100644
+index 18214a9ae..67eb582d2 100644
 --- a/cli/tests/test_git_fetch.rs
 +++ b/cli/tests/test_git_fetch.rs
 @@ -933,6 +933,65 @@ fn test_git_ref_fetch_undo_and_op_restore() {
@@ -102,10 +106,10 @@ index 18214a9ae167dbb05d4e85392b8645d600ac651b..67eb582d20c14453cccc39cc2a79d75e
  fn test_git_ref_fetch_same_ref_from_multiple_remotes() {
      let test_env = TestEnvironment::default();
 diff --git a/lib/src/repo.rs b/lib/src/repo.rs
-index 79a83a6c1112effae17d178aedcd975272393651..ee492b18f76d7f2b3b39a922a83853a18815f391 100644
+index 868da2cc8..8e8c2ee6e 100644
 --- a/lib/src/repo.rs
 +++ b/lib/src/repo.rs
-@@ -1314,6 +1314,17 @@ impl MutableRepo {
+@@ -1402,6 +1402,17 @@ impl MutableRepo {
              view.head_ids.remove(commit_id);
          }
          view.head_ids.extend(heads_to_add);
@@ -123,10 +127,10 @@ index 79a83a6c1112effae17d178aedcd975272393651..ee492b18f76d7f2b3b39a922a83853a1
          self.set_view(view);
          // TODO: indexing error shouldn't be a "RevsetEvaluationError"
          self.normalize_heads()
-@@ -1654,6 +1665,14 @@ impl MutableRepo {
-                 view.local_bookmarks()
-                     .flat_map(|(_, target)| target.added_ids()),
-                 view.local_tags().flat_map(|(_, target)| target.added_ids()),
+@@ -1743,6 +1754,14 @@ impl MutableRepo {
+                     .flat_map(|(_, target)| target.present_adds()),
+                 view.local_tags()
+                     .flat_map(|(_, target)| target.present_adds()),
 +                // A fetched Git ref names the remote-imported commit, not the
 +                // user's later local rewrite of that change. Keep that original
 +                // commit visible so refs like refs/pull/123/head@origin don't
@@ -134,7 +138,7 @@ index 79a83a6c1112effae17d178aedcd975272393651..ee492b18f76d7f2b3b39a922a83853a1
 +                view.fetched_git_refs()
 +                    .values()
 +                    .flat_map(|refs| refs.values())
-+                    .flat_map(|target| target.added_ids()),
++                    .flat_map(|target| target.present_adds()),
              )
              .any(|id| id == commit_id)
          };

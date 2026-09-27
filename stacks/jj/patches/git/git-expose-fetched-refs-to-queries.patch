@@ -1,4 +1,4 @@
-From c3e5840ae528ca7c905cf72083e2f44dab605046 Mon Sep 17 00:00:00 2001
+From bb9732495c23edc2584052040d298a198ae3b069 Mon Sep 17 00:00:00 2001
 From: Josh McKinney <joshka@users.noreply.github.com>
 Date: Sat, 5 Sep 2026 13:00:00 +0300
 Subject: git: expose fetched refs to queries
@@ -6,9 +6,13 @@ Subject: git: expose fetched refs to queries
 Allow stored fetched Git refs to be resolved from revsets and reported
 in operation diffs. This makes the durable state visible before adding
 higher-level CLI management commands.
+---
+ cli/src/commands/operation/diff.rs | 77 ++++++++++++++++++++++++++++++
+ lib/src/revset.rs                  | 40 +++++++++++++++-
+ 2 files changed, 116 insertions(+), 1 deletion(-)
 
 diff --git a/cli/src/commands/operation/diff.rs b/cli/src/commands/operation/diff.rs
-index cbb513fc162f91191455903b2bb977ba805e76a8..84d2b21a909fb3be94382924d43b1d78f27bd7b5 100644
+index 47274462e..8712cf01f 100644
 --- a/cli/src/commands/operation/diff.rs
 +++ b/cli/src/commands/operation/diff.rs
 @@ -12,6 +12,7 @@
@@ -27,7 +31,7 @@ index cbb513fc162f91191455903b2bb977ba805e76a8..84d2b21a909fb3be94382924d43b1d78
  use jj_lib::refs::diff_named_commit_ids;
  use jj_lib::refs::diff_named_ref_targets;
  use jj_lib::refs::diff_named_remote_refs;
-@@ -590,6 +592,81 @@ pub async fn show_op_diff(
+@@ -592,6 +594,81 @@ pub async fn show_op_diff(
          }
      }
  
@@ -110,10 +114,10 @@ index cbb513fc162f91191455903b2bb977ba805e76a8..84d2b21a909fb3be94382924d43b1d78
  }
  
 diff --git a/lib/src/revset.rs b/lib/src/revset.rs
-index fb96220f2e59b89b2949d84803b7d5247701b2a1..fb42b67ee6cf5340e136b8048f25da6bb504c505 100644
+index 698b31112..f057e5194 100644
 --- a/lib/src/revset.rs
 +++ b/lib/src/revset.rs
-@@ -53,6 +53,7 @@ use crate::op_store::LocalRemoteRefTarget;
+@@ -57,6 +57,7 @@ use crate::op_store::OperationId;
  use crate::op_store::RefTarget;
  use crate::op_store::RemoteRefState;
  use crate::op_walk;
@@ -121,7 +125,7 @@ index fb96220f2e59b89b2949d84803b7d5247701b2a1..fb42b67ee6cf5340e136b8048f25da6b
  use crate::ref_name::RefName;
  use crate::ref_name::RemoteName;
  use crate::ref_name::RemoteRefSymbol;
-@@ -161,6 +162,7 @@ pub enum RevsetCommitRef {
+@@ -167,6 +168,7 @@ pub enum RevsetCommitRef {
          symbol: RemoteRefSymbolExpression,
          remote_ref_state: Option<RemoteRefState>,
      },
@@ -129,7 +133,7 @@ index fb96220f2e59b89b2949d84803b7d5247701b2a1..fb42b67ee6cf5340e136b8048f25da6b
  }
  
  /// String expressions to match `name@remote` bookmarks/tags.
-@@ -465,6 +467,10 @@ impl<St: ExpressionState<CommitRef = RevsetCommitRef>> RevsetExpression<St> {
+@@ -472,6 +474,10 @@ impl<St: ExpressionState<CommitRef = RevsetCommitRef>> RevsetExpression<St> {
              remote_ref_state,
          }))
      }
@@ -140,7 +144,7 @@ index fb96220f2e59b89b2949d84803b7d5247701b2a1..fb42b67ee6cf5340e136b8048f25da6b
  }
  
  // Compound expression
-@@ -990,6 +996,10 @@ static BUILTIN_FUNCTION_MAP: LazyLock<HashMap<&str, RevsetFunction>> = LazyLock:
+@@ -1081,6 +1087,10 @@ static BUILTIN_FUNCTION_MAP: LazyLock<HashMap<&str, RevsetFunction>> = LazyLock:
          let state = None;
          Ok(RevsetExpression::remote_tags(symbol, state))
      });
@@ -151,7 +155,7 @@ index fb96220f2e59b89b2949d84803b7d5247701b2a1..fb42b67ee6cf5340e136b8048f25da6b
      map.insert("tracked_remote_tags", |diagnostics, function, context| {
          let symbol = parse_remote_refs_arguments(diagnostics, function, context)?;
          let state = Some(RemoteRefState::Tracked);
-@@ -2657,6 +2667,12 @@ fn resolve_remote_symbol(
+@@ -2745,6 +2755,12 @@ fn resolve_remote_symbol(
      if let Some(id) = to_resolved_ref("remote_bookmark", symbol, &remote_ref.target)? {
          return Ok(id);
      }
@@ -164,7 +168,7 @@ index fb96220f2e59b89b2949d84803b7d5247701b2a1..fb42b67ee6cf5340e136b8048f25da6b
      Err(make_no_such_symbol_error(repo, symbol.to_string()))
  }
  
-@@ -2702,7 +2718,18 @@ fn make_no_such_symbol_error(repo: &dyn Repo, name: String) -> RevsetResolutionE
+@@ -2790,7 +2806,18 @@ fn make_no_such_symbol_error(repo: &dyn Repo, name: String) -> RevsetResolutionE
      let include_synced_remotes = name.contains('@');
      let tag_names = all_formatted_ref_symbols(repo.view().tags(), include_synced_remotes);
      let bookmark_names = all_formatted_ref_symbols(repo.view().bookmarks(), include_synced_remotes);
@@ -184,7 +188,7 @@ index fb96220f2e59b89b2949d84803b7d5247701b2a1..fb42b67ee6cf5340e136b8048f25da6b
      candidates.dedup(); // tags and bookmarks may have duplicate symbols
      RevsetResolutionError::NoSuchRevision { name, candidates }
  }
-@@ -3031,6 +3058,17 @@ fn resolve_commit_ref(
+@@ -3119,6 +3146,17 @@ fn resolve_commit_ref(
                  .collect();
              Ok(commit_ids)
          }

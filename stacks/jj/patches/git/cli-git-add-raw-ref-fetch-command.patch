@@ -1,4 +1,4 @@
-From 36300947fb45717f196d0e003b896ee70d859542 Mon Sep 17 00:00:00 2001
+From 7d3ec178036312ce696cc4e48ee157c18d78ac7d Mon Sep 17 00:00:00 2001
 From: Benjamin Tan <benjamin@dev.ofcr.se>
 Date: Sat, 5 Sep 2026 13:00:00 +0300
 Subject: cli: git: add raw ref fetch command
@@ -16,12 +16,26 @@ Use the fetch configuration only when it matches one remote. Require
 Refs #4388
 
 Co-authored-by: 4evy <git@evy.pink>
+---
+ CHANGELOG.md                      |   4 +
+ cli/src/commands/git/fetch.rs     |  31 +------
+ cli/src/commands/git/mod.rs       |  18 ++---
+ cli/src/commands/git/push.rs      |   2 +-
+ cli/src/commands/git/ref/fetch.rs | 130 ++++++++++++++++++++++++++++++
+ cli/src/commands/git/ref/mod.rs   |  39 +++++++++
+ cli/src/git_util.rs               |  43 ++++++++++
+ cli/tests/cli-reference@.md.snap  |  35 ++++++++
+ cli/tests/test_git_fetch.rs       | 126 +++++++++++++++++++++++++++++
+ docs/git-compatibility.md         |   7 ++
+ 10 files changed, 392 insertions(+), 43 deletions(-)
+ create mode 100644 cli/src/commands/git/ref/fetch.rs
+ create mode 100644 cli/src/commands/git/ref/mod.rs
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index 896706a6739c97e2683306bdf19d1fc19671751c..d81e062ce619f30bbe5a1a079a1f07edef1bca5d 100644
+index 26adf6ad2..47f56d9cf 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -108,6 +108,10 @@ None
+@@ -168,6 +168,10 @@ None
    directory or loaded via `--config-file`). This allows precise file targeting
    and avoids interactive prompts when multiple config files exist.
  
@@ -33,7 +47,7 @@ index 896706a6739c97e2683306bdf19d1fc19671751c..d81e062ce619f30bbe5a1a079a1f07ed
  
  * [The default `immutable_heads()` set](docs/config.md#set-of-immutable-commits)
 diff --git a/cli/src/commands/git/fetch.rs b/cli/src/commands/git/fetch.rs
-index b62f2a3ad90d04b04d4a32163688ce06683e6a92..2514757320d4a616f1cf13cde21c756c96e474e1 100644
+index b62f2a3ad..251475732 100644
 --- a/cli/src/commands/git/fetch.rs
 +++ b/cli/src/commands/git/fetch.rs
 @@ -16,7 +16,6 @@ use std::io;
@@ -95,7 +109,7 @@ index b62f2a3ad90d04b04d4a32163688ce06683e6a92..2514757320d4a616f1cf13cde21c756c
      ui: &mut Ui,
      tx: &WorkspaceCommandTransaction,
 diff --git a/cli/src/commands/git/mod.rs b/cli/src/commands/git/mod.rs
-index e87926aafa34ad9405796a225b7d2931cf97566f..83495bf3e73f14b0f142f8626d4a4ee427d2e439 100644
+index e87926aaf..83495bf3e 100644
 --- a/cli/src/commands/git/mod.rs
 +++ b/cli/src/commands/git/mod.rs
 @@ -19,6 +19,7 @@ mod fetch;
@@ -156,11 +170,11 @@ index e87926aafa34ad9405796a225b7d2931cf97566f..83495bf3e73f14b0f142f8626d4a4ee4
  
  #[derive(Clone, Copy, Debug)]
 diff --git a/cli/src/commands/git/push.rs b/cli/src/commands/git/push.rs
-index 58c973c34b41837e105eb11eb3ce3c03539e424b..09a69dd6f178b5e589df59c38e9791dd302b68e2 100644
+index 7c15a2247..371996981 100644
 --- a/cli/src/commands/git/push.rs
 +++ b/cli/src/commands/git/push.rs
-@@ -73,10 +73,10 @@ use crate::command_error::cli_error;
- use crate::command_error::cli_error_with_message;
+@@ -75,10 +75,10 @@ use crate::command_error::cli_error_with_message;
+ use crate::command_error::print_parse_diagnostics;
  use crate::command_error::user_error;
  use crate::command_error::user_error_with_message;
 -use crate::commands::git::get_single_remote;
@@ -173,7 +187,7 @@ index 58c973c34b41837e105eb11eb3ce3c03539e424b..09a69dd6f178b5e589df59c38e9791dd
  use crate::revset_util::parse_bookmark_name;
 diff --git a/cli/src/commands/git/ref/fetch.rs b/cli/src/commands/git/ref/fetch.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..4d800eba32fbf28e8b933a90d2f3a0a8ba6b0f40
+index 0000000000000000000000000000000000000000..4d800eba3
 --- /dev/null
 +++ b/cli/src/commands/git/ref/fetch.rs
 @@ -0,0 +1,130 @@
@@ -309,7 +323,7 @@ index 0000000000000000000000000000000000000000..4d800eba32fbf28e8b933a90d2f3a0a8
 +}
 diff --git a/cli/src/commands/git/ref/mod.rs b/cli/src/commands/git/ref/mod.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..6735e67925d0463f13f5ba2acbfb3986b5d1debf
+index 0000000000000000000000000000000000000000..6735e6792
 --- /dev/null
 +++ b/cli/src/commands/git/ref/mod.rs
 @@ -0,0 +1,39 @@
@@ -353,7 +367,7 @@ index 0000000000000000000000000000000000000000..6735e67925d0463f13f5ba2acbfb3986
 +    }
 +}
 diff --git a/cli/src/git_util.rs b/cli/src/git_util.rs
-index f32b4d0ee48d078e6e19b26a64ecc03bebf05f38..38e14aa3f75ac582e7ee8244179f2bc29d023d75 100644
+index f32b4d0ee..38e14aa3f 100644
 --- a/cli/src/git_util.rs
 +++ b/cli/src/git_util.rs
 @@ -29,6 +29,7 @@ use crossterm::terminal::Clear;
@@ -432,7 +446,7 @@ index f32b4d0ee48d078e6e19b26a64ecc03bebf05f38..38e14aa3f75ac582e7ee8244179f2bc2
      let Ok(git_backend) = git::get_git_backend(workspace.repo_loader().store()) else {
          return Ok(false);
 diff --git a/cli/tests/cli-reference@.md.snap b/cli/tests/cli-reference@.md.snap
-index f1d1e0da524c59b90c4ea48dfe808a7f1e19aed6..dcf8c5cf64dccc49ba80bd83735b974066d90130 100644
+index 78b9e2cde..74503f19a 100644
 --- a/cli/tests/cli-reference@.md.snap
 +++ b/cli/tests/cli-reference@.md.snap
 @@ -66,6 +66,8 @@ This document contains the help content for the `jj` command-line program.
@@ -444,7 +458,7 @@ index f1d1e0da524c59b90c4ea48dfe808a7f1e19aed6..dcf8c5cf64dccc49ba80bd83735b9740
  * [`jj git remote`↴](#jj-git-remote)
  * [`jj git remote add`↴](#jj-git-remote-add)
  * [`jj git remote list`↴](#jj-git-remote-list)
-@@ -1660,6 +1662,7 @@ See this [comparison], including a [table of commands].
+@@ -1667,6 +1669,7 @@ See this [comparison], including a [table of commands].
  * `import` — Update repo with changes made in the underlying Git repo
  * `init` — Create a new Git backed repo
  * `push` — Push to a Git remote
@@ -452,7 +466,7 @@ index f1d1e0da524c59b90c4ea48dfe808a7f1e19aed6..dcf8c5cf64dccc49ba80bd83735b9740
  * `remote` — Manage Git remotes
  * `root` — Show the underlying Git directory of a repository using the Git backend
  
-@@ -1954,6 +1957,38 @@ Before the command actually moves, creates, or deletes a remote bookmark, it mak
+@@ -1961,6 +1964,38 @@ Before the command actually moves, creates, or deletes a remote bookmark, it mak
  
  
  
@@ -492,7 +506,7 @@ index f1d1e0da524c59b90c4ea48dfe808a7f1e19aed6..dcf8c5cf64dccc49ba80bd83735b9740
  
  Manage Git remotes
 diff --git a/cli/tests/test_git_fetch.rs b/cli/tests/test_git_fetch.rs
-index e78532b1a5d4bb802ac975b66b3a8cee898f3085..289657be573996c817c2945d0c20b1aa5fe3cee5 100644
+index e78532b1a..289657be5 100644
 --- a/cli/tests/test_git_fetch.rs
 +++ b/cli/tests/test_git_fetch.rs
 @@ -148,6 +148,132 @@ fn test_git_fetch_with_default_config() {
@@ -629,7 +643,7 @@ index e78532b1a5d4bb802ac975b66b3a8cee898f3085..289657be573996c817c2945d0c20b1aa
  fn test_git_fetch_default_remote() {
      let test_env = TestEnvironment::default();
 diff --git a/docs/git-compatibility.md b/docs/git-compatibility.md
-index c9726fe82ddf00ba3d5b47cbde8e1c326894a9c2..862c69fe27159d8eaaf3ac57c550b13eefea97e2 100644
+index c9726fe82..862c69fe2 100644
 --- a/docs/git-compatibility.md
 +++ b/docs/git-compatibility.md
 @@ -97,6 +97,13 @@ into a directory by the same name.

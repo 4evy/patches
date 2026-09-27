@@ -1,4 +1,4 @@
-From 2bac3741a5e86bc380b4a6418d1172d2a18193ab Mon Sep 17 00:00:00 2001
+From 1beb7b3cdb770d4621713595fc5b212a55c9e7db Mon Sep 17 00:00:00 2001
 From: Josh McKinney <joshka@users.noreply.github.com>
 Date: Sat, 5 Sep 2026 13:00:00 +0300
 Subject: git: persist fetched refs in repo view
@@ -7,9 +7,19 @@ Store fetched Git refs in the view so one-off fetches can survive
 across operations without becoming Git bookmarks. Include their normal
 lifecycle behavior with view merges, remote rename/remove operations,
 and Git import reachability pinning.
+---
+ cli/src/commands/operation/mod.rs    |  1 +
+ lib/src/git.rs                       | 20 +++++--
+ lib/src/op_store.rs                  |  4 ++
+ lib/src/protos/simple_op_store.proto |  7 +++
+ lib/src/protos/simple_op_store.rs    | 11 ++++
+ lib/src/repo.rs                      | 73 +++++++++++++++++++++++++
+ lib/src/simple_op_store.rs           | 35 +++++++++++-
+ lib/src/view.rs                      | 80 ++++++++++++++++++++++++++++
+ 8 files changed, 225 insertions(+), 6 deletions(-)
 
 diff --git a/cli/src/commands/operation/mod.rs b/cli/src/commands/operation/mod.rs
-index ee158d940c60edb7fafca1f6b292f9ad72a93e4c..e10c6d9dbe7297d85fe456809a95407f7ad6e526 100644
+index ee158d940..e10c6d9db 100644
 --- a/cli/src/commands/operation/mod.rs
 +++ b/cli/src/commands/operation/mod.rs
 @@ -112,6 +112,7 @@ pub(crate) fn view_with_desired_portions_restored(
@@ -21,10 +31,10 @@ index ee158d940c60edb7fafca1f6b292f9ad72a93e4c..e10c6d9dbe7297d85fe456809a95407f
      }
  }
 diff --git a/lib/src/git.rs b/lib/src/git.rs
-index 2be78816975739b363f8245155489381284b65d6..618fdea5266828c0fc8cde2b9e420c23c288703b 100644
+index fedc71a53..ae6c5d902 100644
 --- a/lib/src/git.rs
 +++ b/lib/src/git.rs
-@@ -1168,16 +1168,26 @@ fn default_remote_ref_state_for(
+@@ -1170,16 +1170,26 @@ fn default_remote_ref_state_for(
      }
  }
  
@@ -40,7 +50,7 @@ index 2be78816975739b363f8245155489381284b65d6..618fdea5266828c0fc8cde2b9e420c23
 +/// Git-import abandonment must not treat their targets as unreachable.
  fn pinned_commit_ids(view: &View) -> Vec<CommitId> {
 -    itertools::chain(view.local_bookmarks(), view.local_tags())
--        .flat_map(|(_, target)| target.added_ids())
+-        .flat_map(|(_, target)| target.present_adds())
 -        .cloned()
 -        .collect()
 +    itertools::chain!(
@@ -50,17 +60,17 @@ index 2be78816975739b363f8245155489381284b65d6..618fdea5266828c0fc8cde2b9e420c23
 +            .values()
 +            .flat_map(|refs| refs.values())
 +    )
-+    .flat_map(|target| target.added_ids())
++    .flat_map(|target| target.present_adds())
 +    .cloned()
 +    .collect()
  }
  
  /// Commits referenced by untracked remote bookmarks/tags including hidden ones.
 diff --git a/lib/src/op_store.rs b/lib/src/op_store.rs
-index 206f6daf8664cedb2d85dc8a0c5e01000cd641a4..ecb789430d4a971aeb2cc6ed7331f30eb940df0a 100644
+index a51714a6d..02ed6c3fe 100644
 --- a/lib/src/op_store.rs
 +++ b/lib/src/op_store.rs
-@@ -252,6 +252,9 @@ pub struct View {
+@@ -168,6 +168,9 @@ pub struct View {
      pub local_tags: BTreeMap<RefNameBuf, RefTarget>,
      pub remote_views: BTreeMap<RemoteNameBuf, RemoteView>,
      pub git_refs: BTreeMap<GitRefNameBuf, RefTarget>,
@@ -70,7 +80,7 @@ index 206f6daf8664cedb2d85dc8a0c5e01000cd641a4..ecb789430d4a971aeb2cc6ed7331f30e
      /// The commit each workspace's Git HEAD points to, keyed by workspace name.
      // TODO: Do we want to store the current bookmark name too?
      pub git_heads: BTreeMap<WorkspaceNameBuf, RefTarget>,
-@@ -270,6 +273,7 @@ impl View {
+@@ -186,6 +189,7 @@ impl View {
              local_tags: BTreeMap::new(),
              remote_views: BTreeMap::new(),
              git_refs: BTreeMap::new(),
@@ -79,7 +89,7 @@ index 206f6daf8664cedb2d85dc8a0c5e01000cd641a4..ecb789430d4a971aeb2cc6ed7331f30e
              wc_commit_ids: BTreeMap::new(),
          }
 diff --git a/lib/src/protos/simple_op_store.proto b/lib/src/protos/simple_op_store.proto
-index 6f0eee46efdec9f1debc5db21222747d727da2ee..65f4df3ff9af7d0b3a8987e1f3bf09e0ac50cf09 100644
+index 6f0eee46e..65f4df3ff 100644
 --- a/lib/src/protos/simple_op_store.proto
 +++ b/lib/src/protos/simple_op_store.proto
 @@ -81,6 +81,12 @@ message GitHead {
@@ -104,7 +114,7 @@ index 6f0eee46efdec9f1debc5db21222747d727da2ee..65f4df3ff9af7d0b3a8987e1f3bf09e0
  }
  
 diff --git a/lib/src/protos/simple_op_store.rs b/lib/src/protos/simple_op_store.rs
-index 2461e5341f4382a36bf1d386d312aa26bfc1dadd..affe21f91dcc48a98cf6c105cc6dfbf8d886601c 100644
+index 2461e5341..affe21f91 100644
 --- a/lib/src/protos/simple_op_store.rs
 +++ b/lib/src/protos/simple_op_store.rs
 @@ -97,6 +97,15 @@ pub struct GitHead {
@@ -133,10 +143,10 @@ index 2461e5341f4382a36bf1d386d312aa26bfc1dadd..affe21f91dcc48a98cf6c105cc6dfbf8
  #[derive(Clone, PartialEq, ::prost::Message)]
  pub struct RemoteView {
 diff --git a/lib/src/repo.rs b/lib/src/repo.rs
-index 651e8f2057ff78ccafb4d1633b07d3f5e8faf40f..79a83a6c1112effae17d178aedcd975272393651 100644
+index 3b6d4b876..868da2cc8 100644
 --- a/lib/src/repo.rs
 +++ b/lib/src/repo.rs
-@@ -1936,6 +1936,41 @@ impl MutableRepo {
+@@ -2025,6 +2025,41 @@ impl MutableRepo {
          Ok(())
      }
  
@@ -178,7 +188,7 @@ index 651e8f2057ff78ccafb4d1633b07d3f5e8faf40f..79a83a6c1112effae17d178aedcd9752
      pub fn git_head(&self, workspace: &WorkspaceName) -> &RefTarget {
          self.view.git_head(workspace)
      }
-@@ -2019,6 +2054,44 @@ impl MutableRepo {
+@@ -2108,6 +2143,44 @@ impl MutableRepo {
              self.merge_git_ref(name, base_target, other_target).await?;
          }
  
@@ -224,10 +234,10 @@ index 651e8f2057ff78ccafb4d1633b07d3f5e8faf40f..79a83a6c1112effae17d178aedcd9752
              diff_named_remote_refs(base.all_remote_bookmarks(), other.all_remote_bookmarks());
          for (symbol, (base_ref, other_ref)) in changed_remote_bookmarks {
 diff --git a/lib/src/simple_op_store.rs b/lib/src/simple_op_store.rs
-index 3ce07035cab1ca5e238976bed7aca466a9feef7f..08b4066769a53f42237c9dec699668b6a635701d 100644
+index 0d81516ab..cee75f277 100644
 --- a/lib/src/simple_op_store.rs
 +++ b/lib/src/simple_op_store.rs
-@@ -584,6 +584,20 @@ fn view_to_proto(view: &View) -> crate::protos::simple_op_store::View {
+@@ -581,6 +581,20 @@ fn view_to_proto(view: &View) -> crate::protos::simple_op_store::View {
          })
          .collect();
  
@@ -248,7 +258,7 @@ index 3ce07035cab1ca5e238976bed7aca466a9feef7f..08b4066769a53f42237c9dec699668b6
      #[expect(deprecated)]
      crate::protos::simple_op_store::View {
          head_ids,
-@@ -602,6 +616,7 @@ fn view_to_proto(view: &View) -> crate::protos::simple_op_store::View {
+@@ -599,6 +613,7 @@ fn view_to_proto(view: &View) -> crate::protos::simple_op_store::View {
          // New/loaded view should have been migrated to the latest format
          has_git_refs_migrated_to_remote_tags: true,
          git_heads,
@@ -256,7 +266,7 @@ index 3ce07035cab1ca5e238976bed7aca466a9feef7f..08b4066769a53f42237c9dec699668b6
      }
  }
  
-@@ -649,6 +664,17 @@ fn view_from_proto(proto: crate::protos::simple_op_store::View) -> Result<View,
+@@ -646,6 +661,17 @@ fn view_from_proto(proto: crate::protos::simple_op_store::View) -> Result<View,
          })
          .collect();
  
@@ -274,7 +284,7 @@ index 3ce07035cab1ca5e238976bed7aca466a9feef7f..08b4066769a53f42237c9dec699668b6
      // Use legacy remote_views only when new data isn't available (jj < 0.34)
      if !proto.remote_views.is_empty() {
          remote_views = remote_views_from_proto(proto.remote_views)?;
-@@ -709,6 +735,7 @@ fn view_from_proto(proto: crate::protos::simple_op_store::View) -> Result<View,
+@@ -706,6 +732,7 @@ fn view_from_proto(proto: crate::protos::simple_op_store::View) -> Result<View,
          local_tags,
          remote_views,
          git_refs,
@@ -282,7 +292,7 @@ index 3ce07035cab1ca5e238976bed7aca466a9feef7f..08b4066769a53f42237c9dec699668b6
          git_heads,
          wc_commit_ids,
      })
-@@ -1002,6 +1029,7 @@ mod tests {
+@@ -997,6 +1024,7 @@ mod tests {
              [CommitId::from_hex("fff111")],
              [CommitId::from_hex("fff222"), CommitId::from_hex("fff333")],
          );
@@ -290,7 +300,7 @@ index 3ce07035cab1ca5e238976bed7aca466a9feef7f..08b4066769a53f42237c9dec699668b6
          let default_wc_commit_id = CommitId::from_hex("abc111");
          let test_wc_commit_id = CommitId::from_hex("abc222");
          View {
-@@ -1031,6 +1059,11 @@ mod tests {
+@@ -1026,6 +1054,11 @@ mod tests {
              git_heads: btreemap! {
                  WorkspaceName::DEFAULT.to_owned() => RefTarget::normal(CommitId::from_hex("fff111")),
              },
@@ -302,7 +312,7 @@ index 3ce07035cab1ca5e238976bed7aca466a9feef7f..08b4066769a53f42237c9dec699668b6
              wc_commit_ids: btreemap! {
                  WorkspaceName::DEFAULT.to_owned() => default_wc_commit_id,
                  "test".into() => test_wc_commit_id,
-@@ -1086,7 +1119,7 @@ mod tests {
+@@ -1081,7 +1114,7 @@ mod tests {
          // Test exact output so we detect regressions in compatibility
          assert_snapshot!(
              ViewId::new(blake2b_hash(&create_view()).to_vec()).hex(),
@@ -312,10 +322,10 @@ index 3ce07035cab1ca5e238976bed7aca466a9feef7f..08b4066769a53f42237c9dec699668b6
      }
  
 diff --git a/lib/src/view.rs b/lib/src/view.rs
-index db1972f1de164827e54ab50c308258029c3aede9..93c1758534972faaa179752c384fb535219578dc 100644
+index eb69eb8d2..58a502589 100644
 --- a/lib/src/view.rs
 +++ b/lib/src/view.rs
-@@ -33,6 +33,7 @@ use crate::ref_name::GitRefName;
+@@ -34,6 +34,7 @@ use crate::ref_name::GitRefName;
  use crate::ref_name::GitRefNameBuf;
  use crate::ref_name::RefName;
  use crate::ref_name::RemoteName;
@@ -323,7 +333,7 @@ index db1972f1de164827e54ab50c308258029c3aede9..93c1758534972faaa179752c384fb535
  use crate::ref_name::RemoteRefSymbol;
  use crate::ref_name::WorkspaceName;
  use crate::ref_name::WorkspaceNameBuf;
-@@ -107,6 +108,10 @@ impl View {
+@@ -108,6 +109,10 @@ impl View {
          &self.data.git_refs
      }
  
@@ -334,7 +344,7 @@ index db1972f1de164827e54ab50c308258029c3aede9..93c1758534972faaa179752c384fb535
      pub fn git_head(&self, workspace: &WorkspaceName) -> &RefTarget {
          self.data.git_heads.get(workspace).flatten()
      }
-@@ -388,12 +393,21 @@ impl View {
+@@ -389,12 +394,21 @@ impl View {
  
      pub fn remove_remote(&mut self, remote_name: &RemoteName) {
          self.data.remote_views.remove(remote_name);
@@ -356,7 +366,7 @@ index db1972f1de164827e54ab50c308258029c3aede9..93c1758534972faaa179752c384fb535
      }
  
      /// Iterates local tag `(name, target)`s in lexicographical order.
-@@ -574,6 +588,67 @@ impl View {
+@@ -575,6 +589,67 @@ impl View {
          }
      }
  
@@ -424,7 +434,7 @@ index db1972f1de164827e54ab50c308258029c3aede9..93c1758534972faaa179752c384fb535
      /// Sets Git HEAD for the given workspace to point to the given target. If
      /// the target is absent, the entry will be removed.
      pub fn set_git_head_target(&mut self, workspace: &WorkspaceName, target: RefTarget) {
-@@ -607,6 +682,7 @@ impl View {
+@@ -608,6 +683,7 @@ impl View {
              local_tags,
              remote_views,
              git_refs,
@@ -432,7 +442,7 @@ index db1972f1de164827e54ab50c308258029c3aede9..93c1758534972faaa179752c384fb535
              git_heads,
              wc_commit_ids,
          } = &self.data;
-@@ -620,6 +696,10 @@ impl View {
+@@ -621,6 +697,10 @@ impl View {
                      .flat_map(|remote_ref| ref_target_ids(&remote_ref.target))
              }),
              git_refs.values().flat_map(ref_target_ids),

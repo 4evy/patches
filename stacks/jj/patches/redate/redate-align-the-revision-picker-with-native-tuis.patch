@@ -1,4 +1,4 @@
-From 0860808a94bd48f9a2551761af686b02b921493f Mon Sep 17 00:00:00 2001
+From de0dd59a9111a9c272cc1abca9a63c7b34a4a6e9 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
 Date: Sat, 5 Sep 2026 13:00:00 +0300
 Subject: redate: align the revision picker with native TUIs
@@ -6,9 +6,18 @@ Subject: redate: align the revision picker with native TUIs
 Use a borderless title/main/status layout with stable checked markers and a full-row focus highlight so graph glyphs only describe topology. Keep the focused revision timestamp in the title bar, make key hints responsive, and add select-all, boundary navigation, anchored Shift range selection, and the standard c-to-confirm binding.
 
 Use jj's standard prompt for timestamps instead of a bespoke raw-mode line editor. Accept exact and relative local-time expressions, add --timestamp for non-interactive use, preserve explicit offsets, and cover the interaction and responsive layouts with tests.
+---
+ cli/src/commands/arrange.rs      |  14 +-
+ cli/src/commands/redate.rs       | 424 ++++++++++++++++++++++++++-----
+ cli/src/config/colors.toml       |   3 -
+ cli/src/config/templates.toml    |   1 -
+ cli/src/tui_util.rs              |  22 +-
+ cli/tests/test_redate_command.rs |  50 +++-
+ lib/src/time_util.rs             |  49 ++++
+ 7 files changed, 485 insertions(+), 78 deletions(-)
 
 diff --git a/cli/src/commands/arrange.rs b/cli/src/commands/arrange.rs
-index 5316df48b97f3acea427a337f339e5ace63c986d..68c23c838b52282bf65ea7e557ffccf83bcdf4f7 100644
+index 5316df48b..68c23c838 100644
 --- a/cli/src/commands/arrange.rs
 +++ b/cli/src/commands/arrange.rs
 @@ -41,10 +41,6 @@ use ratatui::layout::Direction;
@@ -40,7 +49,7 @@ index 5316df48b97f3acea427a337f339e5ace63c986d..68c23c838b52282bf65ea7e557ffccf8
      let render_commit = |commit: &Commit, is_context_node: bool| {
          let mut text_lines = vec![];
 diff --git a/cli/src/commands/redate.rs b/cli/src/commands/redate.rs
-index 974c35f5f684e68ab72ea2a0e9bb9d8fdc66ac3c..c694150683ef7ef9cb0ec3722d9b51896a9b0d2b 100644
+index 974c35f5f..c69415068 100644
 --- a/cli/src/commands/redate.rs
 +++ b/cli/src/commands/redate.rs
 @@ -18,7 +18,6 @@ use std::io::IsTerminal as _;
@@ -667,7 +676,7 @@ index 974c35f5f684e68ab72ea2a0e9bb9d8fdc66ac3c..c694150683ef7ef9cb0ec3722d9b5189
          Ok(())
      }
 diff --git a/cli/src/config/colors.toml b/cli/src/config/colors.toml
-index 6172ab4413f4bd9981731ad0ef5e14b2225c1b6f..c9583eae97f736a52640ed360677f6120cd9ad78 100644
+index 6172ab441..c9583eae9 100644
 --- a/cli/src/config/colors.toml
 +++ b/cli/src/config/colors.toml
 @@ -118,10 +118,7 @@
@@ -682,7 +691,7 @@ index 6172ab4413f4bd9981731ad0ef5e14b2225c1b6f..c9583eae97f736a52640ed360677f612
  "redate commit empty" = { fg = "bright black", italic = true }
 -"redate commit timestamp" = "bright black"
 diff --git a/cli/src/config/templates.toml b/cli/src/config/templates.toml
-index 46fe90e0bb9b318cb4bdf20e5abb9125e2c22da1..73ed74166f54c3953b9b1544e2adc87f3fe65d9b 100644
+index 46fe90e0b..73ed74166 100644
 --- a/cli/src/config/templates.toml
 +++ b/cli/src/config/templates.toml
 @@ -7,7 +7,6 @@ redate = '''
@@ -694,7 +703,7 @@ index 46fe90e0bb9b318cb4bdf20e5abb9125e2c22da1..73ed74166f54c3953b9b1544e2adc87f
  '''
  
 diff --git a/cli/src/tui_util.rs b/cli/src/tui_util.rs
-index 44c457245325ec01607656366ee2aa4511a979a1..6a244c5f82e4a8109bf2c76b2b6c72f698030d0d 100644
+index 44c457245..6a244c5f8 100644
 --- a/cli/src/tui_util.rs
 +++ b/cli/src/tui_util.rs
 @@ -14,6 +14,8 @@
@@ -737,7 +746,7 @@ index 44c457245325ec01607656366ee2aa4511a979a1..6a244c5f82e4a8109bf2c76b2b6c72f6
  ///
  /// Terminal state is restored even if drawing or event handling fails.
 diff --git a/cli/tests/test_redate_command.rs b/cli/tests/test_redate_command.rs
-index 0f29d396f89d652ae2d824dc86fb0d475190f648..b4a80a3b3d37a4e6d7fe2ec643c2dcb06daccf3d 100644
+index 0f29d396f..b4a80a3b3 100644
 --- a/cli/tests/test_redate_command.rs
 +++ b/cli/tests/test_redate_command.rs
 @@ -47,12 +47,60 @@ fn test_redate_retries_invalid_timestamp_and_can_cancel() {
@@ -803,7 +812,7 @@ index 0f29d396f89d652ae2d824dc86fb0d475190f648..b4a80a3b3d37a4e6d7fe2ec643c2dcb0
  fn test_redate_preserves_descendant_metadata_and_signs_on_request() {
      let test_env = TestEnvironment::default();
 diff --git a/lib/src/time_util.rs b/lib/src/time_util.rs
-index d1865a0ee2db6f3ceed9df40e86c307844a7f2c5..4ee5c8f3bf4abfd3b43410dbe7a788da929bd968 100644
+index 0cd1839c6..20b957657 100644
 --- a/lib/src/time_util.rs
 +++ b/lib/src/time_util.rs
 @@ -72,6 +72,15 @@ pub enum DatePatternParseError {
@@ -852,7 +861,7 @@ index d1865a0ee2db6f3ceed9df40e86c307844a7f2c5..4ee5c8f3bf4abfd3b43410dbe7a788da
 +
  #[cfg(test)]
  mod tests {
-     use assert_matches::assert_matches;
+     use std::assert_matches;
 @@ -221,4 +254,20 @@ mod tests {
          assert_eq!(timestamp, human_readable);
          assert_eq!(timestamp, human_readable_explicit);

@@ -1,15 +1,29 @@
-From e35d9ac32b1907d76dd7d441220d182746e4eb7e Mon Sep 17 00:00:00 2001
+From 58a00b38a19ebfe38449fabfaa080973547859c4 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
 Date: Sat, 5 Sep 2026 13:00:00 +0300
 Subject: git: harden fetched ref integration
 
 Reuse canonical fetched-ref iteration and raw-fetch plumbing, normalize object IDs, preserve accurate cleanup errors, report merged ref conflicts, and avoid shallow-index rebuilds for order-only changes.
+---
+ CHANGELOG.md                       | 22 ++++------
+ cli/src/command_error.rs           |  1 +
+ cli/src/commands/git/ref/fetch.rs  | 16 +++----
+ cli/src/commands/git/ref/list.rs   | 32 +++++++++++---
+ cli/src/commands/operation/diff.rs | 45 +++-----------------
+ cli/src/commit_templater.rs        | 26 ++++++------
+ cli/tests/test_git_fetch.rs        | 68 ++++++++++++++++++++++++++----
+ lib/src/git.rs                     | 44 ++++++++++---------
+ lib/src/repo.rs                    | 57 ++++++-------------------
+ lib/src/revset.rs                  | 10 ++---
+ lib/src/view.rs                    | 23 +++++++---
+ lib/tests/test_git.rs              | 65 ++++++++++++++++++++++++++++
+ 12 files changed, 243 insertions(+), 166 deletions(-)
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index 57838260e048a7f9a633783a0684e6fefd1a3a83..8b9746ad9cc24f65f9b790cde851c3d30b3cd2f6 100644
+index 51000b0de..797198229 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -108,14 +108,20 @@ None
+@@ -168,14 +168,20 @@ None
    directory or loaded via `--config-file`). This allows precise file targeting
    and avoids interactive prompts when multiple config files exist.
  
@@ -33,7 +47,7 @@ index 57838260e048a7f9a633783a0684e6fefd1a3a83..8b9746ad9cc24f65f9b790cde851c3d3
  ### Fixed bugs
  
  * [The default `immutable_heads()` set](docs/config.md#set-of-immutable-commits)
-@@ -229,16 +235,6 @@ None
+@@ -289,16 +295,6 @@ None
  
  ### New features
  
@@ -51,7 +65,7 @@ index 57838260e048a7f9a633783a0684e6fefd1a3a83..8b9746ad9cc24f65f9b790cde851c3d3
    point where multiple branches merge.
  
 diff --git a/cli/src/command_error.rs b/cli/src/command_error.rs
-index 87e31d94cedd40c51f0090ab053ad8bb932d0f35..00a298f769c13edc596aabb72395ce32bd3db4bb 100644
+index 87e31d94c..00a298f76 100644
 --- a/cli/src/command_error.rs
 +++ b/cli/src/command_error.rs
 @@ -592,6 +592,7 @@ jj currently does not support partial clones. To use jj with this repository, tr
@@ -63,7 +77,7 @@ index 87e31d94cedd40c51f0090ab053ad8bb932d0f35..00a298f769c13edc596aabb72395ce32
                  | GitFetchError::ShallowCommits(_)
                  | GitFetchError::RefreshShallowState(_)
 diff --git a/cli/src/commands/git/ref/fetch.rs b/cli/src/commands/git/ref/fetch.rs
-index 72dffd4a4b6c427065b84b305822addbbd0efcb9..2c868dac57c58f46a050e4fc73fea76922b91bf4 100644
+index 72dffd4a4..2c868dac5 100644
 --- a/cli/src/commands/git/ref/fetch.rs
 +++ b/cli/src/commands/git/ref/fetch.rs
 @@ -102,7 +102,7 @@ pub struct GitRefFetchArgs {
@@ -130,10 +144,10 @@ index 72dffd4a4b6c427065b84b305822addbbd0efcb9..2c868dac57c58f46a050e4fc73fea769
          }
      }
 diff --git a/cli/src/commands/git/ref/list.rs b/cli/src/commands/git/ref/list.rs
-index 7e48fc56c5bb45729f6723bcaff460c88ec0a5cc..d259e7e6bd1de79716761f3129fff51ea0f914ff 100644
+index 7e48fc56c..1bf628a24 100644
 --- a/cli/src/commands/git/ref/list.rs
 +++ b/cli/src/commands/git/ref/list.rs
-@@ -52,15 +52,30 @@ pub async fn cmd_git_ref_list(
+@@ -52,16 +52,31 @@ pub async fn cmd_git_ref_list(
          .map(canonicalize_git_ref_name)
          .transpose()?;
      let mut matched = 0;
@@ -150,7 +164,7 @@ index 7e48fc56c5bb45729f6723bcaff460c88ec0a5cc..d259e7e6bd1de79716761f3129fff51e
 +            continue;
 +        }
 +        matched += 1;
-+        if target.has_conflict() {
++        if !target.is_resolved() {
 +            has_conflict = true;
 +            writeln!(
 +                ui.stdout(),
@@ -158,17 +172,19 @@ index 7e48fc56c5bb45729f6723bcaff460c88ec0a5cc..d259e7e6bd1de79716761f3129fff51e
 +                remote_name.as_symbol(),
 +                ref_name.as_symbol()
 +            )?;
-+            for id in target.added_ids() {
++            for id in target.present_adds() {
 +                writeln!(ui.stdout(), "  + {}", id.hex())?;
 +            }
-+            for id in target.removed_ids() {
++            for id in target.present_removes() {
 +                writeln!(ui.stdout(), "  - {}", id.hex())?;
              }
 -            matched += 1;
+-            let target_ids = target.added_ids().map(|id| id.hex()).join(", ");
 +        } else {
-             let target_ids = target.added_ids().map(|id| id.hex()).join(", ");
++            let target_ids = target.present_adds().map(|id| id.hex()).join(", ");
              writeln!(
                  ui.stdout(),
+                 "{} {} {}",
 @@ -73,6 +88,11 @@ pub async fn cmd_git_ref_list(
      }
      if matched == 0 {
@@ -182,7 +198,7 @@ index 7e48fc56c5bb45729f6723bcaff460c88ec0a5cc..d259e7e6bd1de79716761f3129fff51e
      Ok(())
  }
 diff --git a/cli/src/commands/operation/diff.rs b/cli/src/commands/operation/diff.rs
-index 84d2b21a909fb3be94382924d43b1d78f27bd7b5..dbe8b692c13d5ab8440841dde0c652b8e0b16077 100644
+index 8712cf01f..c86046529 100644
 --- a/cli/src/commands/operation/diff.rs
 +++ b/cli/src/commands/operation/diff.rs
 @@ -12,7 +12,6 @@
@@ -201,7 +217,7 @@ index 84d2b21a909fb3be94382924d43b1d78f27bd7b5..dbe8b692c13d5ab8440841dde0c652b8
  use jj_lib::refs::diff_named_commit_ids;
  use jj_lib::refs::diff_named_ref_targets;
  use jj_lib::refs::diff_named_remote_refs;
-@@ -592,42 +590,11 @@ pub async fn show_op_diff(
+@@ -594,42 +592,11 @@ pub async fn show_op_diff(
          }
      }
  
@@ -249,7 +265,7 @@ index 84d2b21a909fb3be94382924d43b1d78f27bd7b5..dbe8b692c13d5ab8440841dde0c652b8
      if !changed_fetched_refs.is_empty() {
          writeln!(formatter)?;
          with_content_format
-@@ -635,7 +602,7 @@ pub async fn show_op_diff(
+@@ -637,7 +604,7 @@ pub async fn show_op_diff(
                  writeln!(formatter, "Changed fetched Git refs:")
              })
              .await?;
@@ -259,7 +275,7 @@ index 84d2b21a909fb3be94382924d43b1d78f27bd7b5..dbe8b692c13d5ab8440841dde0c652b8
                  .write(formatter, async |formatter| {
                      writeln!(
 diff --git a/cli/src/commit_templater.rs b/cli/src/commit_templater.rs
-index 6f2f0ad42e8a71a9697fe88edc910753a6286183..e7d2ab64a0fd162bdc3542acc2037b50de947930 100644
+index bbc11fd99..efb7929da 100644
 --- a/cli/src/commit_templater.rs
 +++ b/cli/src/commit_templater.rs
 @@ -17,7 +17,6 @@
@@ -270,7 +286,7 @@ index 6f2f0ad42e8a71a9697fe88edc910753a6286183..e7d2ab64a0fd162bdc3542acc2037b50
  use std::collections::HashMap;
  use std::fmt;
  use std::fmt::Display;
-@@ -63,9 +62,9 @@ use jj_lib::op_store::LocalRemoteRefTarget;
+@@ -65,9 +64,9 @@ use jj_lib::op_store::LocalRemoteRefTarget;
  use jj_lib::op_store::OperationId;
  use jj_lib::op_store::RefTarget;
  use jj_lib::op_store::RemoteRef;
@@ -282,7 +298,7 @@ index 6f2f0ad42e8a71a9697fe88edc910753a6286183..e7d2ab64a0fd162bdc3542acc2037b50
  use jj_lib::ref_name::WorkspaceName;
  use jj_lib::ref_name::WorkspaceNameBuf;
  use jj_lib::repo::Repo;
-@@ -1016,8 +1015,11 @@ impl<'repo> CommitKeywordCache<'repo> {
+@@ -1053,8 +1052,11 @@ impl<'repo> CommitKeywordCache<'repo> {
      }
  
      pub fn fetched_git_refs_index(&self, repo: &dyn Repo) -> &Rc<CommitRefsIndex> {
@@ -296,7 +312,7 @@ index 6f2f0ad42e8a71a9697fe88edc910753a6286183..e7d2ab64a0fd162bdc3542acc2037b50
      }
  
      pub fn is_immutable_fn(
-@@ -2033,17 +2035,13 @@ fn build_commit_refs_index<'a, K: Into<String>>(
+@@ -2071,17 +2073,13 @@ fn build_commit_refs_index<'a, K: Into<String>>(
  }
  
  fn build_fetched_git_refs_index<'a>(
@@ -315,12 +331,12 @@ index 6f2f0ad42e8a71a9697fe88edc910753a6286183..e7d2ab64a0fd162bdc3542acc2037b50
 +    for ((remote_name, ref_name), target) in fetched_refs {
 +        let commit_ref =
 +            CommitRef::remote_only(ref_name.as_str(), remote_name.as_str(), target.clone());
-+        index.insert(target.added_ids(), commit_ref);
++        index.insert(target.present_adds(), commit_ref);
      }
      index
  }
 diff --git a/cli/tests/test_git_fetch.rs b/cli/tests/test_git_fetch.rs
-index da1deeff99e8e3357c4827f16be1d62513718a2b..f57278df98f13e2f7801e2854d3d189dc13469cd 100644
+index f7dea81c7..a6a31801f 100644
 --- a/cli/tests/test_git_fetch.rs
 +++ b/cli/tests/test_git_fetch.rs
 @@ -716,7 +716,9 @@ fn test_git_ref_fetch_non_commit_ref_deletes_temporary_ref() -> TestResult {
@@ -426,10 +442,10 @@ index da1deeff99e8e3357c4827f16be1d62513718a2b..f57278df98f13e2f7801e2854d3d189d
  fn test_git_ref_fetch_keeps_rewritten_target_visible_after_undo() {
      let test_env = TestEnvironment::default();
 diff --git a/lib/src/git.rs b/lib/src/git.rs
-index 1c2f199cac5340cfc4a8a8dc25526b1e36ca2030..d63d6acd13e535e0faa1da1ddd20111089d75488 100644
+index c511ecaf3..4288d6fbe 100644
 --- a/lib/src/git.rs
 +++ b/lib/src/git.rs
-@@ -2965,6 +2965,12 @@ pub enum GitFetchError {
+@@ -2967,6 +2967,12 @@ pub enum GitFetchError {
          #[source]
          source: Box<dyn std::error::Error + Send + Sync>,
      },
@@ -442,7 +458,7 @@ index 1c2f199cac5340cfc4a8a8dc25526b1e36ca2030..d63d6acd13e535e0faa1da1ddd201110
      #[error(transparent)]
      RemoteName(#[from] GitRemoteNameError),
      #[error(transparent)]
-@@ -3919,33 +3925,31 @@ fn delete_temporary_fetch_refs(
+@@ -3921,33 +3927,31 @@ fn delete_temporary_fetch_refs(
      git_repo: &gix::Repository,
      prefix: &str,
  ) -> Result<(), GitFetchError> {
@@ -495,22 +511,22 @@ index 1c2f199cac5340cfc4a8a8dc25526b1e36ca2030..d63d6acd13e535e0faa1da1ddd201110
  pub enum GitPushError {
      #[error("No git remote named '{}'", .0.as_symbol())]
 diff --git a/lib/src/repo.rs b/lib/src/repo.rs
-index ee492b18f76d7f2b3b39a922a83853a18815f391..bf6739fe38098ea793b310ad67947f4635c09e83 100644
+index 8e8c2ee6e..4ef326554 100644
 --- a/lib/src/repo.rs
 +++ b/lib/src/repo.rs
-@@ -1309,6 +1309,11 @@ impl MutableRepo {
+@@ -1397,6 +1397,11 @@ impl MutableRepo {
              .try_collect()
              .await?;
  
 +        let fetched_ref_heads = self
 +            .view()
 +            .all_fetched_git_refs()
-+            .flat_map(|(_, target)| target.added_ids().cloned())
++            .flat_map(|(_, target)| target.present_adds().cloned())
 +            .collect_vec();
          let mut view = self.view().store_view().clone();
          for commit_id in self.parent_mapping.keys() {
              view.head_ids.remove(commit_id);
-@@ -1318,12 +1323,6 @@ impl MutableRepo {
+@@ -1406,12 +1411,6 @@ impl MutableRepo {
          // the user's later local rewrite of that change. If that commit is
          // rewritten locally, removing the old head would otherwise leave refs
          // like refs/pull/123/head@origin pointing at a hidden commit.
@@ -523,7 +539,7 @@ index ee492b18f76d7f2b3b39a922a83853a18815f391..bf6739fe38098ea793b310ad67947f46
          view.head_ids.extend(fetched_ref_heads);
          self.set_view(view);
          // TODO: indexing error shouldn't be a "RevsetEvaluationError"
-@@ -1669,9 +1668,8 @@ impl MutableRepo {
+@@ -1758,9 +1757,8 @@ impl MutableRepo {
                  // user's later local rewrite of that change. Keep that original
                  // commit visible so refs like refs/pull/123/head@origin don't
                  // end up pointing at a hidden commit after `jj edit`.
@@ -532,10 +548,19 @@ index ee492b18f76d7f2b3b39a922a83853a18815f391..bf6739fe38098ea793b310ad67947f46
 -                    .flat_map(|refs| refs.values())
 +                view.all_fetched_git_refs()
 +                    .map(|(_, target)| target)
-                     .flat_map(|target| target.added_ids()),
+                     .flat_map(|target| target.present_adds()),
              )
              .any(|id| id == commit_id)
-@@ -2073,42 +2071,11 @@ impl MutableRepo {
+@@ -2058,7 +2056,7 @@ impl MutableRepo {
+         ref_name: &GitRefName,
+         target: RefTarget,
+     ) {
+-        for id in target.added_ids() {
++        for id in target.present_adds() {
+             self.view.add_head(id);
+         }
+         self.view
+@@ -2162,42 +2160,11 @@ impl MutableRepo {
              self.merge_git_ref(name, base_target, other_target).await?;
          }
  
@@ -583,10 +608,10 @@ index ee492b18f76d7f2b3b39a922a83853a18815f391..bf6739fe38098ea793b310ad67947f46
  
          let changed_remote_bookmarks =
 diff --git a/lib/src/revset.rs b/lib/src/revset.rs
-index fb42b67ee6cf5340e136b8048f25da6bb504c505..6d3cd2f25c81a07b13944397bb9c5a421bf0de68 100644
+index f057e5194..f8a9639db 100644
 --- a/lib/src/revset.rs
 +++ b/lib/src/revset.rs
-@@ -2720,12 +2720,8 @@ fn make_no_such_symbol_error(repo: &dyn Repo, name: String) -> RevsetResolutionE
+@@ -2808,12 +2808,8 @@ fn make_no_such_symbol_error(repo: &dyn Repo, name: String) -> RevsetResolutionE
      let bookmark_names = all_formatted_ref_symbols(repo.view().bookmarks(), include_synced_remotes);
      let fetched_ref_names = repo
          .view()
@@ -601,20 +626,20 @@ index fb42b67ee6cf5340e136b8048f25da6bb504c505..6d3cd2f25c81a07b13944397bb9c5a42
      let mut candidates = collect_similar(
          &name,
          itertools::chain!(tag_names, bookmark_names, fetched_ref_names),
-@@ -3064,7 +3060,7 @@ fn resolve_commit_ref(
+@@ -3152,7 +3148,7 @@ fn resolve_commit_ref(
              let commit_ids = repo
                  .view()
                  .fetched_git_refs_matching(&name_matcher, &remote_matcher)
 -                .flat_map(|(_, _, target)| target.added_ids())
-+                .flat_map(|(_, target)| target.added_ids())
++                .flat_map(|(_, target)| target.present_adds())
                  .cloned()
                  .collect();
              Ok(commit_ids)
 diff --git a/lib/src/view.rs b/lib/src/view.rs
-index 93c1758534972faaa179752c384fb535219578dc..1d4d92d0ca103689771165de4da0d8fd60c5b5a0 100644
+index 58a502589..d6690431b 100644
 --- a/lib/src/view.rs
 +++ b/lib/src/view.rs
-@@ -112,6 +112,20 @@ impl View {
+@@ -113,6 +113,20 @@ impl View {
          &self.data.fetched_git_refs
      }
  
@@ -635,7 +660,7 @@ index 93c1758534972faaa179752c384fb535219578dc..1d4d92d0ca103689771165de4da0d8fd
      pub fn git_head(&self, workspace: &WorkspaceName) -> &RefTarget {
          self.data.git_heads.get(workspace).flatten()
      }
-@@ -604,16 +618,13 @@ impl View {
+@@ -605,16 +619,13 @@ impl View {
          &self,
          ref_matcher: &StringMatcher,
          remote_matcher: &StringMatcher,
@@ -656,10 +681,10 @@ index 93c1758534972faaa179752c384fb535219578dc..1d4d92d0ca103689771165de4da0d8fd
      }
  
 diff --git a/lib/tests/test_git.rs b/lib/tests/test_git.rs
-index 2a9c70eadfa44ebcc854588865d1011c7e2b2f31..f0323ea32cfed1f8411c0b769d09af3a5476c02e 100644
+index e1d2704d7..c55d37519 100644
 --- a/lib/tests/test_git.rs
 +++ b/lib/tests/test_git.rs
-@@ -4345,6 +4345,71 @@ fn test_fetch_commit_rejects_invalid_source() -> TestResult {
+@@ -4348,6 +4348,71 @@ fn test_fetch_commit_rejects_invalid_source() -> TestResult {
      Ok(())
  }
  

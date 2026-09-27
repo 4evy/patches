@@ -10,7 +10,6 @@ git/git-keep-fetched-ref-targets-visible.patch
 git/git-fetch-refresh-ancestry-after-shallow-boundary-changes.patch
 git/git-ref-fetch-fetch-shallow-review-stacks.patch
 docs/docs-document-fetched-git-refs-and-shallow-fetching.patch
-tests/test-update-operation-ids-for-fetched-ref-state.patch
 git/git-ref-fetch-support-patterns-and-commit-ids.patch
 git/git-harden-fetched-ref-integration.patch
 git/git-push-make-sign-on-push-accept-a-revset.patch
@@ -23,3 +22,4 @@ tui/tui-share-alternate-screen-setup.patch
 redate/redate-add-an-interactive-timestamp-editor.patch
 redate/redate-align-the-revision-picker-with-native-tuis.patch
 git/git-push-preserve-redated-metadata-while-signing.patch
+tests/test-update-operation-ids-for-fetched-ref-state.patch

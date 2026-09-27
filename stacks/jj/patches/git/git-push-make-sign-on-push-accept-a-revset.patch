@@ -1,4 +1,4 @@
-From 74d6327123259dd6c6c80168555a8d7d022ec894 Mon Sep 17 00:00:00 2001
+From 6eea15d1e49f4ad266a43d295708fa04cabaf0a6 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
 Date: Sat, 5 Sep 2026 13:00:00 +0300
 Subject: git push: make sign-on-push accept a revset
@@ -6,12 +6,23 @@ Subject: git push: make sign-on-push accept a revset
 Let users define signing policy with the same revset language used by other jj configuration. Intersect the configured selector with commits outgoing to the pushed references and force-sign exactly the selected commits.
 
 Default to none() and migrate boolean values for six releases so existing configurations keep their old mutable, unsigned, own-commit behavior.
+---
+ CHANGELOG.md                            |  4 ++
+ cli/src/commands/git/push.rs            | 59 +++++++++++--------------
+ cli/src/config-schema.json              |  6 +--
+ cli/src/config.rs                       | 24 ++++++++++
+ cli/src/config/misc.toml                |  2 +-
+ cli/tests/sample-configs/valid/git.toml |  2 +-
+ cli/tests/test_config_command.rs        | 39 ++++++++++++++++
+ cli/tests/test_git_push.rs              |  2 +-
+ docs/config.md                          | 15 +++----
+ 9 files changed, 107 insertions(+), 46 deletions(-)
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index 8b9746ad9cc24f65f9b790cde851c3d30b3cd2f6..a78138b2ba2dccb8741be00f6a80e9d665c9efac 100644
+index 797198229..6169910c5 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -83,6 +83,10 @@ published.
+@@ -143,6 +143,10 @@ published.
  * `jj git import` in non-colocated repositories no longer imports commits from a
    detached Git HEAD branch.
  
@@ -23,7 +34,7 @@ index 8b9746ad9cc24f65f9b790cde851c3d30b3cd2f6..a78138b2ba2dccb8741be00f6a80e9d6
  
  None
 diff --git a/cli/src/commands/git/push.rs b/cli/src/commands/git/push.rs
-index f243e8956acda48393dda8625af2fb3060d3f40a..208d3d11bfd6436a66eb5ae9dc913d01b4620424 100644
+index 9b1dda15b..31995fdd3 100644
 --- a/cli/src/commands/git/push.rs
 +++ b/cli/src/commands/git/push.rs
 @@ -14,7 +14,6 @@
@@ -34,7 +45,7 @@ index f243e8956acda48393dda8625af2fb3060d3f40a..208d3d11bfd6436a66eb5ae9dc913d01
  use std::io;
  use std::io::Write as _;
  use std::iter;
-@@ -559,19 +558,18 @@ pub async fn cmd_git_push(
+@@ -563,19 +562,18 @@ pub async fn cmd_git_push(
          return Ok(());
      }
  
@@ -66,7 +77,7 @@ index f243e8956acda48393dda8625af2fb3060d3f40a..208d3d11bfd6436a66eb5ae9dc913d01
      }
  
      let git_settings = GitSettings::from_settings(tx.settings())?;
-@@ -914,22 +912,18 @@ fn ready_to_push_revset_expression(
+@@ -918,22 +916,18 @@ fn ready_to_push_revset_expression(
  async fn sign_commits_before_push<'a>(
      ui: &Ui,
      tx: &mut WorkspaceCommandTransaction<'_>,
@@ -98,7 +109,7 @@ index f243e8956acda48393dda8625af2fb3060d3f40a..208d3d11bfd6436a66eb5ae9dc913d01
          .take(11)
          .try_collect()
          .await?;
-@@ -951,10 +945,11 @@ async fn sign_commits_before_push<'a>(
+@@ -955,10 +949,11 @@ async fn sign_commits_before_push<'a>(
          )?;
      }
  
@@ -114,7 +125,7 @@ index f243e8956acda48393dda8625af2fb3060d3f40a..208d3d11bfd6436a66eb5ae9dc913d01
          .map_ok(|commit| commit.id().clone())
          .try_collect()
          .await?;
-@@ -981,7 +976,7 @@ async fn sign_commits_before_push<'a>(
+@@ -985,7 +980,7 @@ async fn sign_commits_before_push<'a>(
                      if commit_ids.contains(&old_commit_id) {
                          let commit = rewriter
                              .reparent()
@@ -124,7 +135,7 @@ index f243e8956acda48393dda8625af2fb3060d3f40a..208d3d11bfd6436a66eb5ae9dc913d01
                              .await?;
                          old_to_new_commits_map.insert(old_commit_id, commit.id().clone());
 diff --git a/cli/src/config-schema.json b/cli/src/config-schema.json
-index af171a0f4616828638843270d2cd5672b793e2e9..2aee503bad83264761ce2bf33a8e83e51fe86e77 100644
+index 426dc7710..d1ac5cbc8 100644
 --- a/cli/src/config-schema.json
 +++ b/cli/src/config-schema.json
 @@ -546,9 +546,9 @@
@@ -141,10 +152,10 @@ index af171a0f4616828638843270d2cd5672b793e2e9..2aee503bad83264761ce2bf33a8e83e5
                  "track-default-bookmark-on-clone": {
                      "type": "boolean",
 diff --git a/cli/src/config.rs b/cli/src/config.rs
-index b8cdfae1fefa31ae38c81d2cd24108a1522b33bf..d2416bdcfa7fc7181a96a9969e096fe4c4c9c580 100644
+index 7beb656d8..032227b1a 100644
 --- a/cli/src/config.rs
 +++ b/cli/src/config.rs
-@@ -1041,6 +1041,30 @@ pub fn default_config_migrations() -> Vec<ConfigMigrationRule> {
+@@ -1047,6 +1047,30 @@ pub fn default_config_migrations() -> Vec<ConfigMigrationRule> {
                  Ok(messages.join(", "))
              },
          ),
@@ -176,7 +187,7 @@ index b8cdfae1fefa31ae38c81d2cd24108a1522b33bf..d2416bdcfa7fc7181a96a9969e096fe4
  }
  
 diff --git a/cli/src/config/misc.toml b/cli/src/config/misc.toml
-index 70ed210c17e54ed3f39f040a48bafa799565dc29..0178cf95532230260042eae2fb1f04f5bdc25069 100644
+index 70ed210c1..0178cf955 100644
 --- a/cli/src/config/misc.toml
 +++ b/cli/src/config/misc.toml
 @@ -28,7 +28,7 @@ disabled-branches = []
@@ -189,7 +200,7 @@ index 70ed210c17e54ed3f39f040a48bafa799565dc29..0178cf95532230260042eae2fb1f04f5
  
  [ui]
 diff --git a/cli/tests/sample-configs/valid/git.toml b/cli/tests/sample-configs/valid/git.toml
-index f42fee952ec0a99039368561707bf9931fe4b79a..c0d64f8e1ce2443aed29a6ddc79bb3d3870e9a05 100644
+index f42fee952..c0d64f8e1 100644
 --- a/cli/tests/sample-configs/valid/git.toml
 +++ b/cli/tests/sample-configs/valid/git.toml
 @@ -5,7 +5,7 @@ fetch = ["origin", "fork"]
@@ -202,7 +213,7 @@ index f42fee952ec0a99039368561707bf9931fe4b79a..c0d64f8e1ce2443aed29a6ddc79bb3d3
  write-change-id-header = true
  executable-path = "/home/linus/.local/bin/git"
 diff --git a/cli/tests/test_config_command.rs b/cli/tests/test_config_command.rs
-index a6e7fac217745e58cef5b65f3ebc0a4144c5c5c7..dacfd7ce267f5539e3f0a8c2d14a59d40eb2f6c5 100644
+index a6e7fac21..dacfd7ce2 100644
 --- a/cli/tests/test_config_command.rs
 +++ b/cli/tests/test_config_command.rs
 @@ -27,6 +27,45 @@ use crate::common::fake_editor_path;
@@ -252,10 +263,10 @@ index a6e7fac217745e58cef5b65f3ebc0a4144c5c5c7..dacfd7ce267f5539e3f0a8c2d14a59d4
  fn test_config_list_single() {
      let test_env = TestEnvironment::default();
 diff --git a/cli/tests/test_git_push.rs b/cli/tests/test_git_push.rs
-index 47b7c72428607f3708cb4bc1d8c96366fd32e488..94c13882d202fa5633427520a93e8941a65b7d2b 100644
+index 22c0fb822..5120b1156 100644
 --- a/cli/tests/test_git_push.rs
 +++ b/cli/tests/test_git_push.rs
-@@ -3017,7 +3017,7 @@ fn test_git_push_sign_on_push() {
+@@ -3075,7 +3075,7 @@ fn test_git_push_sign_on_push() {
          r#"
      signing.backend = "test"
      signing.key = "impeccable"
@@ -265,10 +276,10 @@ index 47b7c72428607f3708cb4bc1d8c96366fd32e488..94c13882d202fa5633427520a93e8941
      );
      let output = work_dir.run_jj(["git", "push", "--dry-run"]);
 diff --git a/docs/config.md b/docs/config.md
-index bceb9dee50395ddbe4fca6f8207c7255b38e6455..e0f2f3b6a435f91f4ef1436b24720dd0480fb516 100644
+index 4df7ac265..ef8d94cc4 100644
 --- a/docs/config.md
 +++ b/docs/config.md
-@@ -1730,22 +1730,21 @@ to do with signing commits on modification of a change (e.g., rebasing or edits)
+@@ -1756,22 +1756,21 @@ to do with signing commits on modification of a change (e.g., rebasing or edits)
  - `force`: sign all commits after modification, always, even if you are not the
    author.
  

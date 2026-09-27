@@ -1,4 +1,4 @@
-From 4fd57cf8ca4d33c24413c9be40c8fa4ba1c25b61 Mon Sep 17 00:00:00 2001
+From 00a6029853581ea9f33dec9aeec897c52b0b7bc8 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
 Date: Sat, 5 Sep 2026 13:00:00 +0300
 Subject: git fetch: refresh ancestry after shallow boundary changes
@@ -8,9 +8,25 @@ the lower-level depth, deepen, and exclusion controls needed by raw-ref
 fetches. Detect changes to the Git shallow boundary, refresh backend
 caches, and rebuild the commit index so newly available ancestors are
 immediately queryable, including after failed fetches
+---
+ cli/src/command_error.rs                      |   6 +-
+ cli/src/commands/git/fetch.rs                 |  59 +++++++---
+ cli/src/commands/git/mod.rs                   |  38 ++++++
+ cli/src/config-schema.json                    |   5 +
+ cli/tests/cli-reference@.md.snap              |   3 +
+ .../invalid/git.fetch-depth_zero.toml         |   3 +
+ cli/tests/sample-configs/valid/git.toml       |   1 +
+ cli/tests/test_git_fetch.rs                   |  45 ++++++++
+ lib/src/git.rs                                | 109 +++++++++++++++++-
+ lib/src/git_backend.rs                        |  50 +++++---
+ lib/src/git_subprocess.rs                     |  34 ++++--
+ lib/src/store.rs                              |   2 +-
+ lib/tests/test_git.rs                         |  16 ++-
+ 13 files changed, 317 insertions(+), 54 deletions(-)
+ create mode 100644 cli/tests/sample-configs/invalid/git.fetch-depth_zero.toml
 
 diff --git a/cli/src/command_error.rs b/cli/src/command_error.rs
-index c36a2909561ab57f8cd6fb2e310960ee1cdf6398..87e31d94cedd40c51f0090ab053ad8bb932d0f35 100644
+index c36a29095..87e31d94c 100644
 --- a/cli/src/command_error.rs
 +++ b/cli/src/command_error.rs
 @@ -592,8 +592,10 @@ jj currently does not support partial clones. To use jj with this repository, tr
@@ -27,7 +43,7 @@ index c36a2909561ab57f8cd6fb2e310960ee1cdf6398..87e31d94cedd40c51f0090ab053ad8bb
          }
      }
 diff --git a/cli/src/commands/git/fetch.rs b/cli/src/commands/git/fetch.rs
-index 2514757320d4a616f1cf13cde21c756c96e474e1..d2845231b2474dbac3a91f528af220ea267abf11 100644
+index 251475732..d2845231b 100644
 --- a/cli/src/commands/git/fetch.rs
 +++ b/cli/src/commands/git/fetch.rs
 @@ -13,6 +13,7 @@
@@ -122,7 +138,7 @@ index 2514757320d4a616f1cf13cde21c756c96e474e1..d2845231b2474dbac3a91f528af220ea
  
  fn warn_if_branches_not_found(
 diff --git a/cli/src/commands/git/mod.rs b/cli/src/commands/git/mod.rs
-index 83495bf3e73f14b0f142f8626d4a4ee427d2e439..c2f294ff3ceba5886a953c8da399a4d8e505e91e 100644
+index 83495bf3e..c2f294ff3 100644
 --- a/cli/src/commands/git/mod.rs
 +++ b/cli/src/commands/git/mod.rs
 @@ -24,15 +24,21 @@ mod remote;
@@ -194,7 +210,7 @@ index 83495bf3e73f14b0f142f8626d4a4ee427d2e439..c2f294ff3ceba5886a953c8da399a4d8
      if workspace_command.working_copy_shared_with_git() {
          std::fs::write(
 diff --git a/cli/src/config-schema.json b/cli/src/config-schema.json
-index 199464639e86bdb1f4a9b0704bdb0b2c93501fa4..af171a0f4616828638843270d2cd5672b793e2e9 100644
+index ddf82bbf8..426dc7710 100644
 --- a/cli/src/config-schema.json
 +++ b/cli/src/config-schema.json
 @@ -515,6 +515,11 @@
@@ -210,10 +226,10 @@ index 199464639e86bdb1f4a9b0704bdb0b2c93501fa4..af171a0f4616828638843270d2cd5672
                      "type": "string",
                      "description": "Revset of commits to refuse to push to remotes",
 diff --git a/cli/tests/cli-reference@.md.snap b/cli/tests/cli-reference@.md.snap
-index d163a22c95549227fa676dcfc541eeddfaa711d9..820732e8b612362eeade18262e94cf0d9401257a 100644
+index b6114d5f5..3793d6479 100644
 --- a/cli/tests/cli-reference@.md.snap
 +++ b/cli/tests/cli-reference@.md.snap
-@@ -1826,6 +1826,9 @@ If a working-copy commit gets abandoned, it will be given a new, empty commit. T
+@@ -1833,6 +1833,9 @@ If a working-copy commit gets abandoned, it will be given a new, empty commit. T
  
     [string pattern syntax]: https://docs.jj-vcs.dev/latest/revsets/#string-patterns
  * `--all-remotes` — Fetch from all remotes
@@ -225,7 +241,7 @@ index d163a22c95549227fa676dcfc541eeddfaa711d9..820732e8b612362eeade18262e94cf0d
  
 diff --git a/cli/tests/sample-configs/invalid/git.fetch-depth_zero.toml b/cli/tests/sample-configs/invalid/git.fetch-depth_zero.toml
 new file mode 100644
-index 0000000000000000000000000000000000000000..e526a454aa1e09732bd9195f2793e7272235b31d
+index 0000000000000000000000000000000000000000..e526a454a
 --- /dev/null
 +++ b/cli/tests/sample-configs/invalid/git.fetch-depth_zero.toml
 @@ -0,0 +1,3 @@
@@ -233,7 +249,7 @@ index 0000000000000000000000000000000000000000..e526a454aa1e09732bd9195f2793e727
 +[git]
 +fetch-depth = 0
 diff --git a/cli/tests/sample-configs/valid/git.toml b/cli/tests/sample-configs/valid/git.toml
-index edf0492ad154e3a679e8f7ff3d71ffb7e09999ae..f42fee952ec0a99039368561707bf9931fe4b79a 100644
+index edf0492ad..f42fee952 100644
 --- a/cli/tests/sample-configs/valid/git.toml
 +++ b/cli/tests/sample-configs/valid/git.toml
 @@ -2,6 +2,7 @@
@@ -245,7 +261,7 @@ index edf0492ad154e3a679e8f7ff3d71ffb7e09999ae..f42fee952ec0a99039368561707bf993
  record-synthetic-predecessors = false
  sign-on-push = true
 diff --git a/cli/tests/test_git_fetch.rs b/cli/tests/test_git_fetch.rs
-index 67eb582d20c14453cccc39cc2a79d75ed736a7bd..a3cf34e5d6acade1b445657994c6a1ed5eb16890 100644
+index 67eb582d2..a3cf34e5d 100644
 --- a/cli/tests/test_git_fetch.rs
 +++ b/cli/tests/test_git_fetch.rs
 @@ -3670,6 +3670,51 @@ fn test_git_fetch_tracked_multiple_remotes() {
@@ -301,7 +317,7 @@ index 67eb582d20c14453cccc39cc2a79d75ed736a7bd..a3cf34e5d6acade1b445657994c6a1ed
  fn test_git_fetch_auto_track_bookmarks() {
      let test_env = TestEnvironment::default();
 diff --git a/lib/src/git.rs b/lib/src/git.rs
-index 618fdea5266828c0fc8cde2b9e420c23c288703b..646e2834b8579126584ad083b5e9ff68995ce5ca 100644
+index ae6c5d902..d9f33bcb8 100644
 --- a/lib/src/git.rs
 +++ b/lib/src/git.rs
 @@ -33,6 +33,7 @@ use futures::StreamExt as _;
@@ -312,7 +328,7 @@ index 618fdea5266828c0fc8cde2b9e420c23c288703b..646e2834b8579126584ad083b5e9ff68
  use itertools::Itertools as _;
  use tempfile::TempDir;
  use thiserror::Error;
-@@ -2971,6 +2972,10 @@ pub enum GitFetchError {
+@@ -2973,6 +2974,10 @@ pub enum GitFetchError {
      RejectedUpdates(Vec<GitRefNameBuf>),
      #[error(transparent)]
      Subprocess(#[from] GitSubprocessError),
@@ -323,7 +339,7 @@ index 618fdea5266828c0fc8cde2b9e420c23c288703b..646e2834b8579126584ad083b5e9ff68
  }
  
  #[derive(Error, Debug)]
-@@ -3316,6 +3321,8 @@ pub struct GitFetch<'a> {
+@@ -3318,6 +3323,8 @@ pub struct GitFetch<'a> {
      git_ctx: GitSubprocessContext,
      import_options: &'a GitImportOptions,
      fetched: Vec<FetchedRefs>,
@@ -332,7 +348,7 @@ index 618fdea5266828c0fc8cde2b9e420c23c288703b..646e2834b8579126584ad083b5e9ff68
  }
  
  impl<'a> GitFetch<'a> {
-@@ -3323,9 +3330,10 @@ impl<'a> GitFetch<'a> {
+@@ -3325,9 +3332,10 @@ impl<'a> GitFetch<'a> {
          mut_repo: &'a mut MutableRepo,
          subprocess_options: GitSubprocessOptions,
          import_options: &'a GitImportOptions,
@@ -344,7 +360,7 @@ index 618fdea5266828c0fc8cde2b9e420c23c288703b..646e2834b8579126584ad083b5e9ff68
          let git_ctx = GitSubprocessContext::from_git_backend(git_backend, subprocess_options);
          Ok(GitFetch {
              mut_repo,
-@@ -3333,9 +3341,60 @@ impl<'a> GitFetch<'a> {
+@@ -3335,9 +3343,60 @@ impl<'a> GitFetch<'a> {
              git_ctx,
              import_options,
              fetched: vec![],
@@ -405,7 +421,7 @@ index 618fdea5266828c0fc8cde2b9e420c23c288703b..646e2834b8579126584ad083b5e9ff68
      /// Perform a `git fetch` on the local git repo, updating the
      /// remote-tracking branches in the git repo.
      ///
-@@ -3374,7 +3433,7 @@ impl<'a> GitFetch<'a> {
+@@ -3376,7 +3435,7 @@ impl<'a> GitFetch<'a> {
          // even more unfortunately, git errors out one refspec at a time,
          // meaning that the below cycle runs in O(#failed refspecs)
          let updates = loop {
@@ -414,7 +430,7 @@ index 618fdea5266828c0fc8cde2b9e420c23c288703b..646e2834b8579126584ad083b5e9ff68
                  remote_name,
                  &remaining_refspecs,
                  &negative_refspecs,
-@@ -3463,6 +3522,41 @@ impl<'a> GitFetch<'a> {
+@@ -3465,6 +3524,41 @@ impl<'a> GitFetch<'a> {
  
          Ok(import_stats)
      }
@@ -456,7 +472,7 @@ index 618fdea5266828c0fc8cde2b9e420c23c288703b..646e2834b8579126584ad083b5e9ff68
  }
  
  /// Fetches the commits identified by raw refs or full commit IDs.
-@@ -3488,7 +3582,8 @@ pub fn fetch_commits(
+@@ -3490,7 +3584,8 @@ pub fn fetch_commits(
      }
  
      let git_backend = get_git_backend(store)?;
@@ -466,7 +482,7 @@ index 618fdea5266828c0fc8cde2b9e420c23c288703b..646e2834b8579126584ad083b5e9ff68
      if try_find_active_remote_inner(&git_repo, remote_name).is_none() {
          return Err(GitFetchError::NoSuchRemote(remote_name.to_owned()));
      }
-@@ -3514,13 +3609,15 @@ pub fn fetch_commits(
+@@ -3516,13 +3611,15 @@ pub fn fetch_commits(
          .collect_vec();
      let no_negative_refspecs = [];
      let fetch_result = (|| {
@@ -486,7 +502,7 @@ index 618fdea5266828c0fc8cde2b9e420c23c288703b..646e2834b8579126584ad083b5e9ff68
              GitFetchStatus::NoRemoteRef(fetch_source) => {
                  return Err(GitFetchError::NoSuchSource {
 diff --git a/lib/src/git_backend.rs b/lib/src/git_backend.rs
-index 80d29f541e441539ec28d1754c1c7570d7ae32e7..13581ac51b512972d07a0c4ec4f8811f6768e696 100644
+index 0b3bcaf65..b72598c43 100644
 --- a/lib/src/git_backend.rs
 +++ b/lib/src/git_backend.rs
 @@ -45,7 +45,6 @@ use gix::objs::Write as _;
@@ -506,7 +522,7 @@ index 80d29f541e441539ec28d1754c1c7570d7ae32e7..13581ac51b512972d07a0c4ec4f8811f
      extra_metadata_store: TableStore,
      cached_extra_metadata: Mutex<Option<Arc<ReadonlyTable>>>,
      git_executable: PathBuf,
-@@ -217,7 +216,7 @@ impl GitBackend {
+@@ -215,7 +214,7 @@ impl GitBackend {
              root_commit_id,
              root_change_id,
              empty_tree_id,
@@ -515,7 +531,7 @@ index 80d29f541e441539ec28d1754c1c7570d7ae32e7..13581ac51b512972d07a0c4ec4f8811f
              extra_metadata_store,
              cached_extra_metadata: Mutex::new(None),
              git_executable: git_settings.executable_path,
-@@ -370,7 +369,7 @@ impl GitBackend {
+@@ -368,7 +367,7 @@ impl GitBackend {
      ///
      /// Use [`Self::open_git_repo_at_workdir()`] for worktree operations.
      pub fn git_repo(&self) -> gix::Repository {
@@ -524,7 +540,7 @@ index 80d29f541e441539ec28d1754c1c7570d7ae32e7..13581ac51b512972d07a0c4ec4f8811f
      }
  
      /// Reopens the repository at the given workspace path. Returns a new
-@@ -416,23 +415,35 @@ impl GitBackend {
+@@ -414,23 +413,35 @@ impl GitBackend {
          self.base_repo.path()
      }
  
@@ -574,7 +590,7 @@ index 80d29f541e441539ec28d1754c1c7570d7ae32e7..13581ac51b512972d07a0c4ec4f8811f
      }
  
      fn cached_extra_metadata_table(&self) -> BackendResult<Arc<ReadonlyTable>> {
-@@ -505,12 +516,13 @@ impl GitBackend {
+@@ -503,12 +514,13 @@ impl GitBackend {
          );
          let (table, table_lock) = self.read_extra_metadata_table_locked()?;
          let mut mut_table = table.start_mutation();
@@ -590,7 +606,7 @@ index 80d29f541e441539ec28d1754c1c7570d7ae32e7..13581ac51b512972d07a0c4ec4f8811f
          self.save_extra_metadata_table(mut_table, &table_lock)
      }
 diff --git a/lib/src/git_subprocess.rs b/lib/src/git_subprocess.rs
-index 63797bd09585457a08b0ef6ca7f2766ada882260..d05f8e52ce320af25c0078753fb10b1af96c4ae9 100644
+index 486342013..bac55b044 100644
 --- a/lib/src/git_subprocess.rs
 +++ b/lib/src/git_subprocess.rs
 @@ -15,7 +15,6 @@
@@ -609,7 +625,7 @@ index 63797bd09585457a08b0ef6ca7f2766ada882260..d05f8e52ce320af25c0078753fb10b1a
  use itertools::Itertools as _;
  use thiserror::Error;
  
-@@ -163,17 +163,17 @@ impl GitSubprocessContext {
+@@ -158,17 +158,17 @@ impl GitSubprocessContext {
          })
      }
  
@@ -631,7 +647,7 @@ index 63797bd09585457a08b0ef6ca7f2766ada882260..d05f8e52ce320af25c0078753fb10b1a
      ) -> Result<GitFetchStatus, GitSubprocessError> {
          if refspecs.is_empty() {
              return Ok(GitFetchStatus::Updates(GitRefUpdates::default()));
-@@ -186,8 +186,28 @@ impl GitSubprocessContext {
+@@ -181,8 +181,28 @@ impl GitSubprocessContext {
          if callback.needs_progress() {
              command.arg("--progress");
          }
@@ -663,7 +679,7 @@ index 63797bd09585457a08b0ef6ca7f2766ada882260..d05f8e52ce320af25c0078753fb10b1a
          // Tags should be fetched explicitly by the refspecs
          command.arg("--no-tags");
 diff --git a/lib/src/store.rs b/lib/src/store.rs
-index 8ec6ed193290a43730bee1d6f19c50869cec2868..6cd67ec80cdacde99f2bb7ccae1aed7ad6172094 100644
+index 8ec6ed193..6cd67ec80 100644
 --- a/lib/src/store.rs
 +++ b/lib/src/store.rs
 @@ -250,7 +250,7 @@ impl Store {
@@ -676,10 +692,10 @@ index 8ec6ed193290a43730bee1d6f19c50869cec2868..6cd67ec80cdacde99f2bb7ccae1aed7a
          self.commit_cache.lock().unwrap().clear();
          self.tree_cache.lock().unwrap().clear();
 diff --git a/lib/tests/test_git.rs b/lib/tests/test_git.rs
-index 4b54f0b964f8cb60afe353fa9faeda09472f2ae0..2a9c70eadfa44ebcc854588865d1011c7e2b2f31 100644
+index 48093b03f..e1d2704d7 100644
 --- a/lib/tests/test_git.rs
 +++ b/lib/tests/test_git.rs
-@@ -6874,8 +6874,20 @@ fn test_shallow_commits_lack_parents() -> TestResult {
+@@ -6872,8 +6872,20 @@ fn test_shallow_commits_lack_parents() -> TestResult {
          "shallow commits have the root commit as a parent"
      );
  

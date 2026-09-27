@@ -1,12 +1,15 @@
-From 3a6ca36b9851b9b1575d4d611282e0a1ee7b580c Mon Sep 17 00:00:00 2001
+From 921beb00ffdf680f8665650547efea2f3ec766f1 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
 Date: Sat, 5 Sep 2026 13:00:00 +0300
 Subject: graphlog: expose revision row rendering
 
 Factor the stateful graph renderer from the writer-backed GraphLog adapter. Terminal interfaces can now render one topology row at a time while jj log continues to use the same renderer and output.
+---
+ cli/src/graphlog.rs | 135 ++++++++++++++++++++++++++++++++------------
+ 1 file changed, 100 insertions(+), 35 deletions(-)
 
 diff --git a/cli/src/graphlog.rs b/cli/src/graphlog.rs
-index 842cedea2d99ac58f23da3994d67ccc0b8d8c5f6..68a83b06f68c60bb85ab065b345dde5c917d47b6 100644
+index 842cedea2..68a83b06f 100644
 --- a/cli/src/graphlog.rs
 +++ b/cli/src/graphlog.rs
 @@ -21,7 +21,7 @@ use jj_lib::graph::GraphEdge;

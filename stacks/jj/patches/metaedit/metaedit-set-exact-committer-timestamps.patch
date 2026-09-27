@@ -1,15 +1,21 @@
-From d2417acd1cd8d90cd4e41b98eff47d0464bf9979 Mon Sep 17 00:00:00 2001
+From 663cd264a6437be0a849bcad4831cd7fbae8bdc6 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
 Date: Sat, 5 Sep 2026 13:00:00 +0300
 Subject: metaedit: set exact committer timestamps
 
 Add --committer-timestamp for setting the committer timestamp directly and --timestamp as shorthand for setting both author and committer timestamps. Avoid rewriting when the requested values already match the commit.
+---
+ CHANGELOG.md                       |  3 +
+ cli/src/commands/metaedit.rs       | 59 +++++++++++++++++--
+ cli/tests/cli-reference@.md.snap   | 10 ++++
+ cli/tests/test_metaedit_command.rs | 94 ++++++++++++++++++++++++++++++
+ 4 files changed, 161 insertions(+), 5 deletions(-)
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index 7f5a02a54e38002ae2dce30472d57dfabd9d36aa..de91325ecb329b4ee4f9b5e343ff89d6299f7579 100644
+index 6eb6033a0..8bc2e9aaa 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -99,6 +99,9 @@ None
+@@ -159,6 +159,9 @@ None
    back to prompting the user if the heuristics are inconclusive. It can also run
    in non-interactive mode, which aborts if prompting would be needed.
  
@@ -20,7 +26,7 @@ index 7f5a02a54e38002ae2dce30472d57dfabd9d36aa..de91325ecb329b4ee4f9b5e343ff89d6
    revision due to skips in evaluation.
  
 diff --git a/cli/src/commands/metaedit.rs b/cli/src/commands/metaedit.rs
-index 89cd8acb428a812bff18fd881347b785affeff0e..be88bfd0f7ee6bf8a13600cfb1826b32b75fbdb9 100644
+index 89cd8acb4..be88bfd0f 100644
 --- a/cli/src/commands/metaedit.rs
 +++ b/cli/src/commands/metaedit.rs
 @@ -116,11 +116,38 @@ pub(crate) struct CommitEditArgs {
@@ -117,10 +123,10 @@ index 89cd8acb428a812bff18fd881347b785affeff0e..be88bfd0f7ee6bf8a13600cfb1826b32
                      && description != commit_builder.description()
                  {
 diff --git a/cli/tests/cli-reference@.md.snap b/cli/tests/cli-reference@.md.snap
-index 49b8b06615a2f154797dfeac8cd0038c74e2708f..3f0e018fb00fc2740b5b4876118edb840d0b63bb 100644
+index d2313685c..3d97432d8 100644
 --- a/cli/tests/cli-reference@.md.snap
 +++ b/cli/tests/cli-reference@.md.snap
-@@ -2364,6 +2364,16 @@ Whenever any metadata is updated, the committer name, email, and timestamp are a
+@@ -2371,6 +2371,16 @@ Whenever any metadata is updated, the committer name, email, and timestamp are a
  
     [RFC2822]: https://datatracker.ietf.org/doc/html/rfc2822
  
@@ -138,7 +144,7 @@ index 49b8b06615a2f154797dfeac8cd0038c74e2708f..3f0e018fb00fc2740b5b4876118edb84
  * `--force-rewrite` — Rewrite the commit, even if no other metadata changed
  
 diff --git a/cli/tests/test_metaedit_command.rs b/cli/tests/test_metaedit_command.rs
-index 8acaf1adba807e0a703fba7be39213f5f84647e6..11c2a751865d643ed947e03466646e090b8e1063 100644
+index 5fa609b28..38fb7cb2e 100644
 --- a/cli/tests/test_metaedit_command.rs
 +++ b/cli/tests/test_metaedit_command.rs
 @@ -816,6 +816,100 @@ fn test_metaedit_set_same_timestamp_twice() {

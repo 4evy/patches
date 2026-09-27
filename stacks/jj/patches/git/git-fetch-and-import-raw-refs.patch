@@ -1,4 +1,4 @@
-From 0df17dfc2051ae7497391870748c828e870024fd Mon Sep 17 00:00:00 2001
+From d55c7847e2dc5e8a6a87d1204d532db98ee2edde Mon Sep 17 00:00:00 2001
 From: Benjamin Tan <benjamin@dev.ofcr.se>
 Date: Sat, 5 Sep 2026 13:00:00 +0300
 Subject: git: fetch and import raw refs
@@ -15,9 +15,14 @@ fetches independent and preserves any existing internal refs
 Refs #4388
 
 Co-authored-by: 4evy <git@evy.pink>
+---
+ cli/src/command_error.rs |  10 ++-
+ lib/src/git.rs           | 159 +++++++++++++++++++++++++++++++++++++++
+ lib/tests/test_git.rs    | 152 +++++++++++++++++++++++++++++++++++++
+ 3 files changed, 319 insertions(+), 2 deletions(-)
 
 diff --git a/cli/src/command_error.rs b/cli/src/command_error.rs
-index e7c410aa33b7f9c6558d930468c6476669929f96..c36a2909561ab57f8cd6fb2e310960ee1cdf6398 100644
+index e7c410aa3..c36a29095 100644
 --- a/cli/src/command_error.rs
 +++ b/cli/src/command_error.rs
 @@ -583,11 +583,17 @@ jj currently does not support partial clones. To use jj with this repository, tr
@@ -41,10 +46,10 @@ index e7c410aa33b7f9c6558d930468c6476669929f96..c36a2909561ab57f8cd6fb2e310960ee
          }
      }
 diff --git a/lib/src/git.rs b/lib/src/git.rs
-index 55081a8f80e7ab59636be68f00758bab3710e919..04ac9170f2729afb75a95f6bcd23b7ea8ef7c1ec 100644
+index 5204cbbd4..50a117c6d 100644
 --- a/lib/src/git.rs
 +++ b/lib/src/git.rs
-@@ -94,6 +94,8 @@ pub const RESERVED_REMOTE_REF_NAMESPACE: &str = "refs/remotes/git/";
+@@ -96,6 +96,8 @@ pub const RESERVED_REMOTE_REF_NAMESPACE: &str = "refs/remotes/git/";
  const REMOTE_BOOKMARK_REF_NAMESPACE: &str = "refs/remotes/";
  /// Git ref prefix where remote tags will be temporarily fetched.
  const REMOTE_TAG_REF_NAMESPACE: &str = "refs/jj/remote-tags/";
@@ -53,7 +58,7 @@ index 55081a8f80e7ab59636be68f00758bab3710e919..04ac9170f2729afb75a95f6bcd23b7ea
  /// Ref name used as a placeholder to unset HEAD without a commit.
  ///
  /// This is not a normal branch ref, and is deliberately left unborn: HEAD is
-@@ -779,6 +781,22 @@ async fn import_refs_inner(
+@@ -781,6 +783,22 @@ async fn import_refs_inner(
      Ok(stats)
  }
  
@@ -76,7 +81,7 @@ index 55081a8f80e7ab59636be68f00758bab3710e919..04ac9170f2729afb75a95f6bcd23b7ea
  /// Finds commits that used to be reachable in git that no longer are reachable.
  /// Those commits will be recorded as abandoned in the `MutableRepo`.
  async fn abandon_unreachable_commits(
-@@ -2910,8 +2928,28 @@ const INVALID_REFSPEC_CHARS: [char; 5] = [':', '^', '?', '[', ']'];
+@@ -2912,8 +2930,28 @@ const INVALID_REFSPEC_CHARS: [char; 5] = [':', '^', '?', '[', ']'];
  pub enum GitFetchError {
      #[error("No git remote named '{}'", .0.as_symbol())]
      NoSuchRemote(RemoteNameBuf),
@@ -105,7 +110,7 @@ index 55081a8f80e7ab59636be68f00758bab3710e919..04ac9170f2729afb75a95f6bcd23b7ea
      #[error("Failed to update refs: {}", .0.iter().map(|n| n.as_symbol()).join(", "))]
      RejectedUpdates(Vec<GitRefNameBuf>),
      #[error(transparent)]
-@@ -3410,6 +3448,127 @@ impl<'a> GitFetch<'a> {
+@@ -3412,6 +3450,127 @@ impl<'a> GitFetch<'a> {
      }
  }
  
@@ -234,10 +239,10 @@ index 55081a8f80e7ab59636be68f00758bab3710e919..04ac9170f2729afb75a95f6bcd23b7ea
  pub enum GitPushError {
      #[error("No git remote named '{}'", .0.as_symbol())]
 diff --git a/lib/tests/test_git.rs b/lib/tests/test_git.rs
-index 50f396f07353eaeed23a5e184b413ca75f00fe1c..2ef8eb428fef67e0de9eebc7aa66e3995b050a18 100644
+index 55b6ece0c..14d3b157c 100644
 --- a/lib/tests/test_git.rs
 +++ b/lib/tests/test_git.rs
-@@ -4193,6 +4193,158 @@ fn test_fetch_empty_repo() -> TestResult {
+@@ -4196,6 +4196,158 @@ fn test_fetch_empty_repo() -> TestResult {
      Ok(())
  }
  

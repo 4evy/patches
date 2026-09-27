@@ -1,4 +1,4 @@
-From 7bd2d04a1b3d5068fd3ee5ae48e8ab94a26d7af9 Mon Sep 17 00:00:00 2001
+From 39e436874bf2cfdb4e4a51a19b39bb5652b160a2 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
 Date: Sat, 5 Sep 2026 13:00:00 +0300
 Subject: redate: add an interactive timestamp editor
@@ -6,12 +6,28 @@ Subject: redate: add an interactive timestamp editor
 Add a revision picker that renders jj's topologically grouped graph with the configured graph style, log node template, and a command-specific row template. Offer all mutable revisions by default, including sibling branches when the working copy starts at the trunk.
 
 Apply exact timestamps through the shared metadata transaction. Preserve descendant metadata with jj's standard keep signing behavior, and make signing selected revisions opt-in with --sign.
+---
+ CHANGELOG.md                     |   4 +
+ cli/src/commands/metaedit.rs     |  19 ++
+ cli/src/commands/mod.rs          |   3 +
+ cli/src/commands/redate.rs       | 476 +++++++++++++++++++++++++++++++
+ cli/src/config-schema.json       |   9 +
+ cli/src/config/colors.toml       |   7 +
+ cli/src/config/revsets.toml      |   1 +
+ cli/src/config/templates.toml    |   7 +
+ cli/tests/cli-reference@.md.snap |  18 ++
+ cli/tests/runner.rs              |   1 +
+ cli/tests/test_redate_command.rs | 143 ++++++++++
+ docs/config.md                   |  26 ++
+ 12 files changed, 714 insertions(+)
+ create mode 100644 cli/src/commands/redate.rs
+ create mode 100644 cli/tests/test_redate_command.rs
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index de91325ecb329b4ee4f9b5e343ff89d6299f7579..8090b146847d422cd867e1ca193de346f6fa8ac0 100644
+index 8bc2e9aaa..fa5a2ec7a 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -129,6 +129,10 @@ None
+@@ -189,6 +189,10 @@ None
    repositories. `jj git ref fetch --shallow-exclude` can fetch a review stack
    plus one parent generation for a usable diff base.
  
@@ -23,7 +39,7 @@ index de91325ecb329b4ee4f9b5e343ff89d6299f7579..8090b146847d422cd867e1ca193de346
  
  * [The default `immutable_heads()` set](docs/config.md#set-of-immutable-commits)
 diff --git a/cli/src/commands/metaedit.rs b/cli/src/commands/metaedit.rs
-index 6bc79c9df1c280c8f8731ae781d130ec2c8c70c5..5fa01179f99061cabc56ecdf0dc0cb86cac3e855 100644
+index 9f10d2708..ffed93b34 100644
 --- a/cli/src/commands/metaedit.rs
 +++ b/cli/src/commands/metaedit.rs
 @@ -169,6 +169,15 @@ pub(crate) struct CommitEditArgs {
@@ -60,7 +76,7 @@ index 6bc79c9df1c280c8f8731ae781d130ec2c8c70c5..5fa01179f99061cabc56ecdf0dc0cb86
  pub(crate) async fn cmd_metaedit(
      ui: &mut Ui,
 diff --git a/cli/src/commands/mod.rs b/cli/src/commands/mod.rs
-index e2a55b887893e5e4222dee1b2f59cf161a724d95..63e954800c568f6031812651b1a431f9ea2920ea 100644
+index e2a55b887..63e954800 100644
 --- a/cli/src/commands/mod.rs
 +++ b/cli/src/commands/mod.rs
 @@ -45,6 +45,7 @@ mod operation;
@@ -89,7 +105,7 @@ index e2a55b887893e5e4222dee1b2f59cf161a724d95..63e954800c568f6031812651b1a431f9
          Command::Restore(args) => restore::cmd_restore(ui, command_helper, args).await,
 diff --git a/cli/src/commands/redate.rs b/cli/src/commands/redate.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..974c35f5f684e68ab72ea2a0e9bb9d8fdc66ac3c
+index 0000000000000000000000000000000000000000..974c35f5f
 --- /dev/null
 +++ b/cli/src/commands/redate.rs
 @@ -0,0 +1,476 @@
@@ -570,10 +586,10 @@ index 0000000000000000000000000000000000000000..974c35f5f684e68ab72ea2a0e9bb9d8f
 +    }
 +}
 diff --git a/cli/src/config-schema.json b/cli/src/config-schema.json
-index 2aee503bad83264761ce2bf33a8e83e51fe86e77..921e6db33810609fea5032702a71ece059b325d7 100644
+index d1ac5cbc8..14ffdac1b 100644
 --- a/cli/src/config-schema.json
 +++ b/cli/src/config-schema.json
-@@ -752,6 +752,11 @@
+@@ -757,6 +757,11 @@
                      "description": "Default set of revisions to run a command on when no explicit revset is given for jj run",
                      "default": "reachable(@, mutable())"
                  },
@@ -585,7 +601,7 @@ index 2aee503bad83264761ce2bf33a8e83e51fe86e77..921e6db33810609fea5032702a71ece0
                  "simplify-parents": {
                      "type": "string",
                      "description": "Default set of revisions to simplify when no explicit revset is given for jj simplify-parents",
-@@ -1088,6 +1093,10 @@
+@@ -1108,6 +1113,10 @@
                      "type": "string",
                      "description": "`jj arrange``'s template for commits in the main view"
                  },
@@ -597,7 +613,7 @@ index 2aee503bad83264761ce2bf33a8e83e51fe86e77..921e6db33810609fea5032702a71ece0
                      "type": "string",
                      "description": "`jj bookmark list`'s output"
 diff --git a/cli/src/config/colors.toml b/cli/src/config/colors.toml
-index 76e5534287fced1d1293b762601710fd28f58949..6172ab4413f4bd9981731ad0ef5e14b2225c1b6f 100644
+index 76e553428..6172ab441 100644
 --- a/cli/src/config/colors.toml
 +++ b/cli/src/config/colors.toml
 @@ -118,3 +118,10 @@
@@ -612,11 +628,11 @@ index 76e5534287fced1d1293b762601710fd28f58949..6172ab4413f4bd9981731ad0ef5e14b2
 +"redate commit empty" = { fg = "bright black", italic = true }
 +"redate commit timestamp" = "bright black"
 diff --git a/cli/src/config/revsets.toml b/cli/src/config/revsets.toml
-index 43ff7cc8c8c6d46793da9b214297f8ebfb89977b..53d5375acdf93ab86939a362a6afa48c67271493 100644
+index f4a8dc6cb..c5fdb2d84 100644
 --- a/cli/src/config/revsets.toml
 +++ b/cli/src/config/revsets.toml
-@@ -7,6 +7,7 @@ converge = "mutable() & divergent()"
- fix = "reachable(@, mutable())"
+@@ -8,6 +8,7 @@ fix = "reachable(@, mutable())"
+ git-push = "remote_bookmarks(remote=exact:remote)..@"
  run = "reachable(@, mutable())"
  simplify-parents = "reachable(@, mutable())"
 +redate = "mutable()"
@@ -624,7 +640,7 @@ index 43ff7cc8c8c6d46793da9b214297f8ebfb89977b..53d5375acdf93ab86939a362a6afa48c
  # evaluate, lengthy warning messages would be printed. Use present(expr) if
  # symbols in expr might not always exist.
 diff --git a/cli/src/config/templates.toml b/cli/src/config/templates.toml
-index a619b5bd35724e15108ffcd5daec619f05546546..46fe90e0bb9b318cb4bdf20e5abb9125e2c22da1 100644
+index a619b5bd3..46fe90e0b 100644
 --- a/cli/src/config/templates.toml
 +++ b/cli/src/config/templates.toml
 @@ -3,6 +3,13 @@ bookmark_list = 'format_commit_ref(self, "bookmark") ++ "\n"'
@@ -642,7 +658,7 @@ index a619b5bd35724e15108ffcd5daec619f05546546..46fe90e0bb9b318cb4bdf20e5abb9125
  file_annotate = '''
  join(" ",
 diff --git a/cli/tests/cli-reference@.md.snap b/cli/tests/cli-reference@.md.snap
-index 3f0e018fb00fc2740b5b4876118edb840d0b63bb..aa80200f7a6d17d698e401b73ac223cd577264f4 100644
+index 3d97432d8..574ea339d 100644
 --- a/cli/tests/cli-reference@.md.snap
 +++ b/cli/tests/cli-reference@.md.snap
 @@ -95,6 +95,7 @@ This document contains the help content for the `jj` command-line program.
@@ -653,7 +669,7 @@ index 3f0e018fb00fc2740b5b4876118edb840d0b63bb..aa80200f7a6d17d698e401b73ac223cd
  * [`jj redo`↴](#jj-redo)
  * [`jj resolve`↴](#jj-resolve)
  * [`jj restore`↴](#jj-restore)
-@@ -182,6 +183,7 @@ To get started, see the tutorial [`jj help -k tutorial`].
+@@ -184,6 +185,7 @@ To get started, see the tutorial [`jj help -k tutorial`].
  * `parallelize` — Parallelize revisions by making them siblings
  * `prev` — Change the working copy revision relative to the parent revision
  * `rebase` — Move revisions to different parent(s)
@@ -661,7 +677,7 @@ index 3f0e018fb00fc2740b5b4876118edb840d0b63bb..aa80200f7a6d17d698e401b73ac223cd
  * `redo` — Redo the most recently undone operation
  * `resolve` — Resolve conflicted files with an external merge tool
  * `restore` — Restore paths from another revision
-@@ -3109,6 +3111,22 @@ J           J
+@@ -3116,6 +3118,22 @@ J           J
  
  
  
@@ -685,7 +701,7 @@ index 3f0e018fb00fc2740b5b4876118edb840d0b63bb..aa80200f7a6d17d698e401b73ac223cd
  
  Redo the most recently undone operation
 diff --git a/cli/tests/runner.rs b/cli/tests/runner.rs
-index b790cc57d49aa441e47bd02c72e27722ea60b104..860410ad5f72e07f80c6df5bbeecb7c6a51bb984 100644
+index b790cc57d..860410ad5 100644
 --- a/cli/tests/runner.rs
 +++ b/cli/tests/runner.rs
 @@ -69,6 +69,7 @@ mod test_op_revert_command;
@@ -698,7 +714,7 @@ index b790cc57d49aa441e47bd02c72e27722ea60b104..860410ad5f72e07f80c6df5bbeecb7c6
  mod test_restore_command;
 diff --git a/cli/tests/test_redate_command.rs b/cli/tests/test_redate_command.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..0f29d396f89d652ae2d824dc86fb0d475190f648
+index 0000000000000000000000000000000000000000..0f29d396f
 --- /dev/null
 +++ b/cli/tests/test_redate_command.rs
 @@ -0,0 +1,143 @@
@@ -846,10 +862,10 @@ index 0000000000000000000000000000000000000000..0f29d396f89d652ae2d824dc86fb0d47
 +        .to_owned()
 +}
 diff --git a/docs/config.md b/docs/config.md
-index e0f2f3b6a435f91f4ef1436b24720dd0480fb516..372502ad1b45c0ccdc0580acad43052abba56491 100644
+index ef8d94cc4..9b43a817c 100644
 --- a/docs/config.md
 +++ b/docs/config.md
-@@ -1597,6 +1597,32 @@ this setting for a single invocation:
+@@ -1623,6 +1623,32 @@ this setting for a single invocation:
  jj run -j 4 -- cargo fmt
  ```
  

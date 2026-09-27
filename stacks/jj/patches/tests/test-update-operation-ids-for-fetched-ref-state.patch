@@ -1,14 +1,53 @@
-From 405586ac9ca9d8bc6a6f5125b313697192029432 Mon Sep 17 00:00:00 2001
+From 436218f4f35638f9adc47ea9ec3371774ba73612 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Sat, 5 Sep 2026 13:00:00 +0300
+Date: Sun, 27 Sep 2026 11:43:31 +0300
 Subject: test: update operation IDs for fetched ref state
 
-Persisting fetched refs changes repository-view serialization and
-therefore the operation IDs captured by snapshot tests. Refresh affected
-expectations without changing their tested behavior
+---
+ cli/tests/cli-reference@.md.snap        |   3 +
+ cli/tests/test_bisect_command.rs        |  24 ++---
+ cli/tests/test_commit_template.rs       |   6 +-
+ cli/tests/test_completion.rs            |  20 ++---
+ cli/tests/test_concurrent_operations.rs |  12 +--
+ cli/tests/test_duplicate_command.rs     |   8 +-
+ cli/tests/test_edit_command.rs          |   2 +-
+ cli/tests/test_evolog_command.rs        |  90 +++++++++----------
+ cli/tests/test_file_chmod_command.rs    |   2 +-
+ cli/tests/test_git_clone.rs             |   4 +-
+ cli/tests/test_git_colocated.rs         |   6 +-
+ cli/tests/test_git_fetch.rs             |  20 ++---
+ cli/tests/test_git_import_export.rs     |   8 +-
+ cli/tests/test_global_opts.rs           |   8 +-
+ cli/tests/test_identical_commits.rs     |  10 +--
+ cli/tests/test_metaedit_command.rs      |   6 +-
+ cli/tests/test_op_integrate_command.rs  |  14 +--
+ cli/tests/test_op_restore_command.rs    |   2 +-
+ cli/tests/test_operations.rs            | 112 ++++++++++++------------
+ cli/tests/test_rebase_command.rs        |   2 +-
+ cli/tests/test_split_command.rs         |  16 ++--
+ cli/tests/test_squash_command.rs        |  18 ++--
+ cli/tests/test_undo_redo_commands.rs    |   6 +-
+ cli/tests/test_util_command.rs          |   4 +-
+ cli/tests/test_working_copy.rs          |   2 +-
+ cli/tests/test_workspaces.rs            |  42 ++++-----
+ 26 files changed, 225 insertions(+), 222 deletions(-)
 
+diff --git a/cli/tests/cli-reference@.md.snap b/cli/tests/cli-reference@.md.snap
+index 574ea339d..5a15253e9 100644
+--- a/cli/tests/cli-reference@.md.snap
++++ b/cli/tests/cli-reference@.md.snap
+@@ -3130,6 +3130,9 @@ Interactively set exact timestamps on revisions
+ 
+ ###### **Options:**
+ 
++* `--timestamp <TIMESTAMP>` — Set the timestamp without prompting
++
++   Accepts exact timestamps and local-time expressions such as `now`, `yesterday 5pm`, or `2026-08-28 14:30 +03:00`.
+ * `--sign` — Sign the rewritten revisions
+ 
+ 
 diff --git a/cli/tests/test_bisect_command.rs b/cli/tests/test_bisect_command.rs
-index 7cb977339cec459fb32e359365b625f31c28704a..0e08e0ff39a032ac67d80fc7d75185c0dac9def4 100644
+index 1e8eba69a..0c69b427c 100644
 --- a/cli/tests/test_bisect_command.rs
 +++ b/cli/tests/test_bisect_command.rs
 @@ -45,7 +45,7 @@ fn test_bisect_run_empty_revset() -> TestResult {
@@ -29,7 +68,25 @@ index 7cb977339cec459fb32e359365b625f31c28704a..0e08e0ff39a032ac67d80fc7d75185c0
      The first bad revision is: rlvkpnrz 7d980be7 a | a
      [EOF]
      ------- stderr -------
-@@ -163,7 +163,7 @@ fn test_bisect_run_find_first_good() {
+@@ -176,7 +176,7 @@ fn test_bisect_run_nonlinear_no_merge() -> TestResult {
+     fake-bisector testing commit 97949f0f52afedfc72ef44d63d21266bbfc42774
+     Cannot bisect: this revision was expected to be good, but was bad (exit status: 1) instead.
+     Search complete. To discard any revisions created during search, run:
+-      jj op restore 7d0937f0feb3
++      jj op restore 4c37f6d32fac
+     [EOF]
+     ------- stderr -------
+     Working copy  (@) now at: xznxytkn 08be40de (empty) (no description set)
+@@ -259,7 +259,7 @@ fn test_bisect_run_nonlinear_with_merge() -> TestResult {
+     The revision is good.
+ 
+     Search complete. To discard any revisions created during search, run:
+-      jj op restore 7d0937f0feb3
++      jj op restore 4c37f6d32fac
+     The first good revision is: kmkuslsw 3548fddf f | f
+     [EOF]
+     ------- stderr -------
+@@ -325,7 +325,7 @@ fn test_bisect_run_find_first_good() {
      The revision is good.
  
      Search complete. To discard any revisions created during search, run:
@@ -38,7 +95,7 @@ index 7cb977339cec459fb32e359365b625f31c28704a..0e08e0ff39a032ac67d80fc7d75185c0
      The first good revision is: rlvkpnrz 7d980be7 a | a
      [EOF]
      ------- stderr -------
-@@ -266,7 +266,7 @@ fn test_bisect_run_with_args() {
+@@ -434,7 +434,7 @@ fn test_bisect_run_with_args() {
      The revision is bad.
  
      Search complete. To discard any revisions created during search, run:
@@ -47,7 +104,7 @@ index 7cb977339cec459fb32e359365b625f31c28704a..0e08e0ff39a032ac67d80fc7d75185c0
      The first good revision is: royxmykx dffaa0d4 c | c
      [EOF]
      ------- stderr -------
-@@ -324,7 +324,7 @@ fn test_bisect_run_crash() -> TestResult {
+@@ -492,7 +492,7 @@ fn test_bisect_run_crash() -> TestResult {
      The revision is bad.
  
      Search complete. To discard any revisions created during search, run:
@@ -56,7 +113,7 @@ index 7cb977339cec459fb32e359365b625f31c28704a..0e08e0ff39a032ac67d80fc7d75185c0
      The first bad revision is: rlvkpnrz 7d980be7 a | a
      [EOF]
      ------- stderr -------
-@@ -360,7 +360,7 @@ fn test_bisect_run_abort() -> TestResult {
+@@ -528,7 +528,7 @@ fn test_bisect_run_abort() -> TestResult {
      Evaluation command returned 127 (command not found) - aborting bisection.
  
      Search complete. To discard any revisions created during search, run:
@@ -65,7 +122,7 @@ index 7cb977339cec459fb32e359365b625f31c28704a..0e08e0ff39a032ac67d80fc7d75185c0
      [EOF]
      ------- stderr -------
      Working copy  (@) now at: vruxwmqv 538d9e7f (empty) (no description set)
-@@ -393,7 +393,7 @@ fn test_bisect_run_skip() -> TestResult {
+@@ -561,7 +561,7 @@ fn test_bisect_run_skip() -> TestResult {
      It could not be determined if the revision is good or bad.
  
      Search complete. To discard any revisions created during search, run:
@@ -74,7 +131,7 @@ index 7cb977339cec459fb32e359365b625f31c28704a..0e08e0ff39a032ac67d80fc7d75185c0
      The first bad revisions are:
      zsuskuln 123b4d91 b | b
      These revisions may also be bad, but couldn't be evaluated:
-@@ -434,7 +434,7 @@ fn test_bisect_run_multiple_results() {
+@@ -602,7 +602,7 @@ fn test_bisect_run_multiple_results() {
      The revision is good.
  
      Search complete. To discard any revisions created during search, run:
@@ -83,7 +140,7 @@ index 7cb977339cec459fb32e359365b625f31c28704a..0e08e0ff39a032ac67d80fc7d75185c0
      The first bad revisions are:
      vruxwmqv a2dbb1aa d | d
      zsuskuln 123b4d91 b | b
-@@ -480,7 +480,7 @@ fn test_bisect_run_write_file() -> TestResult {
+@@ -648,7 +648,7 @@ fn test_bisect_run_write_file() -> TestResult {
      The revision is bad.
  
      Search complete. To discard any revisions created during search, run:
@@ -92,7 +149,7 @@ index 7cb977339cec459fb32e359365b625f31c28704a..0e08e0ff39a032ac67d80fc7d75185c0
      The first bad revision is: rlvkpnrz 7d980be7 a | a
      [EOF]
      ------- stderr -------
-@@ -546,7 +546,7 @@ fn test_bisect_run_jj_command() -> TestResult {
+@@ -714,7 +714,7 @@ fn test_bisect_run_jj_command() -> TestResult {
      The revision is bad.
  
      Search complete. To discard any revisions created during search, run:
@@ -102,7 +159,7 @@ index 7cb977339cec459fb32e359365b625f31c28704a..0e08e0ff39a032ac67d80fc7d75185c0
      [EOF]
      ------- stderr -------
 diff --git a/cli/tests/test_commit_template.rs b/cli/tests/test_commit_template.rs
-index f5d88a6b13c5d1f4701a2729cf8fd43f58178b7f..33508a53a174c3eaedb131269255e5980d71aef2 100644
+index 3bba20810..409cbae00 100644
 --- a/cli/tests/test_commit_template.rs
 +++ b/cli/tests/test_commit_template.rs
 @@ -607,13 +607,13 @@ fn test_log_evolog_divergence() {
@@ -123,10 +180,10 @@ index f5d88a6b13c5d1f4701a2729cf8fd43f58178b7f..33508a53a174c3eaedb131269255e598
      ");
  
 diff --git a/cli/tests/test_completion.rs b/cli/tests/test_completion.rs
-index 441e7f26b84defa6e90663ae813d39cd9cb4e65a..adb41fd49d27775250b6b6bd7f2234e10baa1509 100644
+index b2b6a772f..db7abb0ff 100644
 --- a/cli/tests/test_completion.rs
 +++ b/cli/tests/test_completion.rs
-@@ -1310,16 +1310,16 @@ fn test_operations() {
+@@ -1349,16 +1349,16 @@ fn test_operations() {
  
      let output = work_dir.complete_fish(["op", "show", ""]).success();
      insta::assert_snapshot!(output.take_stdout_n_lines(num_ops + 2), @"
@@ -154,7 +211,7 @@ index 441e7f26b84defa6e90663ae813d39cd9cb4e65a..adb41fd49d27775250b6b6bd7f2234e1
      [EOF]
      ");
 diff --git a/cli/tests/test_concurrent_operations.rs b/cli/tests/test_concurrent_operations.rs
-index 7511a0dea7af894428ab5dac24a148ed5fd6e4b6..687de002f56ef28f253f41b5012ef23e754517a0 100644
+index 45a3a5ef4..5b274f4d9 100644
 --- a/cli/tests/test_concurrent_operations.rs
 +++ b/cli/tests/test_concurrent_operations.rs
 @@ -35,7 +35,7 @@ fn test_concurrent_operation_divergence() -> TestResult {
@@ -166,7 +223,7 @@ index 7511a0dea7af894428ab5dac24a148ed5fd6e4b6..687de002f56ef28f253f41b5012ef23e
      [EOF]
      [exit status: 1]
      "#);
-@@ -172,19 +172,19 @@ fn test_concurrent_snapshot_wc_reloadable() -> TestResult {
+@@ -169,19 +169,19 @@ fn test_concurrent_snapshot_wc_reloadable() -> TestResult {
      let template = r#"id.short() ++ "\n" ++ description ++ "\n" ++ attributes"#;
      let output = work_dir.run_jj(["op", "log", "-T", template]);
      insta::assert_snapshot!(output, @"
@@ -192,7 +249,7 @@ index 7511a0dea7af894428ab5dac24a148ed5fd6e4b6..687de002f56ef28f253f41b5012ef23e
      ○  000000000000
  
 diff --git a/cli/tests/test_duplicate_command.rs b/cli/tests/test_duplicate_command.rs
-index a805c8df70ccf2a50871e1688298afeb9e21d536..410d7bb28c78f2f6b930061b447cf5a8f6227c4b 100644
+index a805c8df7..410d7bb28 100644
 --- a/cli/tests/test_duplicate_command.rs
 +++ b/cli/tests/test_duplicate_command.rs
 @@ -73,8 +73,8 @@ fn test_duplicate() {
@@ -218,7 +275,7 @@ index a805c8df70ccf2a50871e1688298afeb9e21d536..410d7bb28c78f2f6b930061b447cf5a8
      ");
      insta::assert_snapshot!(get_log_output(&work_dir), @"
 diff --git a/cli/tests/test_edit_command.rs b/cli/tests/test_edit_command.rs
-index 9f0b825de6ad835a3761a8c7e04533706a8ac6e1..8acc0c7947bec870cb049bff0d09a1235e7c84a4 100644
+index 9f0b825de..8acc0c794 100644
 --- a/cli/tests/test_edit_command.rs
 +++ b/cli/tests/test_edit_command.rs
 @@ -115,7 +115,7 @@ fn test_edit_current() {
@@ -231,7 +288,7 @@ index 9f0b825de6ad835a3761a8c7e04533706a8ac6e1..8acc0c7947bec870cb049bff0d09a123
      [EOF]
      ");
 diff --git a/cli/tests/test_evolog_command.rs b/cli/tests/test_evolog_command.rs
-index 67eef5b7020f82ed78bfca99f9bf63e6c5d3d978..d8855a332a65f9837221248c97326fa29bc653dd 100644
+index 89b216c73..81c202fa8 100644
 --- a/cli/tests/test_evolog_command.rs
 +++ b/cli/tests/test_evolog_command.rs
 @@ -34,16 +34,16 @@ fn test_evolog_with_or_without_diff() {
@@ -255,6 +312,15 @@ index 67eef5b7020f82ed78bfca99f9bf63e6c5d3d978..d8855a332a65f9837221248c97326fa2
      [EOF]
      ");
  
+@@ -95,7 +95,7 @@ fn test_evolog_with_or_without_diff() {
+     │          1: foo
+     ○  rlvkpnrz/3 test.user@example.com 2001-02-03 08:05:08 b955b72e (hidden)
+        (empty) my description
+-       -- operation 390d0e261e11 new empty commit
++       -- operation 698df4672bec new empty commit
+        Modified JJ-COMMIT-DESCRIPTION:
+                1: my description
+     [EOF]
 @@ -229,7 +229,7 @@ fn test_evolog_template() {
      insta::assert_snapshot!(output, @"
      @  kkmpptxz test.user@example.com 2001-02-03 08:05:09 2b17ac71
@@ -304,7 +370,7 @@ index 67eef5b7020f82ed78bfca99f9bf63e6c5d3d978..d8855a332a65f9837221248c97326fa2
      ├─┬─╮  squashed 3
 -    │ │ │  -- operation ce2492756a0d squash commits into 5ec0619af5cb4f7707a556a71a6f96af0bc294d2
 +    │ │ │  -- operation 4ea960b9dd3b squash commits into 5ec0619af5cb4f7707a556a71a6f96af0bc294d2
-     │ │ │  Modified commit description:
+     │ │ │  Modified JJ-COMMIT-DESCRIPTION:
      │ │ │     1     : <<<<<<< conflict 1 of 1
      │ │ │     2     : +++++++ side #1
 @@ -434,27 +434,27 @@ fn test_evolog_squash() {
@@ -319,7 +385,7 @@ index 67eef5b7020f82ed78bfca99f9bf63e6c5d3d978..d8855a332a65f9837221248c97326fa2
      │ │    (empty) fifth
 -    │ │    -- operation 3906ce22eb5a new empty commit
 +    │ │    -- operation 5735a60c1ce4 new empty commit
-     │ │    Modified commit description:
+     │ │    Modified JJ-COMMIT-DESCRIPTION:
      │ │            1: fifth
      │ ○  yqosqzyt/0 test.user@example.com 2001-02-03 08:05:14 ea8161b6 (hidden)
      │ │  fourth
@@ -331,13 +397,13 @@ index 67eef5b7020f82ed78bfca99f9bf63e6c5d3d978..d8855a332a65f9837221248c97326fa2
      │    (empty) fourth
 -    │    -- operation 899b98063159 new empty commit
 +    │    -- operation 73cb98633cc6 new empty commit
-     │    Modified commit description:
+     │    Modified JJ-COMMIT-DESCRIPTION:
      │            1: fourth
      ○    qpvuntsm/1 test.user@example.com 2001-02-03 08:05:12 5ec0619a (hidden)
      ├─╮  squashed 2
 -    │ │  -- operation 6fdaa0b09c18 squash commits into 690858846504af0e42fde980fdacf9851559ebb8
 +    │ │  -- operation aaea9605bbdb squash commits into 690858846504af0e42fde980fdacf9851559ebb8
-     │ │  Modified commit description:
+     │ │  Modified JJ-COMMIT-DESCRIPTION:
      │ │     1     : <<<<<<< conflict 1 of 1
      │ │     2     : +++++++ side #1
 @@ -470,7 +470,7 @@ fn test_evolog_squash() {
@@ -355,7 +421,7 @@ index 67eef5b7020f82ed78bfca99f9bf63e6c5d3d978..d8855a332a65f9837221248c97326fa2
      │ │  (empty) third
 -    │ │  -- operation 33e1d3ed9731 describe commit ebec10f449ad7ab92c7293efab5e3db2d8e9fea1
 +    │ │  -- operation 943499360de8 describe commit ebec10f449ad7ab92c7293efab5e3db2d8e9fea1
-     │ │  Modified commit description:
+     │ │  Modified JJ-COMMIT-DESCRIPTION:
      │ │          1: third
      │ ○  zsuskuln/5 test.user@example.com 2001-02-03 08:05:10 ebec10f4 (hidden)
      │    (empty) (no description set)
@@ -365,7 +431,7 @@ index 67eef5b7020f82ed78bfca99f9bf63e6c5d3d978..d8855a332a65f9837221248c97326fa2
      ├─╮  squashed 1
 -    │ │  -- operation 5e3953f66df8 squash commits into 5878cbe03cdf599c9353e5a1a52a01f4c5e0e0fa
 +    │ │  -- operation 0f1ec443615e squash commits into 5878cbe03cdf599c9353e5a1a52a01f4c5e0e0fa
-     │ │  Modified commit description:
+     │ │  Modified JJ-COMMIT-DESCRIPTION:
      │ │     1     : <<<<<<< conflict 1 of 1
      │ │     2     : %%%%%%% diff from: base
 @@ -501,28 +501,28 @@ fn test_evolog_squash() {
@@ -381,7 +447,7 @@ index 67eef5b7020f82ed78bfca99f9bf63e6c5d3d978..d8855a332a65f9837221248c97326fa2
      │    (empty) second
 -    │    -- operation 624750bb3872 new empty commit
 +    │    -- operation 7e4e6a4f30ed new empty commit
-     │    Modified commit description:
+     │    Modified JJ-COMMIT-DESCRIPTION:
      │            1: second
      ○  qpvuntsm/3 test.user@example.com 2001-02-03 08:05:09 5878cbe0 (hidden)
      │  first
@@ -393,7 +459,7 @@ index 67eef5b7020f82ed78bfca99f9bf63e6c5d3d978..d8855a332a65f9837221248c97326fa2
      │  (empty) first
 -    │  -- operation 1e1a8ca9529a describe commit e8849ae12c709f2321908879bc724fdb2ab8a781
 +    │  -- operation 6dc455e2a892 describe commit e8849ae12c709f2321908879bc724fdb2ab8a781
-     │  Modified commit description:
+     │  Modified JJ-COMMIT-DESCRIPTION:
      │          1: first
      ○  qpvuntsm/5 test.user@example.com 2001-02-03 08:05:07 e8849ae1 (hidden)
         (empty) (no description set)
@@ -502,7 +568,7 @@ index 67eef5b7020f82ed78bfca99f9bf63e6c5d3d978..d8855a332a65f9837221248c97326fa2
      ");
  
 diff --git a/cli/tests/test_file_chmod_command.rs b/cli/tests/test_file_chmod_command.rs
-index 34ec526090080977a2069136052411a9268eb66f..706bef27828473d0164b6a8214200b21c9438bc1 100644
+index fafbb060d..db4bfbaf9 100644
 --- a/cli/tests/test_file_chmod_command.rs
 +++ b/cli/tests/test_file_chmod_command.rs
 @@ -323,7 +323,7 @@ fn test_chmod_exec_bit_settings() -> TestResult {
@@ -515,7 +581,7 @@ index 34ec526090080977a2069136052411a9268eb66f..706bef27828473d0164b6a8214200b21
      Normal { exec_bit: ExecBit(false) }             5 <timestamp> None "file"
      [EOF]
 diff --git a/cli/tests/test_git_clone.rs b/cli/tests/test_git_clone.rs
-index a10b1d25e973f84abbc1d941f3acd77f6d00914d..7ff9fe7ddf3e980f7e2cf57ec45d9b8a324b3fce 100644
+index a10b1d25e..7ff9fe7dd 100644
 --- a/cli/tests/test_git_clone.rs
 +++ b/cli/tests/test_git_clone.rs
 @@ -812,7 +812,7 @@ fn test_git_clone_ignore_working_copy() {
@@ -537,7 +603,7 @@ index a10b1d25e973f84abbc1d941f3acd77f6d00914d..7ff9fe7ddf3e980f7e2cf57ec45d9b8a
      See https://docs.jj-vcs.dev/latest/working-copy/#stale-working-copy for more information.
      [EOF]
 diff --git a/cli/tests/test_git_colocated.rs b/cli/tests/test_git_colocated.rs
-index 1c15a0f5a1a2adbacfa959b613d34ff102aa093c..fc339c5325a117b3b786c040e57cba2c651098a8 100644
+index c74b1a340..2a8e062c8 100644
 --- a/cli/tests/test_git_colocated.rs
 +++ b/cli/tests/test_git_colocated.rs
 @@ -1096,7 +1096,7 @@ fn test_git_colocated_external_checkout() -> TestResult {
@@ -561,23 +627,21 @@ index 1c15a0f5a1a2adbacfa959b613d34ff102aa093c..fc339c5325a117b3b786c040e57cba2c
      Parent commit (@-)      : qpvuntsm e8849ae1 (empty) (no description set)
      [EOF]
 diff --git a/cli/tests/test_git_fetch.rs b/cli/tests/test_git_fetch.rs
-index 1d7bd61f9bfc35daad0d5c698eedd5eaf4397511..2d76047d92e5002e8f6f1d0fa81e9326c387177d 100644
+index a6a31801f..ff45b7b14 100644
 --- a/cli/tests/test_git_fetch.rs
 +++ b/cli/tests/test_git_fetch.rs
-@@ -890,9 +890,9 @@ fn test_git_ref_fetch_operation_diff() {
-             "refs/pull/123/head",
+@@ -1407,8 +1407,8 @@ fn test_git_ref_fetch_operation_diff() {
          ])
          .success();
--    insta::assert_snapshot!(work_dir.run_jj(["op", "diff", "--from", "@-", "--to", "@"]), @r"
+     insta::assert_snapshot!(work_dir.run_jj(["op", "diff", "--from", "@-", "--to", "@"]), @r"
 -    From operation: 14e9a7ba5044 (2001-02-03 08:05:08) add git remote origin
 -      To operation: 252aad02ee20 (2001-02-03 08:05:09) fetch ref refs/pull/123/head from git remote origin
-+    insta::assert_snapshot!(work_dir.run_jj(["op", "diff", "--from", "@-", "--to", "@"]), @"
 +    From operation: 83cb949b8aa2 (2001-02-03 08:05:08) add git remote origin
-+      To operation: 16bd1f7a8e2f (2001-02-03 08:05:09) fetch ref refs/pull/123/head from git remote origin
++      To operation: 6699f9c47852 (2001-02-03 08:05:09) fetch refs or commit IDs refs/pull/123/head from git remote origin
  
      Changed commits:
      ○  + vrvtsttm b182bf31 pull request 123 v1
-@@ -2647,8 +2647,8 @@ fn test_git_fetch_undo() {
+@@ -3211,8 +3211,8 @@ fn test_git_fetch_undo() {
      let output = target_dir.run_jj(["undo"]);
      insta::assert_snapshot!(output, @"
      ------- stderr -------
@@ -588,7 +652,7 @@ index 1d7bd61f9bfc35daad0d5c698eedd5eaf4397511..2d76047d92e5002e8f6f1d0fa81e9326
      [EOF]
      ");
      // The undo works as expected
-@@ -2738,7 +2738,7 @@ fn test_fetch_undo_what() {
+@@ -3302,7 +3302,7 @@ fn test_fetch_undo_what() {
      let output = work_dir.run_jj(["op", "restore", "--what", "repo", &base_operation_id]);
      insta::assert_snapshot!(output, @"
      ------- stderr -------
@@ -597,7 +661,7 @@ index 1d7bd61f9bfc35daad0d5c698eedd5eaf4397511..2d76047d92e5002e8f6f1d0fa81e9326
      [EOF]
      ");
      insta::assert_snapshot!(get_bookmark_output(&work_dir), @"
-@@ -3278,12 +3278,12 @@ fn test_git_fetch_remotely_rewritten() {
+@@ -3842,12 +3842,12 @@ fn test_git_fetch_remotely_rewritten() {
      insta::assert_snapshot!(output, @"
      ◆  kkmpptxz test.user@example.com 2001-02-03 08:05:14 book@origin 3ee37bc8
      │  (empty) bookmarked
@@ -612,7 +676,7 @@ index 1d7bd61f9bfc35daad0d5c698eedd5eaf4397511..2d76047d92e5002e8f6f1d0fa81e9326
      ○  qpvuntsm/1 test.user@example.com 2001-02-03 08:05:08 97604bbe (hidden)
         (empty) original
      [EOF]
-@@ -3490,17 +3490,17 @@ fn test_git_fetch_remotely_rewritten_descendants() {
+@@ -4054,17 +4054,17 @@ fn test_git_fetch_remotely_rewritten_descendants() {
      insta::assert_snapshot!(output, @"
      ◆  mzvwutvl test.user@example.com 2001-02-03 08:05:16 book2@origin 3faff772
      │  (empty) bookmarked 2
@@ -634,7 +698,7 @@ index 1d7bd61f9bfc35daad0d5c698eedd5eaf4397511..2d76047d92e5002e8f6f1d0fa81e9326
         (empty) original
      [EOF]
 diff --git a/cli/tests/test_git_import_export.rs b/cli/tests/test_git_import_export.rs
-index 1b679a23be1c86d19a1919a55b5743acd2093ac6..c68304f9abed3a3ab418a1012f1589a09ed758d9 100644
+index 1b679a23b..c68304f9a 100644
 --- a/cli/tests/test_git_import_export.rs
 +++ b/cli/tests/test_git_import_export.rs
 @@ -149,8 +149,8 @@ fn test_git_export_undo() -> TestResult {
@@ -667,7 +731,7 @@ index 1b679a23be1c86d19a1919a55b5743acd2093ac6..c68304f9abed3a3ab418a1012f1589a0
      Parent commit (@-)      : zzzzzzzz 00000000 (empty) (no description set)
      [EOF]
 diff --git a/cli/tests/test_global_opts.rs b/cli/tests/test_global_opts.rs
-index 09df3c156b018a7321adfd90e897aec37292bd4c..63ce6d8caa471cdde18b9dd2df9e0f8ef4fa872f 100644
+index 146bb5e97..3529e93c5 100644
 --- a/cli/tests/test_global_opts.rs
 +++ b/cli/tests/test_global_opts.rs
 @@ -251,8 +251,8 @@ fn test_no_integrate_operation() {
@@ -693,7 +757,7 @@ index 09df3c156b018a7321adfd90e897aec37292bd4c..63ce6d8caa471cdde18b9dd2df9e0f8e
      ");
      let stderr = output.stderr.into_raw();
 diff --git a/cli/tests/test_identical_commits.rs b/cli/tests/test_identical_commits.rs
-index a577db0ae89ae24323758b6c9ab9e7882827c4cd..c210d5c775cb04bedc16f9532556d1b96528b6e3 100644
+index 068a0e7da..04c923712 100644
 --- a/cli/tests/test_identical_commits.rs
 +++ b/cli/tests/test_identical_commits.rs
 @@ -92,10 +92,10 @@ fn test_identical_commits_by_cycling_rewrite() {
@@ -737,7 +801,7 @@ index a577db0ae89ae24323758b6c9ab9e7882827c4cd..c210d5c775cb04bedc16f9532556d1b9
      ");
      insta::assert_snapshot!(work_dir.run_jj(["evolog", "-r=@-"]), @"
 diff --git a/cli/tests/test_metaedit_command.rs b/cli/tests/test_metaedit_command.rs
-index f6a87f30009f69855eed5180b7f48dacfe9bf715..9547164e8523189a67a00de9ffb71d23d8f89970 100644
+index 38fb7cb2e..11c2a7518 100644
 --- a/cli/tests/test_metaedit_command.rs
 +++ b/cli/tests/test_metaedit_command.rs
 @@ -641,13 +641,13 @@ fn test_new_change_id() {
@@ -758,7 +822,7 @@ index f6a87f30009f69855eed5180b7f48dacfe9bf715..9547164e8523189a67a00de9ffb71d23
      ");
      insta::assert_snapshot!(work_dir.run_jj(["evolog", "-r", "mzvwut"]), @"
 diff --git a/cli/tests/test_op_integrate_command.rs b/cli/tests/test_op_integrate_command.rs
-index adfd7546c778119454d8079b370b4fd5be656b0c..ccfac6e5cef0d8e792f4db6b8dbc76724cdd2367 100644
+index 2327fa197..de9997769 100644
 --- a/cli/tests/test_op_integrate_command.rs
 +++ b/cli/tests/test_op_integrate_command.rs
 @@ -29,7 +29,7 @@ fn test_integrate_integrated_operation() {
@@ -804,7 +868,7 @@ index adfd7546c778119454d8079b370b4fd5be656b0c..ccfac6e5cef0d8e792f4db6b8dbc7672
      [exit status: 255]
      ");
 diff --git a/cli/tests/test_op_restore_command.rs b/cli/tests/test_op_restore_command.rs
-index fb197fc17442a66ff5c814d2133f599be33e1e6d..920538f0abf73d47455de5b36dd93e3a72302eee 100644
+index fb197fc17..920538f0a 100644
 --- a/cli/tests/test_op_restore_command.rs
 +++ b/cli/tests/test_op_restore_command.rs
 @@ -41,7 +41,7 @@ fn test_op_restore_to_valid_op_no_warning() {
@@ -817,7 +881,7 @@ index fb197fc17442a66ff5c814d2133f599be33e1e6d..920538f0abf73d47455de5b36dd93e3a
      [EOF]
      ");
 diff --git a/cli/tests/test_operations.rs b/cli/tests/test_operations.rs
-index ad541cfd8c0ebd076fbab4cedd9ef7c31565626f..2bfe17c2f0f907c0b85bc3bb315fb7e663ea42ed 100644
+index ca3f35a04..147c1c909 100644
 --- a/cli/tests/test_operations.rs
 +++ b/cli/tests/test_operations.rs
 @@ -36,10 +36,10 @@ fn test_op_log() {
@@ -955,25 +1019,29 @@ index ad541cfd8c0ebd076fbab4cedd9ef7c31565626f..2bfe17c2f0f907c0b85bc3bb315fb7e6
      Current tree: MergedTree { tree_ids: Resolved(TreeId("4b825dc642cb6eb9a060e54bf8d69288fbee4904")), labels: Unlabeled, .. }
      [EOF]
      "#);
-@@ -907,7 +907,7 @@ fn test_op_abandon_multiple_heads() {
+@@ -907,8 +907,8 @@ fn test_op_abandon_multiple_heads() {
          .run_jj(["op", "log", "--no-graph", r#"-Tid.short() ++ "\n""#])
          .success();
      let [head_op_id, prev_op_id] = output.stdout.raw().lines().next_array().unwrap();
 -    insta::assert_snapshot!(head_op_id, @"62f41230e57e");
+-    insta::assert_snapshot!(prev_op_id, @"b004de1c8d83");
 +    insta::assert_snapshot!(head_op_id, @"3415fbcce02c");
-     insta::assert_snapshot!(prev_op_id, @"b004de1c8d83");
++    insta::assert_snapshot!(prev_op_id, @"e91087c5a443");
  
      // Create 1 other concurrent operation.
-@@ -1004,7 +1004,7 @@ fn test_op_recover_from_bad_gc() -> TestResult {
+     work_dir
+@@ -1048,8 +1048,8 @@ fn test_op_recover_from_bad_gc() -> TestResult {
          .run_jj(["op", "log", "--no-graph", r#"-Tid.short() ++ "\n""#])
          .success();
      let [head_op_id, _, _, bad_op_id] = output.stdout.raw().lines().next_array().unwrap();
 -    insta::assert_snapshot!(head_op_id, @"f578e4970373");
+-    insta::assert_snapshot!(bad_op_id, @"ed13d7dc6cbe");
 +    insta::assert_snapshot!(head_op_id, @"1a9464314c45");
-     insta::assert_snapshot!(bad_op_id, @"ed13d7dc6cbe");
++    insta::assert_snapshot!(bad_op_id, @"87f0f60fd87b");
  
      // Corrupt the repo by removing hidden but reachable commit object.
-@@ -1098,7 +1098,7 @@ fn test_op_corrupted_operation_file() -> TestResult {
+     let output = work_dir
+@@ -1142,7 +1142,7 @@ fn test_op_corrupted_operation_file() -> TestResult {
          .join(PathBuf::from_iter([".jj", "repo", "op_store"]));
  
      let op_id = work_dir.current_operation_id();
@@ -982,7 +1050,7 @@ index ad541cfd8c0ebd076fbab4cedd9ef7c31565626f..2bfe17c2f0f907c0b85bc3bb315fb7e6
  
      let op_file_path = op_store_path.join("operations").join(&op_id);
      assert!(op_file_path.exists());
-@@ -1144,7 +1144,7 @@ fn test_op_summary_diff_template() {
+@@ -1188,7 +1188,7 @@ fn test_op_summary_diff_template() {
      let output = work_dir.run_jj(["op", "revert", "--color=always"]);
      insta::assert_snapshot!(output, @"
      ------- stderr -------
@@ -991,7 +1059,7 @@ index ad541cfd8c0ebd076fbab4cedd9ef7c31565626f..2bfe17c2f0f907c0b85bc3bb315fb7e6
      [EOF]
      ");
      let output = work_dir.run_jj([
-@@ -1220,16 +1220,16 @@ fn test_op_diff() {
+@@ -1264,16 +1264,16 @@ fn test_op_diff() {
      // Overview of op log.
      let output = work_dir.run_jj(["op", "log"]);
      insta::assert_snapshot!(output, @"
@@ -1012,7 +1080,7 @@ index ad541cfd8c0ebd076fbab4cedd9ef7c31565626f..2bfe17c2f0f907c0b85bc3bb315fb7e6
      │  add workspace 'default'
      ○  000000000000 root()
      [EOF]
-@@ -1729,8 +1729,8 @@ fn test_op_diff_patch() {
+@@ -1773,8 +1773,8 @@ fn test_op_diff_patch() {
      ");
      let output = work_dir.run_jj(["op", "diff", "--op", "@-", "-p", "--git"]);
      insta::assert_snapshot!(output, @"
@@ -1023,7 +1091,7 @@ index ad541cfd8c0ebd076fbab4cedd9ef7c31565626f..2bfe17c2f0f907c0b85bc3bb315fb7e6
  
      Changed commits:
      ○  + qpvuntsm 6b57e33c (no description set)
-@@ -1831,7 +1831,7 @@ fn test_op_diff_sibling() {
+@@ -1875,7 +1875,7 @@ fn test_op_diff_sibling() {
          .run_jj(["op", "log", "--no-graph", r#"-Tid.short() ++ "\n""#])
          .success();
      let base_op_id = output.stdout.raw().lines().next().unwrap();
@@ -1032,7 +1100,7 @@ index ad541cfd8c0ebd076fbab4cedd9ef7c31565626f..2bfe17c2f0f907c0b85bc3bb315fb7e6
  
      // Create merge commit at one operation side. The parent trees will have to
      // be merged when diffing, which requires the commit index of this side.
-@@ -2033,8 +2033,8 @@ fn test_op_diff_divergent_change() {
+@@ -2077,8 +2077,8 @@ fn test_op_diff_divergent_change() {
          &divergent_op_id,
      ]);
      insta::assert_snapshot!(output, @"
@@ -1043,7 +1111,7 @@ index ad541cfd8c0ebd076fbab4cedd9ef7c31565626f..2bfe17c2f0f907c0b85bc3bb315fb7e6
  
      Changed commits:
      ○  + rlvkpnrz/0 c5cad9ab (divergent) 2b
-@@ -2240,9 +2240,9 @@ fn test_op_diff_at_merge_op_with_rebased_commits() {
+@@ -2284,9 +2284,9 @@ fn test_op_diff_at_merge_op_with_rebased_commits() {
      // FIXME: the diff should be empty
      let output = work_dir.run_jj(["op", "diff"]);
      insta::assert_snapshot!(output, @"
@@ -1056,7 +1124,7 @@ index ad541cfd8c0ebd076fbab4cedd9ef7c31565626f..2bfe17c2f0f907c0b85bc3bb315fb7e6
  
      Changed commits:
      ○  + rlvkpnrz/1 8f35f6a6 (divergent) (empty) 2b
-@@ -2316,8 +2316,8 @@ fn test_op_diff_word_wrap() {
+@@ -2360,8 +2360,8 @@ fn test_op_diff_word_wrap() {
  
      // ui.log-word-wrap option works, and diff stat respects content width
      insta::assert_snapshot!(render(&["op", "diff", "--from=@---", "--stat"], 40, true), @"
@@ -1067,7 +1135,7 @@ index ad541cfd8c0ebd076fbab4cedd9ef7c31565626f..2bfe17c2f0f907c0b85bc3bb315fb7e6
  
      Changed commits:
      ○  + sqpuoqvx f6f32c19 (no description
-@@ -2496,16 +2496,16 @@ fn test_op_show() {
+@@ -2540,16 +2540,16 @@ fn test_op_show() {
      // Overview of op log.
      let output = work_dir.run_jj(["op", "log"]);
      insta::assert_snapshot!(output, @"
@@ -1088,7 +1156,7 @@ index ad541cfd8c0ebd076fbab4cedd9ef7c31565626f..2bfe17c2f0f907c0b85bc3bb315fb7e6
      │  add workspace 'default'
      ○  000000000000 root()
      [EOF]
-@@ -2845,7 +2845,7 @@ fn test_op_show_patch() {
+@@ -2881,7 +2881,7 @@ fn test_op_show_patch() {
      ");
      let output = work_dir.run_jj(["op", "show", "@-", "-p", "--git"]);
      insta::assert_snapshot!(output, @"
@@ -1097,7 +1165,7 @@ index ad541cfd8c0ebd076fbab4cedd9ef7c31565626f..2bfe17c2f0f907c0b85bc3bb315fb7e6
      snapshot working copy
      args: jj new
  
-@@ -3051,7 +3051,7 @@ fn test_op_show_template() {
+@@ -3087,7 +3087,7 @@ fn test_op_show_template() {
          r#"separate(" ", id.short(), description)"#,
          "--no-op-diff",
      ]);
@@ -1106,7 +1174,7 @@ index ad541cfd8c0ebd076fbab4cedd9ef7c31565626f..2bfe17c2f0f907c0b85bc3bb315fb7e6
  
      // Test --no-op-diff flag suppresses the diff
      let output = work_dir.run_jj(["op", "show", "--no-op-diff"]);
-@@ -3098,13 +3098,13 @@ fn test_op_log_parents() {
+@@ -3134,13 +3134,13 @@ fn test_op_log_parents() {
      let template = r#"id.short() ++ "\nP: " ++ parents.len() ++ " " ++ parents.map(|o| o.id().short()) ++ "\n""#;
      let output = work_dir.run_jj(["op", "log", "-T", template]);
      insta::assert_snapshot!(output, @"
@@ -1127,7 +1195,7 @@ index ad541cfd8c0ebd076fbab4cedd9ef7c31565626f..2bfe17c2f0f907c0b85bc3bb315fb7e6
      │  P: 1 000000000000
      ○  000000000000
         P: 0
-@@ -3126,10 +3126,10 @@ fn test_op_log_anonymize() {
+@@ -3162,10 +3162,10 @@ fn test_op_log_anonymize() {
  
      let output = work_dir.run_jj(["op", "log", "-Tbuiltin_op_log_redacted"]);
      insta::assert_snapshot!(output, @"
@@ -1140,7 +1208,7 @@ index ad541cfd8c0ebd076fbab4cedd9ef7c31565626f..2bfe17c2f0f907c0b85bc3bb315fb7e6
      │  add workspace 'default'
      ○  000000000000 root()
      [EOF]
-@@ -3162,7 +3162,7 @@ fn test_op_immutable_revisions() {
+@@ -3198,7 +3198,7 @@ fn test_op_immutable_revisions() {
          .run_jj(["abandon", "--ignore-immutable", "::t1 & ~root()"])
          .success();
      insta::assert_snapshot!(work_dir.run_jj(["op", "show"]), @"
@@ -1149,7 +1217,7 @@ index ad541cfd8c0ebd076fbab4cedd9ef7c31565626f..2bfe17c2f0f907c0b85bc3bb315fb7e6
      abandon commit 9c86781f3fe9097ffc530e65fd2ab4aff1e654bd and 5 more
      args: jj abandon --ignore-immutable '::t1 & ~root()'
  
-@@ -3561,7 +3561,7 @@ commit_summary = 'commit_id.short() ++ " " ++ description.first_line()'
+@@ -3597,7 +3597,7 @@ commit_summary = 'commit_id.short() ++ " " ++ description.first_line()'
      // 5. Test op show for op_rebase: should show ELISION summary.
      // bookmark_x exists in both states of the rebase.
      insta::assert_snapshot!(work_dir.run_jj(["op", "show", &op_rebase]), @"
@@ -1159,7 +1227,7 @@ index ad541cfd8c0ebd076fbab4cedd9ef7c31565626f..2bfe17c2f0f907c0b85bc3bb315fb7e6
      args: jj rebase -s bookmark_x- -d @
  
 diff --git a/cli/tests/test_rebase_command.rs b/cli/tests/test_rebase_command.rs
-index 04d035490b15dbb968492ce59c9044ed1f072ea1..ad8130687a4ccf732ee3787281de2edec86ceef9 100644
+index 04d035490..ad8130687 100644
 --- a/cli/tests/test_rebase_command.rs
 +++ b/cli/tests/test_rebase_command.rs
 @@ -704,7 +704,7 @@ fn test_rebase_revision_onto_descendant() {
@@ -1172,10 +1240,10 @@ index 04d035490b15dbb968492ce59c9044ed1f072ea1..ad8130687a4ccf732ee3787281de2ede
      Parent commit (@-)      : royxmykx 6a7081ef b | b
      Parent commit (@-)      : zsuskuln 68fbc443 a | a
 diff --git a/cli/tests/test_split_command.rs b/cli/tests/test_split_command.rs
-index c3a673d3ea9e6a74c7484a7e6cd262cdcc6d897a..a95aee39c982fff6bb60c4fc16409e7ae11f79b0 100644
+index 2913a635b..c33f7e877 100644
 --- a/cli/tests/test_split_command.rs
 +++ b/cli/tests/test_split_command.rs
-@@ -419,16 +419,16 @@ fn test_split_with_descendants() -> TestResult {
+@@ -443,16 +443,16 @@ fn test_split_with_descendants() -> TestResult {
      insta::assert_snapshot!(evolog_1, @"
      ○  qpvuntsm test.user@example.com 2001-02-03 08:05:12 74306e35
      │  Add file1
@@ -1196,12 +1264,12 @@ index c3a673d3ea9e6a74c7484a7e6cd262cdcc6d897a..a95aee39c982fff6bb60c4fc16409e7a
      [EOF]
      ");
  
-@@ -575,13 +575,13 @@ fn test_split_parallel_no_descendants() -> TestResult {
+@@ -614,13 +614,13 @@ fn test_split_parallel_no_descendants() -> TestResult {
      insta::assert_snapshot!(evolog_1, @"
      ○  qpvuntsm test.user@example.com 2001-02-03 08:05:09 7bcd474c
      │  TESTED=TODO
--    │  -- operation 46ec05e13358 split commit f5700f8ef89e290e4e90ae6adc0908707e0d8c85
-+    │  -- operation 93352f693270 split commit f5700f8ef89e290e4e90ae6adc0908707e0d8c85
+-    │  -- operation b18b49f72827 split commit f5700f8ef89e290e4e90ae6adc0908707e0d8c85
++    │  -- operation 4bbc6d079d38 split commit f5700f8ef89e290e4e90ae6adc0908707e0d8c85
      ○  qpvuntsm/1 test.user@example.com 2001-02-03 08:05:08 f5700f8e (hidden)
      │  (no description set)
 -    │  -- operation 9173705f4b2a snapshot working copy
@@ -1213,8 +1281,17 @@ index c3a673d3ea9e6a74c7484a7e6cd262cdcc6d897a..a95aee39c982fff6bb60c4fc16409e7a
      [EOF]
      ");
  
+@@ -630,7 +630,7 @@ fn test_split_parallel_no_descendants() -> TestResult {
+     insta::assert_snapshot!(evolog_2, @"
+     @  kkmpptxz test.user@example.com 2001-02-03 08:05:09 a99637f9
+     │  TESTED=TODO
+-    │  -- operation b18b49f72827 split commit f5700f8ef89e290e4e90ae6adc0908707e0d8c85
++    │  -- operation 4bbc6d079d38 split commit f5700f8ef89e290e4e90ae6adc0908707e0d8c85
+     ○  qpvuntsm/1 test.user@example.com 2001-02-03 08:05:08 f5700f8e (hidden)
+     │  (no description set)
+     │  -- operation f9159250a6fe snapshot working copy
 diff --git a/cli/tests/test_squash_command.rs b/cli/tests/test_squash_command.rs
-index 31c165bd8f37a012dcceff547d158f48e9e39e42..32175a95643f0f8ebe62e35e3ac9c30cddc46ca2 100644
+index 1134b29f1..9ed2e4752 100644
 --- a/cli/tests/test_squash_command.rs
 +++ b/cli/tests/test_squash_command.rs
 @@ -2173,31 +2173,31 @@ fn test_squash_to_new_commit() -> TestResult {
@@ -1259,7 +1336,7 @@ index 31c165bd8f37a012dcceff547d158f48e9e39e42..32175a95643f0f8ebe62e35e3ac9c30c
      ");
  
 diff --git a/cli/tests/test_undo_redo_commands.rs b/cli/tests/test_undo_redo_commands.rs
-index 91dfad1cb67fb04cdc172e19c2011f8201d5a161..063098fad587bacf4455511214b2fd18c6ca8fc8 100644
+index 91dfad1cb..063098fad 100644
 --- a/cli/tests/test_undo_redo_commands.rs
 +++ b/cli/tests/test_undo_redo_commands.rs
 @@ -23,7 +23,7 @@ fn test_undo_root_operation() {
@@ -1283,7 +1360,7 @@ index 91dfad1cb67fb04cdc172e19c2011f8201d5a161..063098fad587bacf4455511214b2fd18
      ");
  }
 diff --git a/cli/tests/test_util_command.rs b/cli/tests/test_util_command.rs
-index 7f4e5bdfb48c477619219ba40fd642f8369390cf..f7c177da9f60f2af988b67345b72a5ff2db6b2a0 100644
+index f5ef78bf7..ef47ab5b6 100644
 --- a/cli/tests/test_util_command.rs
 +++ b/cli/tests/test_util_command.rs
 @@ -114,8 +114,8 @@ fn test_gc_operation_log() {
@@ -1298,7 +1375,7 @@ index 7f4e5bdfb48c477619219ba40fd642f8369390cf..f7c177da9f60f2af988b67345b72a5ff
      [exit status: 255]
      ");
 diff --git a/cli/tests/test_working_copy.rs b/cli/tests/test_working_copy.rs
-index 852d8f33d344c1b081a652868e27a382fb53135d..9258eb70e1b7ef26018a1448b437dfed46b18c7b 100644
+index 1c199c889..32c046e38 100644
 --- a/cli/tests/test_working_copy.rs
 +++ b/cli/tests/test_working_copy.rs
 @@ -417,7 +417,7 @@ fn test_conflict_marker_length_stored_in_working_copy() -> TestResult {
@@ -1311,7 +1388,7 @@ index 852d8f33d344c1b081a652868e27a382fb53135d..9258eb70e1b7ef26018a1448b437dfed
      Normal { exec_bit: ExecBit(false) }           313 <timestamp> Some(MaterializedConflictData { conflict_marker_len: 11 }) "file"
      [EOF]
 diff --git a/cli/tests/test_workspaces.rs b/cli/tests/test_workspaces.rs
-index b0ffbe0c4ab515c22817a97b6dd2c57a6ea03645..affb05ba3f803294391eb4d50c1d50f0b0674481 100644
+index da162f5ad..de016f4b2 100644
 --- a/cli/tests/test_workspaces.rs
 +++ b/cli/tests/test_workspaces.rs
 @@ -649,7 +649,7 @@ fn test_workspace_add_override_path_in_store() {
@@ -1384,7 +1461,7 @@ index b0ffbe0c4ab515c22817a97b6dd2c57a6ea03645..affb05ba3f803294391eb4d50c1d50f0
      Hint: Run `jj workspace update-stale` to update it.
      See https://docs.jj-vcs.dev/latest/working-copy/#stale-working-copy for more information.
      [EOF]
-@@ -1606,7 +1606,7 @@ fn test_workspaces_forget_multi_transaction() {
+@@ -1608,7 +1608,7 @@ fn test_workspaces_forget_multi_transaction() {
      // the op log should have the multiple valid workspaces forgotten in a single tx
      let output = main_dir.run_jj(["op", "log", "--limit", "1"]);
      insta::assert_snapshot!(output, @"
@@ -1393,7 +1470,7 @@ index b0ffbe0c4ab515c22817a97b6dd2c57a6ea03645..affb05ba3f803294391eb4d50c1d50f0
      │  forget workspaces second, third
      │  args: jj workspace forget second third fourth
      [EOF]
-@@ -1935,10 +1935,10 @@ fn test_debug_snapshot() {
+@@ -2183,10 +2183,10 @@ fn test_debug_snapshot() {
      work_dir.run_jj(["debug", "snapshot"]).success();
      let output = work_dir.run_jj(["op", "log"]);
      insta::assert_snapshot!(output, @"
@@ -1406,80 +1483,22 @@ index b0ffbe0c4ab515c22817a97b6dd2c57a6ea03645..affb05ba3f803294391eb4d50c1d50f0
      │  add workspace 'default'
      ○  000000000000 root()
      [EOF]
-diff --git a/lib/tests/test_operations.rs b/lib/tests/test_operations.rs
-index fee2240257b64abb827086fb2c8420a2998e4941..be44fdb6d4a025926d9a5afee74716e3135aad1c 100644
---- a/lib/tests/test_operations.rs
-+++ b/lib/tests/test_operations.rs
-@@ -641,22 +641,34 @@ fn test_resolve_op_id() -> TestResult {
-     let mut operations = Vec::new();
-     // The actual value of `i` doesn't matter, we just need to make sure we end
-     // up with hashes with ambiguous prefixes.
--    for i in (1..5).chain([10, 24, 9]) {
-+    for i in 1..=18 {
-         let tx = repo.start_transaction();
-         let repo = tx.commit(format!("transaction {i}")).block_on()?;
-         operations.push(repo.operation().clone());
-     }
--    // "b" is ambiguous (operations[2] and operations[5])
--    // "0" is ambiguous with the root operation (operations[6])
-+    // "b" is ambiguous (operations[2] and operations[10]).
-+    // "0" is ambiguous with the root operation (operations[16] and
-+    // operations[17]).
-     insta::assert_debug_snapshot!(operations.iter().map(|op| op.id().hex()).collect_vec(), @r#"
-     [
--        "33d54aefeb762fec7d849fba6cdb19e4f571f9b0a14445c9ab764d800d52c7abbe9d6bb8a152a6e2b02514de2ca769038c8e3ec0093d254369d1c138eaf5b02a",
--        "13f64f9b2c7a8a882f3e5e03885cdc0cb64c8bc40e6f2b6f188c84a4ac49f9e6f1e49e5b3a1c627ef8c077184ea870e532a06554c9e9783bf78338a5e4c0b781",
--        "b1e7aa2b8e7d6015d7f281baadb1f34bdbb8841a762a7e164f7849973ace8d0b8f87309416ccc81c0459373846022c24a93486f8a4ed2ff0ec4221b587ca28f2",
--        "c9cc85d1bf80aa756583a1ba708961f94643277ae716d913b17152e80b42f1886afd1127ec8e34fc15507040ec5a643e32d4b727ea70417ba2fbb29e2e225f88",
--        "94cfe4b05e25e4329dcd2494e0e4a4e4a6608c65ccc9d0a186c81d3bf8f5606ec7b31cd9333dcacbc658ebe0df5e51f91d2d52b58a5806e1273d31c083e4acd6",
--        "b527c15f0261c2520ffe84056f8eb3a216a9994b7117fe17b996f7203bb3cebeace369461f481c412f9969a91490dc5af629efe109c3433afa0c6d0b26fdbc17",
--        "007480c57328c8532149d66fb2a44b6e4ff79e44362e0c9578f82c4147c8cbebf84ad08d9a1f661814902cef89bc76d90628cb606f2431e45f74493d5e1e0cbd",
-+        "f285310e04b2e31a86c42ce9f71d01f3ba3a21b3750ae3211b72820b8afcdff8055868dd3ef3b58c97c6d9f174e3c59f2c9a7652f7dde1170a4411ac27a0bace",
-+        "cb0360327e344fd5474df797d560279a6385bb4c686b11d3f57a6745c94378588cf59bca7cd44bea8a9f2e1c4834a92baecb460d81f015ecedde5bec9aa7cb0e",
-+        "b8809bb2a15e5cad4c0f3bdf7bba61f4b16fe9ca35b66b639c96a9a3b61628949d1b86c552e9d722a8f4d2cc763b61318b6252e32c7de5014b30c8b0f91ed375",
-+        "826bbc58ef72feefc1d12413cb46e6abb823f95779ed89c2eb7604b98e08384de808c2340605b2cd9e5fab51a084152026eee55bf648aa5f2318d9f45d33ddb5",
-+        "d1557ed9b0d9d97ab900ddfc5853b90d048738f88ff951b2725f07886b70c1d87848e5e9815492c3239c1243667dfff3780f415be40081cd3f03a3c39b42c50e",
-+        "7690736fcc1eaf5de31d42972b2069572eb4150ee9672ddf7ac2136cffda0e18d01dc0b2e8ce69bce619d14acb4209138ee8320ca94344dfec0afd0b92fdf975",
-+        "4b25f76bd3bbb0dbc88e91c9892d9e32d46c0ed64981130cd619b49d61d64727862c6a1aac10d4c647fe5cca3a1e65f6c6eb0910e362eca119911b652bdc5896",
-+        "701c7c5c147e11438ff10a340bb4032eb3900df351b190ac5c49a9cd1bcfa7cb0c96fd255aa13002af10002c3278dd994569bd78a7473f29ed961c6257a2ab7f",
-+        "dab8a8eef2ee069a06871dd01a4ae193b6fbdaee9999af81d04a950eabef8d7087f67794710c065f1bd58d7016a3a1b17a34b9c1ecd6accb95c1f79d75227d60",
-+        "a7fd29b88f3e285dcbde24fb3294b9b78ae3cb58c042814003e7bb8f0ccfc552c8e1532e921892fbb1f111d53dcb9800d84250e715ec34ee0e919540aa72ed9f",
-+        "b33328f46042359b69d6080ae2190b34dd6c603c93e3f9df56779c97f6822ce51111b1e112727a95caee839867f1360425d3392fe5b053c240d6865916e72019",
-+        "7bc36dea414d35cbad68c3346485dc0d1db503b66bbd3a59c48bae27e0bf4031cc59b5d6376e65ea7b5c230a7059a8f5251f135105d9a2355e2c87f72d47cdbb",
-+        "f7528a3d0f199d82724ab1249a97e093b1dd73cb7927e96889b621bbfd770742f83e7ca0194314bc2369e82f4c839a5053f5517e0f2d9ff7cdf291840f85158b",
-+        "e5ad23d90e5bc9f161adbd49cad983b229cf0618c112ac619efa46a2af6fb060014925af4c9d8db0239a1fe0b1de05a63585dbf883cbcaa144abfdd29826987f",
-+        "5e4620aab9f3373a9b6414a85c6299b194063538a7c8f4b9694980015a0f9aa23cc0143bd964b6cc0c043397c1a3766132d8f4347ac9edc1c5d9d917b84aa7b2",
-+        "5de0babb6aeb4bfbaf2ee523a369c756f34bb19f4dad4b7c0033bff855ae85d13123b7da48bb8bb4ddd8d73898b9c6f4587309e19acc164bca959d1a0521b8c2",
-+        "097cf398cf47f9b5c713f5e87e5c97d6340f22cffd78b2cfa4163f59e52eeb540ecc9c77fdea1c1b221e678e767a45f98d37945df77b208f8b3a8a9c35af326d",
-+        "0f0e64833d12d8779f4e789fc1b61cad6299a5ea42054693972aad4fed124508826b228c1c87d454314afb854c6f37ef845b3cb2f20b6cb432b1f616d1deb5be",
-     ]
-     "#);
+@@ -2257,14 +2257,14 @@ fn test_workspaces_remove_undo_readd() {
+     assert!(!test_env.env_root().join("secondary").exists());
  
-@@ -693,22 +705,18 @@ fn test_resolve_op_id() -> TestResult {
-     // Virtual root id
-     let root_operation = loader.root_operation().block_on();
-     assert_eq!(resolve(&root_operation.id().hex())?, root_operation);
--    assert_eq!(resolve("b5")?, operations[5]);
--    // "0" is ambiguous with the root operation and operations[6]
-+    assert_eq!(resolve("b8")?, operations[2]);
-+    // "0" is ambiguous with the root operation and operations[16..=17].
-     assert_matches!(
-         resolve("0"),
-         Err(OpsetEvaluationError::OpsetResolution(
-             OpsetResolutionError::AmbiguousIdPrefix(_)
-         ))
-     );
--    assert_matches!(
--        resolve("00"),
--        Err(OpsetEvaluationError::OpsetResolution(
--            OpsetResolutionError::AmbiguousIdPrefix(_)
--        ))
--    );
-+    assert_eq!(resolve("00")?, root_operation);
-     assert_eq!(resolve("000")?, root_operation);
--    assert_eq!(resolve("007")?, operations[6]);
-+    assert_eq!(resolve("09")?, operations[16]);
-+    assert_eq!(resolve("0f")?, operations[17]);
-     Ok(())
- }
+     let output = main_dir.run_jj(["undo"]);
+-    insta::assert_snapshot!(output.normalize_backslash(), @r#"
++    insta::assert_snapshot!(output.normalize_backslash(), @"
+     ------- stderr -------
+     Warning: Undoing a workspace removal restores the workspace, but does not restore the workspace directory.
+     Hint: Run `jj workspace forget` then `jj workspace add` to recreate the directory.
+-    Undid operation: 3c30feac724f (2001-02-03 08:05:10) remove workspace secondary
+-    Restored to operation: 9d798e222e29 (2001-02-03 08:05:09) create initial working-copy commit in workspace secondary
++    Undid operation: bb65288771dc (2001-02-03 08:05:10) remove workspace secondary
++    Restored to operation: 03d1c66085bd (2001-02-03 08:05:09) create initial working-copy commit in workspace secondary
+     [EOF]
+-    "#);
++    ");
  
+     // Removing a workspace deletes its store path, so undo cannot restore it.
+     let output = main_dir.run_jj(["workspace", "root", "--name", "secondary"]);
