@@ -7,7 +7,6 @@ Add a Zig build option that passes Xcode manifest-sandbox disabling only
 when requested. Normal builds keep SwiftPM protection enabled, while nested
 Homebrew sandboxes can opt out with
 `-Dxcodebuild-disable-package-manifest-sandbox=true`.
-
 ---
  src/build/Config.zig            |  7 +++++++
  src/build/GhosttyXcodebuild.zig | 10 ++++++++++

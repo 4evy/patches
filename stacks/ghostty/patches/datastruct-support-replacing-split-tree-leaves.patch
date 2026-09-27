@@ -6,7 +6,6 @@ Subject: datastruct: support replacing split tree leaves
 Add an immutable split-tree replacement operation that preserves topology
 and zoom state while balancing view references. Temporary surface users can
 now swap a leaf without rebuilding the tree by hand.
-
 ---
  src/datastruct/split_tree.zig | 49 +++++++++++++++++++++++++++++++++++
  1 file changed, 49 insertions(+)

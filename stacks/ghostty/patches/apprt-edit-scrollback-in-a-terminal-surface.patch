@@ -14,7 +14,6 @@ operating-system opener fallback.
 
 Refs #2504
 Refs #3496
-
 ---
  include/ghostty.h                             |   9 ++
  .../Terminal/BaseTerminalController.swift     |   5 +-
@@ -22,17 +21,17 @@ Refs #3496
  macos/Sources/Ghostty/Ghostty.App.swift       | 101 ++++++++++++
  .../Surface View/SurfaceView_AppKit.swift     |   6 +
  src/Surface.zig                               | 109 +++++++++++--
- src/apprt/action.zig                          |  32 ++++
- src/apprt/gtk/class/application.zig           | 149 ++++++++++++++++++
+ src/apprt/action.zig                          |  31 ++++
+ src/apprt/gtk/class/application.zig           | 151 ++++++++++++++++++
  src/apprt/gtk/class/split_tree.zig            |  21 +++
  src/config/Config.zig                         |  38 +++++
- 10 files changed, 457 insertions(+), 19 deletions(-)
+ 10 files changed, 458 insertions(+), 19 deletions(-)
 
 diff --git a/include/ghostty.h b/include/ghostty.h
-index 518af3f..7517a12 100644
+index eec6550..4ae44de 100644
 --- a/include/ghostty.h
 +++ b/include/ghostty.h
-@@ -878,6 +878,13 @@ typedef struct {
+@@ -884,6 +884,13 @@ typedef struct {
    uintptr_t len;
  } ghostty_action_open_url_s;
  
@@ -46,15 +45,15 @@ index 518af3f..7517a12 100644
  // apprt.action.CloseTabMode
  typedef enum {
    GHOSTTY_ACTION_CLOSE_TAB_MODE_THIS,
-@@ -1009,6 +1016,7 @@ typedef enum {
-   GHOSTTY_ACTION_READONLY,
+@@ -1016,6 +1023,7 @@ typedef enum {
    GHOSTTY_ACTION_COPY_TITLE_TO_CLIPBOARD,
    GHOSTTY_ACTION_MOVE_TAB_TO_NEW_WINDOW,
+   GHOSTTY_ACTION_RESIZE_WINDOW,
 +  GHOSTTY_ACTION_EDIT_SCROLLBACK,
  } ghostty_action_tag_e;
  
  typedef union {
-@@ -1052,6 +1060,7 @@ typedef union {
+@@ -1060,6 +1068,7 @@ typedef union {
    ghostty_action_search_selected_s search_selected;
    ghostty_action_readonly_e readonly;
    ghostty_action_open_config_e open_config;
@@ -86,7 +85,7 @@ index 79ca5b6..ebeeb8a 100644
              undoManager.setActionName(undoAction)
          }
 diff --git a/macos/Sources/Features/Terminal/TerminalController.swift b/macos/Sources/Features/Terminal/TerminalController.swift
-index 7070a48..0731966 100644
+index bb898bd..dea9ea8 100644
 --- a/macos/Sources/Features/Terminal/TerminalController.swift
 +++ b/macos/Sources/Features/Terminal/TerminalController.swift
 @@ -190,7 +190,8 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
@@ -110,7 +109,7 @@ index 7070a48..0731966 100644
  
      // MARK: Terminal Creation
 diff --git a/macos/Sources/Ghostty/Ghostty.App.swift b/macos/Sources/Ghostty/Ghostty.App.swift
-index bf06e3e..6a56ba7 100644
+index 838b2b8..0809352 100644
 --- a/macos/Sources/Ghostty/Ghostty.App.swift
 +++ b/macos/Sources/Ghostty/Ghostty.App.swift
 @@ -290,6 +290,29 @@ extension Ghostty {
@@ -143,7 +142,7 @@ index bf06e3e..6a56ba7 100644
              NotificationCenter.default.post(name: Notification.ghosttyCloseSurface, object: surface, userInfo: [
                  "process_alive": processAlive,
              ])
-@@ -741,6 +764,9 @@ extension Ghostty {
+@@ -747,6 +770,9 @@ extension Ghostty {
              case GHOSTTY_ACTION_OPEN_URL:
                  return openURL(action.action.open_url)
  
@@ -153,7 +152,7 @@ index bf06e3e..6a56ba7 100644
              case GHOSTTY_ACTION_UNDO:
                  return undo(app, target: target)
  
-@@ -852,6 +878,81 @@ extension Ghostty {
+@@ -858,6 +884,81 @@ extension Ghostty {
              return true
          }
  
@@ -253,10 +252,10 @@ index f77985f..30b005e 100644
          override var surface: ghostty_surface_t? {
              surfaceModel?.unsafeCValue
 diff --git a/src/Surface.zig b/src/Surface.zig
-index 7752921..987db82 100644
+index dd738cc..70aa81a 100644
 --- a/src/Surface.zig
 +++ b/src/Surface.zig
-@@ -337,6 +337,7 @@ const DerivedConfig = struct {
+@@ -344,6 +344,7 @@ const DerivedConfig = struct {
      links: []DerivedConfig.Link,
      link_osc8: bool,
      link_previews: configpkg.LinkPreviews,
@@ -264,7 +263,7 @@ index 7752921..987db82 100644
      scroll_to_bottom: configpkg.Config.ScrollToBottom,
      notify_on_command_finish: configpkg.Config.NotifyOnCommandFinish,
      notify_on_command_finish_action: configpkg.Config.NotifyOnCommandFinishAction,
-@@ -417,6 +418,10 @@ const DerivedConfig = struct {
+@@ -425,6 +426,10 @@ const DerivedConfig = struct {
              .links = links,
              .link_osc8 = config.@"link-osc8",
              .link_previews = config.@"link-previews",
@@ -275,7 +274,7 @@ index 7752921..987db82 100644
              .scroll_to_bottom = config.@"scroll-to-bottom",
              .notify_on_command_finish = config.@"notify-on-command-finish",
              .notify_on_command_finish_action = config.@"notify-on-command-finish-action",
-@@ -5690,6 +5695,24 @@ const WriteScreenLoc = enum {
+@@ -5780,6 +5785,24 @@ const WriteScreenLoc = enum {
      selection, // Selected text
  };
  
@@ -300,7 +299,7 @@ index 7752921..987db82 100644
  fn writeScreenFile(
      self: *Surface,
      loc: WriteScreenLoc,
-@@ -5740,15 +5763,14 @@ fn writeScreenFile(
+@@ -5830,15 +5853,14 @@ fn writeScreenFile(
          const pages = &self.io.terminal.screens.active.pages;
          const sel_: ?terminal.Selection = switch (loc) {
              .history => history: {
@@ -323,7 +322,7 @@ index 7752921..987db82 100644
                          break :history null,
                      false,
                  );
-@@ -5809,13 +5831,44 @@ fn writeScreenFile(
+@@ -5899,13 +5921,44 @@ fn writeScreenFile(
                  .data = pathZ,
              }}, false);
          },
@@ -375,7 +374,7 @@ index 7752921..987db82 100644
          .paste => self.queueIo(try termio.Message.writeReq(
              self.alloc,
              path,
-@@ -5826,6 +5879,32 @@ fn writeScreenFile(
+@@ -5916,6 +5969,32 @@ fn writeScreenFile(
      retain_tmp_dir = true;
  }
  
@@ -409,30 +408,29 @@ index 7752921..987db82 100644
  /// completeClipboardRequest.
  pub const CompleteClipboard = struct {
 diff --git a/src/apprt/action.zig b/src/apprt/action.zig
-index 7e902e5..f4ddff3 100644
+index 54a8faf..4739d0a 100644
 --- a/src/apprt/action.zig
 +++ b/src/apprt/action.zig
-@@ -357,6 +357,11 @@ pub const Action = union(Key) {
-     /// Move a tab to a new window.
-     move_tab_to_new_window,
- 
+@@ -363,6 +363,10 @@ pub const Action = union(Key) {
+     /// and apprts may ignore it, for example if the surface is in a
+     /// split or the window is fullscreen.
+     resize_window: ResizeWindow,
 +    /// Open an exported scrollback file in a temporary terminal surface.
 +    /// The application runtime should restore the original target surface
 +    /// when the command exits and remove the temporary file directory.
 +    edit_scrollback: EditScrollback,
-+
+ 
      /// Sync with: ghostty_action_tag_e
      pub const Key = enum(c_int) {
-         quit,
-@@ -428,6 +433,7 @@ pub const Action = union(Key) {
-         readonly,
+@@ -436,6 +440,7 @@ pub const Action = union(Key) {
          copy_title_to_clipboard,
          move_tab_to_new_window,
+         resize_window,
 +        edit_scrollback,
  
          test "ghostty.h Action.Key" {
              try lib.checkGhosttyHEnum(Key, "GHOSTTY_ACTION_");
-@@ -502,6 +508,32 @@ pub const Action = union(Key) {
+@@ -510,6 +515,32 @@ pub const Action = union(Key) {
      }
  };
  
@@ -466,10 +464,10 @@ index 7e902e5..f4ddff3 100644
  // runtime. The small size cost doesn't make a difference in our union.
  pub const SplitDirection = enum(c_int) {
 diff --git a/src/apprt/gtk/class/application.zig b/src/apprt/gtk/class/application.zig
-index 5b9d3bf..4f1dee4 100644
+index 80cc8bd..4405968 100644
 --- a/src/apprt/gtk/class/application.zig
 +++ b/src/apprt/gtk/class/application.zig
-@@ -743,6 +743,12 @@ pub const Application = extern struct {
+@@ -750,6 +750,12 @@ pub const Application = extern struct {
  
              .open_url => Action.openUrl(self, value),
  
@@ -482,7 +480,7 @@ index 5b9d3bf..4f1dee4 100644
              .pwd => Action.pwd(target, value),
  
              .present_terminal => return Action.presentTerminal(target),
-@@ -2849,6 +2855,149 @@ const Action = struct {
+@@ -2732,6 +2738,151 @@ const Action = struct {
          };
      }
  
@@ -507,6 +505,8 @@ index 5b9d3bf..4f1dee4 100644
 +
 +        const editor: *Surface = .new(.{
 +            .command = .{ .shell = value.command },
++            .shell_integration = null,
++            .working_directory = null,
 +            .wait_after_command = false,
 +            .title = std.mem.span(i18n._("Scrollback")),
 +        });
@@ -633,10 +633,10 @@ index 5b9d3bf..4f1dee4 100644
          target: apprt.Target,
          value: apprt.action.Pwd,
 diff --git a/src/apprt/gtk/class/split_tree.zig b/src/apprt/gtk/class/split_tree.zig
-index ca74371..5110a72 100644
+index b2190ec..b979c3c 100644
 --- a/src/apprt/gtk/class/split_tree.zig
 +++ b/src/apprt/gtk/class/split_tree.zig
-@@ -455,6 +455,27 @@ pub const SplitTree = extern struct {
+@@ -449,6 +449,27 @@ pub const SplitTree = extern struct {
          }
      }
  
@@ -665,10 +665,10 @@ index ca74371..5110a72 100644
          const tree = self.getTree() orelse return;
          var it = tree.iterator();
 diff --git a/src/config/Config.zig b/src/config/Config.zig
-index 877c437..efb87f3 100644
+index 754cf47..9c577e5 100644
 --- a/src/config/Config.zig
 +++ b/src/config/Config.zig
-@@ -1437,6 +1437,24 @@ input: RepeatableReadableIO = .{},
+@@ -1435,6 +1435,24 @@ input: RepeatableReadableIO = .{},
  /// already compressed remain compressed until their contents are accessed.
  @"scrollback-compression": bool = true,
  
@@ -693,7 +693,7 @@ index 877c437..efb87f3 100644
  /// Control when the scrollbar is shown to scroll the scrollback buffer.
  ///
  /// The default value is `system`.
-@@ -11165,6 +11183,26 @@ test "clipboard write limit" {
+@@ -11180,6 +11198,26 @@ test "clipboard write limit" {
      );
  }
  

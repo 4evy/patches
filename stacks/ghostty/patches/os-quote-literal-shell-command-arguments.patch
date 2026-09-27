@@ -7,7 +7,6 @@ Add POSIX-compatible literal argument quoting to `ShellCommandBuilder` and
 reuse it when launching config editors. This preserves argument boundaries
 for paths with whitespace or quotes and gives other shell command users a
 shared implementation.
-
 ---
  src/os/edit.zig  | 21 ++++++--------------
  src/os/shell.zig | 51 ++++++++++++++++++++++++++++++++++++++++++++++++

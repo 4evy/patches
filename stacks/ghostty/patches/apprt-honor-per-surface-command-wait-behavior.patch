@@ -6,14 +6,14 @@ Subject: apprt: honor per-surface command wait behavior
 Respect the embedded surface `wait_after_command` option instead of forcing
 all command surfaces to remain open. Add the equivalent optional GTK surface
 override so transient command surfaces can close when their process exits.
-
 ---
- src/apprt/embedded.zig          | 6 +++---
- src/apprt/gtk/class/surface.zig | 6 ++++++
- 2 files changed, 9 insertions(+), 3 deletions(-)
+ src/apprt/embedded.zig            | 6 +++---
+ src/apprt/gtk/class/Overrides.zig | 1 +
+ src/apprt/gtk/class/surface.zig   | 5 +++++
+ 3 files changed, 9 insertions(+), 3 deletions(-)
 
 diff --git a/src/apprt/embedded.zig b/src/apprt/embedded.zig
-index 525bc85..92551dd 100644
+index b90366a..f1eca17 100644
 --- a/src/apprt/embedded.zig
 +++ b/src/apprt/embedded.zig
 @@ -478,8 +478,8 @@ pub const Surface = struct {
@@ -36,11 +36,23 @@ index 525bc85..92551dd 100644
              }
          }
  
+diff --git a/src/apprt/gtk/class/Overrides.zig b/src/apprt/gtk/class/Overrides.zig
+index e346492..51d4d61 100644
+--- a/src/apprt/gtk/class/Overrides.zig
++++ b/src/apprt/gtk/class/Overrides.zig
+@@ -15,6 +15,7 @@ command: ?configpkg.Command,
+ shell_integration: ?configpkg.Config.ShellIntegration,
+ working_directory: ?[:0]const u8,
+ title: ?[:0]const u8,
++wait_after_command: ?bool = null,
+ 
+ pub const none: Overrides = .{
+     .command = null,
 diff --git a/src/apprt/gtk/class/surface.zig b/src/apprt/gtk/class/surface.zig
-index 9d45bc6..8195daa 100644
+index 3b28e0e..07a678e 100644
 --- a/src/apprt/gtk/class/surface.zig
 +++ b/src/apprt/gtk/class/surface.zig
-@@ -738,6 +738,7 @@ pub const Surface = extern struct {
+@@ -737,6 +737,7 @@ pub const Surface = extern struct {
              command: ?configpkg.Command = null,
              shell_integration: ?configpkg.Config.ShellIntegration = null,
              working_directory: ?[:0]const u8 = null,
@@ -48,15 +60,7 @@ index 9d45bc6..8195daa 100644
  
              pub const none: @This() = .{};
          } = .none,
-@@ -749,6 +750,7 @@ pub const Surface = extern struct {
-         command: ?configpkg.Command = null,
-         shell_integration: ?configpkg.Config.ShellIntegration = null,
-         working_directory: ?[:0]const u8 = null,
-+        wait_after_command: ?bool = null,
-         title: ?[:0]const u8 = null,
- 
-         pub const none: @This() = .{};
-@@ -762,6 +764,7 @@ pub const Surface = extern struct {
+@@ -754,6 +755,7 @@ pub const Surface = extern struct {
              .command = if (overrides.command) |c| c.clone(alloc) catch null else null,
              .shell_integration = overrides.shell_integration,
              .working_directory = if (overrides.working_directory) |wd| alloc.dupeZ(u8, wd) catch null else null,
@@ -64,7 +68,7 @@ index 9d45bc6..8195daa 100644
          };
          return self;
      }
-@@ -3547,6 +3550,9 @@ pub const Surface = extern struct {
+@@ -3465,6 +3467,9 @@ pub const Surface = extern struct {
              priv.overrides.command,
              priv.overrides.shell_integration,
          );
