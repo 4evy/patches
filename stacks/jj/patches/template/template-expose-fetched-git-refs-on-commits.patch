@@ -13,7 +13,7 @@ commits they name.
  3 files changed, 136 insertions(+)
 
 diff --git a/cli/src/commit_templater.rs b/cli/src/commit_templater.rs
-index 318a1b2..af9786f 100644
+index 29ab1a4..ef35ebd 100644
 --- a/cli/src/commit_templater.rs
 +++ b/cli/src/commit_templater.rs
 @@ -17,6 +17,7 @@
@@ -54,7 +54,7 @@ index 318a1b2..af9786f 100644
      pub fn is_immutable_fn(
          &self,
          language: &CommitTemplateLanguage,
-@@ -1374,6 +1383,18 @@ fn builtin_commit_methods<'repo>() -> CommitTemplateBuildMethodFnMap<'repo, Comm
+@@ -1352,6 +1361,18 @@ fn builtin_commit_methods<'repo>() -> CommitTemplateBuildMethodFnMap<'repo, Comm
              Ok(out_property.into_dyn_wrapped())
          },
      );
@@ -73,7 +73,7 @@ index 318a1b2..af9786f 100644
      map.insert(
          "tags",
          |language, _diagnostics, _build_ctx, self_property, function| {
-@@ -2221,6 +2242,22 @@ fn build_commit_refs_index<'a, K: Into<String>>(
+@@ -2186,6 +2207,22 @@ fn build_commit_refs_index<'a, K: Into<String>>(
      index
  }
  

@@ -12,7 +12,7 @@ let
     owner = "jj-vcs";
     repo = "jj";
     rev = revision;
-    hash = "sha256-8BuxLn6nl/iaPmeGDZf+BFvNdqMXKYbDMBGoORBAHps=";
+    hash = "sha256-2f7wLhypULQWxgwOmFAWAiPZaZLgbJ9TIzO+PE6pvV8=";
   };
 in
 jujutsu.overrideAttrs (oldAttrs: {

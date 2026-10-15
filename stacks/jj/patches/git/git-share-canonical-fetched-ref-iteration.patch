@@ -90,7 +90,7 @@ index 8712cf0..c860465 100644
                  .write(formatter, async |formatter| {
                      writeln!(
 diff --git a/cli/src/commit_templater.rs b/cli/src/commit_templater.rs
-index af9786f..6cf70a2 100644
+index ef35ebd..2feb9b3 100644
 --- a/cli/src/commit_templater.rs
 +++ b/cli/src/commit_templater.rs
 @@ -17,7 +17,6 @@
@@ -127,7 +127,7 @@ index af9786f..6cf70a2 100644
      }
  
      pub fn is_immutable_fn(
-@@ -2243,17 +2245,13 @@ fn build_commit_refs_index<'a, K: Into<String>>(
+@@ -2208,17 +2210,13 @@ fn build_commit_refs_index<'a, K: Into<String>>(
  }
  
  fn build_fetched_git_refs_index<'a>(
@@ -151,10 +151,10 @@ index af9786f..6cf70a2 100644
      index
  }
 diff --git a/lib/src/git.rs b/lib/src/git.rs
-index c7ff624..f7660b8 100644
+index ecace30..494c8cb 100644
 --- a/lib/src/git.rs
 +++ b/lib/src/git.rs
-@@ -1185,9 +1185,7 @@ fn pinned_commit_ids(view: &View) -> Vec<CommitId> {
+@@ -1243,9 +1243,7 @@ fn pinned_commit_ids(view: &View) -> Vec<CommitId> {
      itertools::chain!(
          view.local_bookmarks().map(|(_, target)| target),
          view.local_tags().map(|(_, target)| target),

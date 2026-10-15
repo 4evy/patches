@@ -33,10 +33,10 @@ Assisted-by: GPT-6
  create mode 100644 cli/tests/test_redate_command.rs
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index b578091..8c2f2a5 100644
+index f0d0ddc..1ad8668 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -297,6 +297,10 @@ None
+@@ -304,6 +304,10 @@ None
    repositories. `jj git ref fetch --shallow-exclude` can fetch a review stack
    plus one parent generation for a usable diff base.
  
@@ -1010,7 +1010,7 @@ index a619b5b..73ed741 100644
  file_annotate = '''
  join(" ",
 diff --git a/cli/tests/cli-reference@.md.snap b/cli/tests/cli-reference@.md.snap
-index 0a83e0b..f3f8e50 100644
+index 65b3913..ab66c51 100644
 --- a/cli/tests/cli-reference@.md.snap
 +++ b/cli/tests/cli-reference@.md.snap
 @@ -97,6 +97,7 @@ This document contains the help content for the `jj` command-line program.
@@ -1029,7 +1029,7 @@ index 0a83e0b..f3f8e50 100644
  * `redo` — Redo the most recently undone operation
  * `resolve` — Resolve conflicted files with an external merge tool
  * `restore` — Restore paths from another revision
-@@ -3173,6 +3175,25 @@ J           J
+@@ -3171,6 +3173,25 @@ J           J
  
  
  

@@ -94,10 +94,10 @@ index 5690781..fbc2856 100644
      Ok(())
  }
 diff --git a/cli/tests/test_git_fetch.rs b/cli/tests/test_git_fetch.rs
-index 4ab7c00..bf8672b 100644
+index a069a0d..dcebac9 100644
 --- a/cli/tests/test_git_fetch.rs
 +++ b/cli/tests/test_git_fetch.rs
-@@ -1543,6 +1543,54 @@ fn test_git_ref_fetch_undo_and_op_restore() {
+@@ -1553,6 +1553,54 @@ fn test_git_ref_fetch_undo_and_op_restore() {
      ");
  }
  

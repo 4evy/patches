@@ -30,10 +30,10 @@ Closes #4388
  create mode 100644 cli/src/commands/git/ref/push.rs
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index 5937f39..7d66b63 100644
+index 51376bc..ef130b7 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -280,6 +280,10 @@ None
+@@ -287,6 +287,10 @@ None
    remote. The fetched commits become visible without creating bookmarks or
    remote-tracking refs.
  
@@ -376,7 +376,7 @@ index 38e14aa..d85480a 100644
      if !stats.unexported_bookmarks.is_empty() {
          writeln!(
 diff --git a/cli/tests/cli-reference@.md.snap b/cli/tests/cli-reference@.md.snap
-index fd90a54..ac8c5cf 100644
+index 400c89e..9eb9a91 100644
 --- a/cli/tests/cli-reference@.md.snap
 +++ b/cli/tests/cli-reference@.md.snap
 @@ -70,6 +70,7 @@ This document contains the help content for the `jj` command-line program.
@@ -387,7 +387,7 @@ index fd90a54..ac8c5cf 100644
  * [`jj git remote`↴](#jj-git-remote)
  * [`jj git remote add`↴](#jj-git-remote-add)
  * [`jj git remote list`↴](#jj-git-remote-list)
-@@ -2026,6 +2027,7 @@ Manage raw Git refs
+@@ -2024,6 +2025,7 @@ Manage raw Git refs
  ###### **Subcommands:**
  
  * `fetch` — Fetch raw refs or full commit IDs from a Git remote
@@ -395,7 +395,7 @@ index fd90a54..ac8c5cf 100644
  
  
  
-@@ -2049,6 +2051,35 @@ Each source can be a fully qualified remote ref such as GitHub's `refs/pull/123/
+@@ -2047,6 +2049,35 @@ Each source can be a fully qualified remote ref such as GitHub's `refs/pull/123/
  
  
  
@@ -432,7 +432,7 @@ index fd90a54..ac8c5cf 100644
  
  Manage Git remotes
 diff --git a/cli/tests/test_git_push.rs b/cli/tests/test_git_push.rs
-index 04dd4c3..5cdf1cf 100644
+index 7dcbbb1..d24fa73 100644
 --- a/cli/tests/test_git_push.rs
 +++ b/cli/tests/test_git_push.rs
 @@ -63,6 +63,357 @@ fn set_up(test_env: &TestEnvironment) {

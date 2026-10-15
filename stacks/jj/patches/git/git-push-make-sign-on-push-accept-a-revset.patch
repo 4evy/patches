@@ -21,10 +21,10 @@ configurations keep their old mutable, unsigned, own-commit behavior
  9 files changed, 116 insertions(+), 48 deletions(-)
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index fa33b42..e717a91 100644
+index 529898f..cb7fc13 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -251,6 +251,10 @@ published.
+@@ -258,6 +258,10 @@ published.
  * `jj git import` in non-colocated repositories no longer imports commits from a
    detached Git HEAD branch.
  
@@ -35,7 +35,7 @@ index fa33b42..e717a91 100644
  ### Deprecations
  
  None
-@@ -302,6 +306,9 @@ None
+@@ -309,6 +313,9 @@ None
    when the commit stack is taller than the terminal.
    [#9033](https://github.com/jj-vcs/jj/issues/9033).
  
@@ -285,10 +285,10 @@ index a6e7fac..dacfd7c 100644
  fn test_config_list_single() {
      let test_env = TestEnvironment::default();
 diff --git a/cli/tests/test_git_push.rs b/cli/tests/test_git_push.rs
-index 5cdf1cf..6404843 100644
+index d24fa73..b38fcdb 100644
 --- a/cli/tests/test_git_push.rs
 +++ b/cli/tests/test_git_push.rs
-@@ -3075,7 +3075,7 @@ fn test_git_push_sign_on_push() {
+@@ -3078,7 +3078,7 @@ fn test_git_push_sign_on_push() {
          r#"
      signing.backend = "test"
      signing.key = "impeccable"
@@ -297,7 +297,7 @@ index 5cdf1cf..6404843 100644
      "#,
      );
      let output = work_dir.run_jj(["git", "push", "--dry-run"]);
-@@ -3247,7 +3247,7 @@ fn test_git_push_sign_on_push_separate_transaction() -> TestResult {
+@@ -3250,7 +3250,7 @@ fn test_git_push_sign_on_push_separate_transaction() -> TestResult {
          r#"
      signing.backend = "test"
      signing.key = "impeccable"
@@ -306,7 +306,7 @@ index 5cdf1cf..6404843 100644
      "#,
      );
  
-@@ -3329,7 +3329,7 @@ fn test_git_push_sign_on_push_separate_transaction_change_bookmark() -> TestResu
+@@ -3332,7 +3332,7 @@ fn test_git_push_sign_on_push_separate_transaction_change_bookmark() -> TestResu
          r#"
      signing.backend = "test"
      signing.key = "impeccable"

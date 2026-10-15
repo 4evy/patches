@@ -5,7 +5,7 @@
   "source": {
     "vcs": "git",
     "canonical": "https://github.com/jj-vcs/jj.git",
-    "revision": "a6d4a5e2a825ca3d91734b4abe4794741ba298a5",
+    "revision": "df92b83d7d1141cd51aabf0dd744bb365d62ae3b",
     "trackingRef": "refs/heads/main",
     "endpoints": [
       {
@@ -22,7 +22,7 @@
   "result": {
     "tree": {
       "algorithm": "sha1",
-      "oid": "524dee7cbcfd864fa4f986ad125cd4392cffd4cd"
+      "oid": "ddd0bfed8f9d4d356aa68c5f10b55d7534a79099"
     }
   }
 }

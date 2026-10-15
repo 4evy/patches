@@ -16,10 +16,10 @@ already has the requested target
 Refs #4388
 ---
  cli/src/commands/gerrit/upload.rs |   8 +-
- lib/src/git.rs                    | 185 ++++++++++++++++++------------
+ lib/src/git.rs                    | 191 ++++++++++++++++++------------
  lib/src/git_subprocess.rs         |  35 +++---
  lib/tests/test_git.rs             | 102 +++++++++++-----
- 4 files changed, 207 insertions(+), 123 deletions(-)
+ 4 files changed, 212 insertions(+), 124 deletions(-)
 
 diff --git a/cli/src/commands/gerrit/upload.rs b/cli/src/commands/gerrit/upload.rs
 index eeaeef3..e1dd984 100644
@@ -46,10 +46,10 @@ index eeaeef3..e1dd984 100644
              &push_options,
          )
 diff --git a/lib/src/git.rs b/lib/src/git.rs
-index 8b1fd57..bbe3ce6 100644
+index 81b7e5c..6d2a2d2 100644
 --- a/lib/src/git.rs
 +++ b/lib/src/git.rs
-@@ -201,6 +201,11 @@ pub enum GitRefKind {
+@@ -203,6 +203,11 @@ pub enum GitRefKind {
  pub struct GitPushStats {
      /// reference accepted by the remote
      pub pushed: Vec<GitRefNameBuf>,
@@ -61,7 +61,7 @@ index 8b1fd57..bbe3ce6 100644
      /// rejected reference, due to lease failure, with an optional reason
      pub rejected: Vec<(GitRefNameBuf, Option<String>)>,
      /// reference rejected by the remote, with an optional reason
-@@ -308,40 +313,42 @@ impl NegativeRefSpec {
+@@ -310,40 +315,42 @@ impl NegativeRefSpec {
      }
  }
  
@@ -131,7 +131,7 @@ index 8b1fd57..bbe3ce6 100644
      }
  }
  
-@@ -3566,13 +3573,50 @@ pub struct GitPushRefTargets {
+@@ -3614,13 +3621,50 @@ pub struct GitPushRefTargets {
      pub tags: Vec<(RefNameBuf, Diff<Option<CommitId>>)>,
  }
  
@@ -188,7 +188,7 @@ index 8b1fd57..bbe3ce6 100644
  }
  
  /// Miscellaneous options for Git push command.
-@@ -3591,8 +3635,6 @@ pub fn push_refs(
+@@ -3639,8 +3683,6 @@ pub fn push_refs(
      callback: &mut dyn GitSubprocessCallback,
      options: &GitPushOptions,
  ) -> Result<GitPushStats, GitPushError> {
@@ -197,7 +197,7 @@ index 8b1fd57..bbe3ce6 100644
      let git_repo = get_git_repo(mut_repo.store())?;
      let to_tag_target = |name: &RefName, remote: &RemoteName, id: &CommitId| {
          let remote_matcher = StringMatcher::exact(remote);
-@@ -3601,24 +3643,28 @@ pub fn push_refs(
+@@ -3649,24 +3691,28 @@ pub fn push_refs(
              .unwrap_or(oid)
      };
      let ref_updates = itertools::chain(
@@ -243,13 +243,13 @@ index 8b1fd57..bbe3ce6 100644
          }),
      )
      .collect_vec();
-@@ -3636,12 +3682,12 @@ pub fn push_refs(
+@@ -3684,12 +3730,12 @@ pub fn push_refs(
      let pushed: HashSet<&GitRefName> = push_stats.pushed.iter().map(AsRef::as_ref).collect();
      let pushed_bookmark_updates = || {
          iter::zip(&targets.bookmarks, &ref_updates[..targets.bookmarks.len()])
 -            .filter(|(_, ref_update)| pushed.contains(&*ref_update.qualified_name))
 +            .filter(|(_, ref_update)| pushed.contains(&*ref_update.full_name))
-             .map(|((name, update), _)| (&**name, update))
+             .map(|((name, update), ref_update)| (&**name, update, ref_update))
      };
      let pushed_tag_updates = || {
          iter::zip(&targets.tags, &ref_updates[targets.bookmarks.len()..])
@@ -258,16 +258,28 @@ index 8b1fd57..bbe3ce6 100644
              .map(|((name, update), ref_update)| (&**name, update, ref_update))
      };
  
-@@ -3656,7 +3702,7 @@ pub fn push_refs(
-     // remote, update failure isn't a hard error.
+@@ -3706,14 +3752,18 @@ pub fn push_refs(
+     // isn't a hard error.
+     for (name, _, ref_update) in pushed_bookmark_updates() {
+         let symbol = name.to_remote_symbol(remote);
+-        let edit = to_fetched_ref_update(GitRefKind::Bookmark, symbol, ref_update.targets.after);
++        let edit = to_fetched_ref_update(
++            GitRefKind::Bookmark,
++            symbol,
++            ref_update.new_target().copied(),
++        );
+         if let Err(err) = git_repo.edit_reference(edit) {
+             tracing::warn!(?symbol, ?err, "failed to update fetched bookmark ref");
+         }
+     }
      for (name, _, ref_update) in pushed_tag_updates() {
          let symbol = name.to_remote_symbol(remote);
--        let edit = to_remote_tag_ref_update(symbol, ref_update.targets.after);
-+        let edit = to_remote_tag_ref_update(symbol, ref_update.new_target().copied());
+-        let edit = to_fetched_ref_update(GitRefKind::Tag, symbol, ref_update.targets.after);
++        let edit = to_fetched_ref_update(GitRefKind::Tag, symbol, ref_update.new_target().copied());
          if let Err(err) = git_repo.edit_reference(edit) {
              tracing::warn!(?symbol, ?err, "failed to update remote tag ref");
          }
-@@ -3689,6 +3735,7 @@ pub fn push_refs(
+@@ -3748,6 +3798,7 @@ pub fn push_refs(
      assert!(push_stats.unexported_bookmarks.is_empty());
      let push_stats = GitPushStats {
          pushed: push_stats.pushed,
@@ -275,7 +287,7 @@ index 8b1fd57..bbe3ce6 100644
          rejected: push_stats.rejected,
          remote_rejected: push_stats.remote_rejected,
          unexported_bookmarks,
-@@ -3705,26 +3752,20 @@ pub fn push_updates(
+@@ -3764,26 +3815,20 @@ pub fn push_updates(
      callback: &mut dyn GitSubprocessCallback,
      options: &GitPushOptions,
  ) -> Result<GitPushStats, GitPushError> {
@@ -310,7 +322,7 @@ index 8b1fd57..bbe3ce6 100644
          }
      }
  
-@@ -3737,13 +3778,13 @@ pub fn push_updates(
+@@ -3796,13 +3841,13 @@ pub fn push_updates(
          return Err(GitPushError::NoSuchRemote(remote_name.to_owned()));
      }
  
@@ -405,10 +417,10 @@ index 7cf01d2..8993c8d 100644
              rejected,
              vec![
 diff --git a/lib/tests/test_git.rs b/lib/tests/test_git.rs
-index 5eb4389..41df60f 100644
+index f11db9a..7f4d6f2 100644
 --- a/lib/tests/test_git.rs
 +++ b/lib/tests/test_git.rs
-@@ -5503,6 +5503,7 @@ fn test_push_bookmarks_success() -> TestResult {
+@@ -5516,6 +5516,7 @@ fn test_push_bookmarks_success() -> TestResult {
                  "refs/heads/main",
              ),
          ],
@@ -416,7 +428,7 @@ index 5eb4389..41df60f 100644
          rejected: [],
          remote_rejected: [],
          unexported_bookmarks: [],
-@@ -5579,6 +5580,7 @@ fn test_push_bookmarks_deletion() -> TestResult {
+@@ -5592,6 +5593,7 @@ fn test_push_bookmarks_deletion() -> TestResult {
                  "refs/heads/main",
              ),
          ],
@@ -424,7 +436,7 @@ index 5eb4389..41df60f 100644
          rejected: [],
          remote_rejected: [],
          unexported_bookmarks: [],
-@@ -5656,6 +5658,7 @@ fn test_push_bookmarks_mixed_deletion_and_addition() -> TestResult {
+@@ -5669,6 +5671,7 @@ fn test_push_bookmarks_mixed_deletion_and_addition() -> TestResult {
                  "refs/heads/topic",
              ),
          ],
@@ -432,7 +444,7 @@ index 5eb4389..41df60f 100644
          rejected: [],
          remote_rejected: [],
          unexported_bookmarks: [],
-@@ -5736,6 +5739,7 @@ fn test_push_bookmarks_not_fast_forward() -> TestResult {
+@@ -5749,6 +5752,7 @@ fn test_push_bookmarks_not_fast_forward() -> TestResult {
                  "refs/heads/main",
              ),
          ],
@@ -440,7 +452,7 @@ index 5eb4389..41df60f 100644
          rejected: [],
          remote_rejected: [],
          unexported_bookmarks: [],
-@@ -5791,6 +5795,7 @@ fn test_push_bookmarks_partial_success() -> TestResult {
+@@ -5804,6 +5808,7 @@ fn test_push_bookmarks_partial_success() -> TestResult {
                  "refs/heads/main",
              ),
          ],
@@ -448,7 +460,7 @@ index 5eb4389..41df60f 100644
          rejected: [
              (
                  GitRefNameBuf(
-@@ -5896,6 +5901,7 @@ fn test_push_bookmarks_unmapped_refs() -> TestResult {
+@@ -5909,6 +5914,7 @@ fn test_push_bookmarks_unmapped_refs() -> TestResult {
                  "refs/heads/bookmark2",
              ),
          ],
@@ -456,7 +468,7 @@ index 5eb4389..41df60f 100644
          rejected: [],
          remote_rejected: [],
          unexported_bookmarks: [
-@@ -6325,11 +6331,10 @@ fn test_push_updates_unexpectedly_moved_sideways_on_remote() -> TestResult {
+@@ -6451,11 +6457,10 @@ fn test_push_updates_unexpectedly_moved_sideways_on_remote() -> TestResult {
  
      let attempt_push_expecting_sideways = |target: Option<&Commit>| {
          let subprocess_options = GitSubprocessOptions::from_settings(&settings).unwrap();
@@ -472,7 +484,7 @@ index 5eb4389..41df60f 100644
          git::push_updates(
              setup.jj_repo.as_ref(),
              subprocess_options,
-@@ -6381,6 +6386,11 @@ fn test_push_updates_unexpectedly_moved_sideways_on_remote() -> TestResult {
+@@ -6507,6 +6512,11 @@ fn test_push_updates_unexpectedly_moved_sideways_on_remote() -> TestResult {
                  "refs/heads/main",
              ),
          ],
@@ -484,7 +496,7 @@ index 5eb4389..41df60f 100644
          rejected: [],
          remote_rejected: [],
          unexported_bookmarks: [],
-@@ -6389,6 +6399,36 @@ fn test_push_updates_unexpectedly_moved_sideways_on_remote() -> TestResult {
+@@ -6515,6 +6525,36 @@ fn test_push_updates_unexpectedly_moved_sideways_on_remote() -> TestResult {
      Ok(())
  }
  
@@ -521,7 +533,7 @@ index 5eb4389..41df60f 100644
  #[test]
  fn test_push_updates_unexpectedly_moved_forward_on_remote() -> TestResult {
      let settings = testutils::user_settings();
-@@ -6410,11 +6450,10 @@ fn test_push_updates_unexpectedly_moved_forward_on_remote() -> TestResult {
+@@ -6536,11 +6576,10 @@ fn test_push_updates_unexpectedly_moved_forward_on_remote() -> TestResult {
  
      let attempt_push_expecting_parent = |target: Option<&Commit>| {
          let subprocess_options = GitSubprocessOptions::from_settings(&settings).unwrap();
@@ -537,7 +549,7 @@ index 5eb4389..41df60f 100644
          git::push_updates(
              setup.jj_repo.as_ref(),
              subprocess_options,
-@@ -6476,10 +6515,10 @@ fn test_push_updates_unexpectedly_exists_on_remote() -> TestResult {
+@@ -6602,10 +6641,10 @@ fn test_push_updates_unexpectedly_exists_on_remote() -> TestResult {
  
      let attempt_push_expecting_absence = |target: Option<&Commit>| {
          let subprocess_options = GitSubprocessOptions::from_settings(&settings).unwrap();
@@ -552,7 +564,7 @@ index 5eb4389..41df60f 100644
          git::push_updates(
              setup.jj_repo.as_ref(),
              subprocess_options,
-@@ -6518,11 +6557,11 @@ fn test_push_updates_success() -> TestResult {
+@@ -6644,11 +6683,11 @@ fn test_push_updates_success() -> TestResult {
          setup.jj_repo.as_ref(),
          subprocess_options,
          "origin".as_ref(),
@@ -568,7 +580,7 @@ index 5eb4389..41df60f 100644
          &mut NullCallback,
          &GitPushOptions::default(),
      )?;
-@@ -6533,6 +6572,7 @@ fn test_push_updates_success() -> TestResult {
+@@ -6659,6 +6698,7 @@ fn test_push_updates_success() -> TestResult {
                  "refs/heads/main",
              ),
          ],
@@ -576,7 +588,7 @@ index 5eb4389..41df60f 100644
          rejected: [],
          remote_rejected: [],
          unexported_bookmarks: [],
-@@ -6563,11 +6603,11 @@ fn test_push_updates_no_such_remote() -> TestResult {
+@@ -6689,11 +6729,11 @@ fn test_push_updates_no_such_remote() -> TestResult {
          setup.jj_repo.as_ref(),
          subprocess_options,
          "invalid-remote".as_ref(),
@@ -592,7 +604,7 @@ index 5eb4389..41df60f 100644
          &mut NullCallback,
          &GitPushOptions::default(),
      );
-@@ -6585,15 +6625,15 @@ fn test_push_updates_invalid_remote() -> TestResult {
+@@ -6711,15 +6751,15 @@ fn test_push_updates_invalid_remote() -> TestResult {
          setup.jj_repo.as_ref(),
          subprocess_options,
          "http://invalid-remote".as_ref(),
@@ -613,7 +625,7 @@ index 5eb4389..41df60f 100644
      Ok(())
  }
  
-@@ -7264,11 +7304,11 @@ fn test_push_updates_with_options() -> TestResult {
+@@ -7429,11 +7469,11 @@ fn test_push_updates_with_options() -> TestResult {
          setup.jj_repo.as_ref(),
          git_settings.to_subprocess_options(),
          "origin".as_ref(),

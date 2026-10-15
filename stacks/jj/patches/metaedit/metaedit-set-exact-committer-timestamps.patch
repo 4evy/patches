@@ -12,10 +12,10 @@ Add --committer-timestamp for setting the committer timestamp directly and --tim
  4 files changed, 161 insertions(+), 5 deletions(-)
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index 6345168..fa33b42 100644
+index f2e7285..529898f 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -263,6 +263,9 @@ None
+@@ -270,6 +270,9 @@ None
    back to prompting the user if the heuristics are inconclusive. It can also run
    in non-interactive mode, which aborts if prompting would be needed.
  
@@ -123,10 +123,10 @@ index 3ac3b2d..f1f3421 100644
                      && description != commit_builder.description()
                  {
 diff --git a/cli/tests/cli-reference@.md.snap b/cli/tests/cli-reference@.md.snap
-index 886e4c4..0a83e0b 100644
+index 0e7b920..65b3913 100644
 --- a/cli/tests/cli-reference@.md.snap
 +++ b/cli/tests/cli-reference@.md.snap
-@@ -2424,6 +2424,16 @@ Whenever any metadata is updated, the committer name, email, and timestamp are a
+@@ -2422,6 +2422,16 @@ Whenever any metadata is updated, the committer name, email, and timestamp are a
  
     [RFC2822]: https://datatracker.ietf.org/doc/html/rfc2822
  

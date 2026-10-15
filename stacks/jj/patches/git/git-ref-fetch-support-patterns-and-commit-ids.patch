@@ -21,10 +21,10 @@ Include command coverage and the matching documentation
  9 files changed, 840 insertions(+), 194 deletions(-)
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index 7d66b63..6345168 100644
+index ef130b7..f2e7285 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -276,14 +276,20 @@ None
+@@ -283,14 +283,20 @@ None
    directory or loaded via `--config-file`). This allows precise file targeting
    and avoids interactive prompts when multiple config files exist.
  
@@ -49,10 +49,10 @@ index 7d66b63..6345168 100644
  
  * [The default `immutable_heads()` set](docs/config.md#set-of-immutable-commits)
 diff --git a/cli/src/cli_util.rs b/cli/src/cli_util.rs
-index b79f83f..931e2d8 100644
+index 276e526..73ed0c4 100644
 --- a/cli/src/cli_util.rs
 +++ b/cli/src/cli_util.rs
-@@ -2046,6 +2046,15 @@ to the current parents may contain changes from multiple commits.
+@@ -2048,6 +2048,15 @@ to the current parents may contain changes from multiple commits.
          to_rewrite_expr: &Arc<ResolvedRevsetExpression>,
      ) -> Result<(), CommandError> {
          let repo = self.repo().as_ref();
@@ -68,7 +68,7 @@ index b79f83f..931e2d8 100644
          let immutable_expr = self.env.resolve_immutable_expression(repo)?;
          let Some(commit_id) = immutable_expr
              .intersection(to_rewrite_expr)
-@@ -2792,6 +2801,18 @@ impl WorkspaceCommandTransaction<'_> {
+@@ -2795,6 +2804,18 @@ impl WorkspaceCommandTransaction<'_> {
          self.tx.repo_mut()
      }
  
@@ -539,7 +539,7 @@ index c13a4ca..532feea 100644
      ui: &mut Ui,
      command: &CommandHelper,
 diff --git a/cli/tests/cli-reference@.md.snap b/cli/tests/cli-reference@.md.snap
-index 0a9a4db..886e4c4 100644
+index 7ef7c03..0e7b920 100644
 --- a/cli/tests/cli-reference@.md.snap
 +++ b/cli/tests/cli-reference@.md.snap
 @@ -1,6 +1,5 @@
@@ -565,7 +565,7 @@ index 0a9a4db..886e4c4 100644
  * [`jj git ref push`↴](#jj-git-ref-push)
  * [`jj git remote`↴](#jj-git-remote)
  * [`jj git remote add`↴](#jj-git-remote-add)
-@@ -1723,7 +1720,6 @@ See this [comparison], including a [table of commands].
+@@ -1721,7 +1718,6 @@ See this [comparison], including a [table of commands].
  * `fetch` — Fetch from a Git remote
  * `import` — Update repo with changes made in the underlying Git repo
  * `init` — Create a new Git backed repo
@@ -573,7 +573,7 @@ index 0a9a4db..886e4c4 100644
  * `push` — Push to a Git remote
  * `ref` — Manage raw Git refs
  * `remote` — Manage Git remotes
-@@ -1958,82 +1954,6 @@ If the setting `git.colocate` has the value `false`, then new repositories will
+@@ -1956,82 +1952,6 @@ If the setting `git.colocate` has the value `false`, then new repositories will
  
  
  
@@ -656,7 +656,7 @@ index 0a9a4db..886e4c4 100644
  ## `jj git push`
  
  Push to a Git remote
-@@ -2111,28 +2031,74 @@ Manage raw Git refs
+@@ -2109,28 +2029,74 @@ Manage raw Git refs
  
  ###### **Subcommands:**
  
@@ -736,10 +736,10 @@ index 0a9a4db..886e4c4 100644
  
  
 diff --git a/cli/tests/test_git_fetch.rs b/cli/tests/test_git_fetch.rs
-index 1842f59..4ab7c00 100644
+index f5c1cf5..a069a0d 100644
 --- a/cli/tests/test_git_fetch.rs
 +++ b/cli/tests/test_git_fetch.rs
-@@ -292,7 +292,7 @@ fn test_git_ref_fetch_invalid_source() {
+@@ -302,7 +302,7 @@ fn test_git_ref_fetch_invalid_source() {
          ]),
          @r"
      ------- stderr -------
@@ -748,7 +748,7 @@ index 1842f59..4ab7c00 100644
      [EOF]
      [exit status: 1]
      "
-@@ -430,6 +430,188 @@ fn test_git_ref_fetch_shallow_stack_with_parent() {
+@@ -440,6 +440,188 @@ fn test_git_ref_fetch_shallow_stack_with_parent() {
      );
  }
  
@@ -937,7 +937,7 @@ index 1842f59..4ab7c00 100644
  #[test]
  fn test_git_ref_fetch_default_remote_from_config_glob() {
      let test_env = TestEnvironment::default();
-@@ -453,7 +635,7 @@ fn test_git_ref_fetch_default_remote_from_config_glob() {
+@@ -463,7 +645,7 @@ fn test_git_ref_fetch_default_remote_from_config_glob() {
  }
  
  #[test]
@@ -946,7 +946,7 @@ index 1842f59..4ab7c00 100644
      let test_env = TestEnvironment::default();
      test_env.add_config(r#"git.fetch = ["upstream", "origin"]"#);
      test_env.run_jj_in(".", ["git", "init", "repo"]).success();
-@@ -462,20 +644,43 @@ fn test_git_ref_fetch_default_remote_from_config_list() {
+@@ -472,20 +654,43 @@ fn test_git_ref_fetch_default_remote_from_config_list() {
      let git_repo = add_git_remote(&test_env, &work_dir, "upstream");
      add_commit_to_ref(&git_repo, "refs/pull/123/head", "pr123", "pull request 123");
  
@@ -994,7 +994,7 @@ index 1842f59..4ab7c00 100644
  #[test]
  fn test_git_ref_fetch_non_commit_ref_deletes_temporary_ref() -> TestResult {
      let test_env = TestEnvironment::default();
-@@ -500,7 +705,7 @@ fn test_git_ref_fetch_non_commit_ref_deletes_temporary_ref() -> TestResult {
+@@ -510,7 +715,7 @@ fn test_git_ref_fetch_non_commit_ref_deletes_temporary_ref() -> TestResult {
      ]);
      insta::assert_snapshot!(output, @r"
      ------- stderr -------
@@ -1003,7 +1003,7 @@ index 1842f59..4ab7c00 100644
      [EOF]
      [exit status: 1]
      ");
-@@ -512,14 +717,51 @@ fn test_git_ref_fetch_non_commit_ref_deletes_temporary_ref() -> TestResult {
+@@ -522,14 +727,51 @@ fn test_git_ref_fetch_non_commit_ref_deletes_temporary_ref() -> TestResult {
      let backing_git_repo = gix::open(git_root)?;
      assert!(
          backing_git_repo
@@ -1057,7 +1057,7 @@ index 1842f59..4ab7c00 100644
      let test_env = TestEnvironment::default();
      test_env.run_jj_in(".", ["git", "init", "repo"]).success();
      let work_dir = test_env.work_dir("repo");
-@@ -527,33 +769,102 @@ fn test_git_ref_fetch_wildcard_ref_rejected_before_fetch() -> TestResult {
+@@ -537,33 +779,102 @@ fn test_git_ref_fetch_wildcard_ref_rejected_before_fetch() -> TestResult {
      add_commit_to_ref(&git_repo, "refs/pull/123/head", "pr123", "pull request 123");
      add_commit_to_ref(&git_repo, "refs/pull/456/head", "pr456", "pull request 456");
  
@@ -1176,7 +1176,7 @@ index 1842f59..4ab7c00 100644
  }
  
  #[test]
-@@ -579,6 +890,26 @@ fn test_git_ref_fetch_invalid_ref_rejected_before_fetch() {
+@@ -589,6 +900,26 @@ fn test_git_ref_fetch_invalid_ref_rejected_before_fetch() {
      ");
  }
  
@@ -1203,7 +1203,7 @@ index 1842f59..4ab7c00 100644
  #[test]
  fn test_git_ref_fetch_rejects_incompatible_remote_name_before_fetch() -> TestResult {
      let test_env = TestEnvironment::default();
-@@ -643,7 +974,7 @@ fn test_git_ref_fetch_default_remote_from_config_glob_multiple_matches() {
+@@ -653,7 +984,7 @@ fn test_git_ref_fetch_default_remote_from_config_glob_multiple_matches() {
      let output = work_dir.run_jj(["git", "ref", "fetch", "refs/pull/123/head"]);
      insta::assert_snapshot!(output, @r"
      ------- stderr -------
@@ -1212,7 +1212,7 @@ index 1842f59..4ab7c00 100644
      Hint: Use `--remote` to select one remote for `jj git ref fetch`.
      [EOF]
      [exit status: 1]
-@@ -822,7 +1153,7 @@ fn test_git_ref_fetch_pins_commits_during_normal_fetch() {
+@@ -832,7 +1163,7 @@ fn test_git_ref_fetch_pins_commits_during_normal_fetch() {
  }
  
  #[test]
@@ -1221,7 +1221,7 @@ index 1842f59..4ab7c00 100644
      let test_env = TestEnvironment::default();
      test_env.run_jj_in(".", ["git", "init", "repo"]).success();
      let work_dir = test_env.work_dir("repo");
-@@ -869,6 +1200,191 @@ fn test_git_ref_fetch_bookmark_new_edit_and_forget() {
+@@ -879,6 +1210,191 @@ fn test_git_ref_fetch_bookmark_new_edit_and_forget() {
      ");
  }
  
@@ -1413,7 +1413,7 @@ index 1842f59..4ab7c00 100644
  #[test]
  fn test_git_ref_fetch_operation_diff() {
      let test_env = TestEnvironment::default();
-@@ -894,7 +1410,7 @@ fn test_git_ref_fetch_operation_diff() {
+@@ -904,7 +1420,7 @@ fn test_git_ref_fetch_operation_diff() {
          .success();
      insta::assert_snapshot!(work_dir.run_jj(["op", "diff", "--from", "@-", "--to", "@"]), @"
      From operation: 83cb949b8aa2 (2001-02-03 08:05:08) add git remote origin
@@ -1422,7 +1422,7 @@ index 1842f59..4ab7c00 100644
  
      Changed commits:
      ○  + vrvtsttm b182bf31 pull request 123 v1
-@@ -923,8 +1439,8 @@ fn test_git_ref_fetch_operation_diff() {
+@@ -933,8 +1449,8 @@ fn test_git_ref_fetch_operation_diff() {
          ])
          .success();
      insta::assert_snapshot!(work_dir.run_jj(["op", "diff", "--from", "@-", "--to", "@"]), @r"
@@ -1433,7 +1433,7 @@ index 1842f59..4ab7c00 100644
  
      Changed commits:
      ○  + zttwxqyv 0b54cc6a pull request 123 v2
-@@ -947,8 +1463,8 @@ fn test_git_ref_fetch_operation_diff() {
+@@ -957,8 +1473,8 @@ fn test_git_ref_fetch_operation_diff() {
          ])
          .success();
      insta::assert_snapshot!(work_dir.run_jj(["op", "diff", "--from", "@-", "--to", "@"]), @r"
@@ -1444,7 +1444,7 @@ index 1842f59..4ab7c00 100644
  
      Changed fetched Git refs:
      refs/pull/123/head@origin:
-@@ -2805,7 +3321,7 @@ fn test_fetch_undo_what() {
+@@ -2819,7 +3335,7 @@ fn test_fetch_undo_what() {
      ]);
      insta::assert_snapshot!(output, @"
      ------- stderr -------
@@ -1453,17 +1453,17 @@ index 1842f59..4ab7c00 100644
      [EOF]
      ");
      insta::assert_snapshot!(get_bookmark_output(&work_dir), @"
-@@ -3361,12 +3877,12 @@ fn test_git_fetch_remotely_rewritten() {
+@@ -3375,12 +3891,12 @@ fn test_git_fetch_remotely_rewritten() {
      insta::assert_snapshot!(output, @"
      ◆  kkmpptxz test.user@example.com 2001-02-03 08:05:14 book@origin 3ee37bc8
      │  (empty) bookmarked
--    │  -- operation bc9504529c2b fetch from git remote(s) origin
+-    │  -- operation c25ac3fc51ad fetch from git remote(s) origin
 +    │  -- operation a833df244aca fetch from git remote(s) origin
      ○  kkmpptxz/1 test.user@example.com 2001-02-03 08:05:09 eedc2709 (hidden)
         (empty) bookmarked
      ◆  qpvuntsm test.user@example.com 2001-02-03 08:05:14 f30445f7
      │  (empty) modified
--    │  -- operation bc9504529c2b fetch from git remote(s) origin
+-    │  -- operation c25ac3fc51ad fetch from git remote(s) origin
 +    │  -- operation a833df244aca fetch from git remote(s) origin
      ○  qpvuntsm/1 test.user@example.com 2001-02-03 08:05:08 97604bbe (hidden)
         (empty) original

@@ -27,10 +27,10 @@ immediately queryable, including after failed fetches
  create mode 100644 cli/tests/sample-configs/invalid/git.fetch-depth_zero.toml
 
 diff --git a/cli/src/command_error.rs b/cli/src/command_error.rs
-index 39a1c30..1777b50 100644
+index befe425..1a83527 100644
 --- a/cli/src/command_error.rs
 +++ b/cli/src/command_error.rs
-@@ -595,8 +595,10 @@ jj currently does not support partial clones. To use jj with this repository, tr
+@@ -596,8 +596,10 @@ jj currently does not support partial clones. To use jj with this repository, tr
                  GitFetchError::RejectedUpdates(_)
                  | GitFetchError::FailedToPrune(_)
                  | GitFetchError::TemporaryRefCleanup { .. }
@@ -44,7 +44,7 @@ index 39a1c30..1777b50 100644
          }
      }
 diff --git a/cli/src/commands/git/fetch.rs b/cli/src/commands/git/fetch.rs
-index 62f2dea..c90d76f 100644
+index 3b41fa1..1c352d6 100644
 --- a/cli/src/commands/git/fetch.rs
 +++ b/cli/src/commands/git/fetch.rs
 @@ -13,6 +13,7 @@
@@ -55,7 +55,7 @@ index 62f2dea..c90d76f 100644
  
  use clap_complete::ArgValueCandidates;
  use itertools::Itertools as _;
-@@ -124,6 +125,13 @@ pub struct GitFetchArgs {
+@@ -122,6 +123,13 @@ pub struct GitFetchArgs {
      /// Fetch from all remotes
      #[arg(long, conflicts_with = "remotes")]
      all_remotes: bool,
@@ -69,7 +69,7 @@ index 62f2dea..c90d76f 100644
  }
  
  #[tracing::instrument(skip_all)]
-@@ -231,7 +239,9 @@ pub async fn cmd_git_fetch(
+@@ -222,7 +230,9 @@ pub async fn cmd_git_fetch(
      }
  
      let git_settings = GitSettings::from_settings(tx.settings())?;
@@ -79,17 +79,17 @@ index 62f2dea..c90d76f 100644
      let mut git_fetch = GitFetch::new(
          tx.repo_mut(),
          git_settings.to_subprocess_options(),
-@@ -244,21 +254,36 @@ pub async fn cmd_git_fetch(
+@@ -235,21 +245,36 @@ pub async fn cmd_git_fetch(
          .join(", ");
      writeln!(ui.status(), "Fetching from Git remotes: {remote_names}")?;
  
--    for (remote, expanded) in expansions {
+-    for (remote, ref_expr) in &remote_ref_exprs {
 -        let mut callback = GitSubprocessUi::new(ui);
--        git_fetch.fetch(remote, expanded, &mut callback, None)?;
+-        git_fetch.fetch(remote, ref_expr, &mut callback, None)?;
 +    let fetch_result: Result<_, CommandError> = async {
-+        for (remote, expanded) in expansions {
++        for (remote, ref_expr) in &remote_ref_exprs {
 +            let mut callback = GitSubprocessUi::new(ui);
-+            git_fetch.fetch(remote, expanded, &mut callback, depth)?;
++            git_fetch.fetch(remote, ref_expr, &mut callback, depth)?;
 +        }
 +        Ok(git_fetch.import_refs().await?)
      }
@@ -224,10 +224,10 @@ index 6b89f2a..4ce5e19 100644
                      "type": "string",
                      "description": "Revset of commits to refuse to push to remotes",
 diff --git a/cli/tests/cli-reference@.md.snap b/cli/tests/cli-reference@.md.snap
-index 4a60c0c..023fff6 100644
+index c873865..167b041 100644
 --- a/cli/tests/cli-reference@.md.snap
 +++ b/cli/tests/cli-reference@.md.snap
-@@ -1882,6 +1882,9 @@ If a working-copy commit gets abandoned, it will be given a new, empty commit. T
+@@ -1880,6 +1880,9 @@ If a working-copy commit gets abandoned, it will be given a new, empty commit. T
  
     [string pattern syntax]: https://docs.jj-vcs.dev/latest/revsets/#string-patterns
  * `--all-remotes` — Fetch from all remotes
@@ -259,10 +259,10 @@ index edf0492..f42fee9 100644
  record-synthetic-predecessors = false
  sign-on-push = true
 diff --git a/cli/tests/test_git_fetch.rs b/cli/tests/test_git_fetch.rs
-index f31c41a..d32b74d 100644
+index a14f031..fa010e3 100644
 --- a/cli/tests/test_git_fetch.rs
 +++ b/cli/tests/test_git_fetch.rs
-@@ -3718,6 +3718,52 @@ fn test_git_fetch_tracked_multiple_remotes() {
+@@ -3732,6 +3732,52 @@ fn test_git_fetch_tracked_multiple_remotes() {
      ");
  }
  
@@ -345,7 +345,7 @@ index 61e611f..40bccb7 100644
    copies backed by a single repo. See the `jj workspace` family of commands.
  * **Sparse checkouts: No.** However, there's native support for sparse
 diff --git a/lib/src/git.rs b/lib/src/git.rs
-index 2967b85..0a8625d 100644
+index fd8a200..927491e 100644
 --- a/lib/src/git.rs
 +++ b/lib/src/git.rs
 @@ -33,6 +33,7 @@ use futures::StreamExt as _;
@@ -356,7 +356,7 @@ index 2967b85..0a8625d 100644
  use itertools::Itertools as _;
  use tempfile::TempDir;
  use thiserror::Error;
-@@ -2949,6 +2950,10 @@ pub enum GitFetchError {
+@@ -3016,6 +3017,10 @@ pub enum GitFetchError {
      FailedToPrune(#[source] gix::Error),
      #[error(transparent)]
      Subprocess(#[from] GitSubprocessError),
@@ -367,7 +367,7 @@ index 2967b85..0a8625d 100644
  }
  
  #[derive(Error, Debug)]
-@@ -3294,6 +3299,8 @@ pub struct GitFetch<'a> {
+@@ -3348,6 +3353,8 @@ pub struct GitFetch<'a> {
      git_ctx: GitSubprocessContext,
      import_options: &'a GitImportOptions,
      fetched: Vec<FetchedRefs>,
@@ -376,7 +376,7 @@ index 2967b85..0a8625d 100644
  }
  
  impl<'a> GitFetch<'a> {
-@@ -3301,9 +3308,10 @@ impl<'a> GitFetch<'a> {
+@@ -3355,9 +3362,10 @@ impl<'a> GitFetch<'a> {
          mut_repo: &'a mut MutableRepo,
          subprocess_options: GitSubprocessOptions,
          import_options: &'a GitImportOptions,
@@ -388,7 +388,7 @@ index 2967b85..0a8625d 100644
          let git_ctx = GitSubprocessContext::from_git_backend(git_backend, subprocess_options);
          Ok(GitFetch {
              mut_repo,
-@@ -3311,9 +3319,60 @@ impl<'a> GitFetch<'a> {
+@@ -3365,9 +3373,60 @@ impl<'a> GitFetch<'a> {
              git_ctx,
              import_options,
              fetched: vec![],
@@ -449,7 +449,7 @@ index 2967b85..0a8625d 100644
      /// Perform a `git fetch` on the local git repo, updating the
      /// remote-tracking branches in the git repo.
      ///
-@@ -3351,7 +3410,7 @@ impl<'a> GitFetch<'a> {
+@@ -3402,7 +3461,7 @@ impl<'a> GitFetch<'a> {
          // even more unfortunately, git errors out one refspec at a time,
          // meaning that the below cycle runs in O(#failed refspecs)
          let updates = loop {
@@ -458,7 +458,7 @@ index 2967b85..0a8625d 100644
                  remote_name,
                  &remaining_refspecs,
                  &negative_refspecs,
-@@ -3440,6 +3499,41 @@ impl<'a> GitFetch<'a> {
+@@ -3488,6 +3547,41 @@ impl<'a> GitFetch<'a> {
  
          Ok(import_stats)
      }
@@ -500,7 +500,7 @@ index 2967b85..0a8625d 100644
  }
  
  /// Fetches the commits identified by raw refs or full commit IDs.
-@@ -3465,7 +3559,8 @@ pub fn fetch_commits(
+@@ -3513,7 +3607,8 @@ pub fn fetch_commits(
      }
  
      let git_backend = get_git_backend(store)?;
@@ -510,7 +510,7 @@ index 2967b85..0a8625d 100644
      if try_find_active_remote_inner(&git_repo, remote_name).is_none() {
          return Err(GitFetchError::NoSuchRemote(remote_name.to_owned()));
      }
-@@ -3491,13 +3586,15 @@ pub fn fetch_commits(
+@@ -3539,13 +3634,15 @@ pub fn fetch_commits(
          .collect_vec();
      let no_negative_refspecs = [];
      let fetch_result = (|| {
@@ -707,10 +707,10 @@ index 8993c8d..e405e84 100644
          // Only the refspecs arguments should be respected
          command.arg("--refmap=");
 diff --git a/lib/tests/test_git.rs b/lib/tests/test_git.rs
-index 41df60f..9feccc0 100644
+index 7f4d6f2..8985d94 100644
 --- a/lib/tests/test_git.rs
 +++ b/lib/tests/test_git.rs
-@@ -7059,8 +7059,20 @@ fn test_shallow_commits_lack_parents() -> TestResult {
+@@ -7185,8 +7185,20 @@ fn test_shallow_commits_lack_parents() -> TestResult {
          "shallow commits have the root commit as a parent"
      );
  

@@ -11,10 +11,10 @@ Subject: git push: preserve commit metadata while signing
  4 files changed, 108 insertions(+), 26 deletions(-)
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index e717a91..b578091 100644
+index cb7fc13..f0d0ddc 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -306,6 +306,10 @@ None
+@@ -313,6 +313,10 @@ None
    when the commit stack is taller than the terminal.
    [#9033](https://github.com/jj-vcs/jj/issues/9033).
  
@@ -61,10 +61,10 @@ index d08ce0d..7a2bc94 100644
                  },
              )
 diff --git a/cli/tests/test_git_push.rs b/cli/tests/test_git_push.rs
-index 6404843..1146041 100644
+index b38fcdb..c81d64b 100644
 --- a/cli/tests/test_git_push.rs
 +++ b/cli/tests/test_git_push.rs
-@@ -3104,10 +3104,10 @@ fn test_git_push_sign_on_push() {
+@@ -3107,10 +3107,10 @@ fn test_git_push_sign_on_push() {
      ------- stderr -------
      Updated signatures of 2 commits.
      Rebased 2 descendant commits.
@@ -78,7 +78,7 @@ index 6404843..1146041 100644
      [EOF]
      ");
      // Only commits which are being pushed should be signed
-@@ -3130,7 +3130,7 @@ fn test_git_push_sign_on_push() {
+@@ -3133,7 +3133,7 @@ fn test_git_push_sign_on_push() {
      let output = work_dir.run_jj(["bookmark", "move", "bookmark2", "--to", "@-"]);
      insta::assert_snapshot!(output, @"
      ------- stderr -------
@@ -87,7 +87,7 @@ index 6404843..1146041 100644
      [EOF]
      ");
      test_env.add_config(r#"revset-aliases."immutable_heads()" = "bookmark2""#);
-@@ -3138,9 +3138,9 @@ fn test_git_push_sign_on_push() {
+@@ -3141,9 +3141,9 @@ fn test_git_push_sign_on_push() {
      insta::assert_snapshot!(output, @"
      ------- stderr -------
      Warning: Skipped signing 1 immutable commits:
@@ -99,7 +99,7 @@ index 6404843..1146041 100644
      [EOF]
      ");
      let output = work_dir.run_jj(["log", "-T", template, "-r", "::"]);
-@@ -3193,10 +3193,10 @@ fn test_git_push_sign_on_push() {
+@@ -3196,10 +3196,10 @@ fn test_git_push_sign_on_push() {
      insta::assert_snapshot!(output, @"
      ------- stderr -------
      Updated signatures of 1 commits.
@@ -113,7 +113,7 @@ index 6404843..1146041 100644
      [EOF]
      ");
      let output = work_dir.run_jj(["log", "-T", template]);
-@@ -3277,10 +3277,10 @@ fn test_git_push_sign_on_push_separate_transaction() -> TestResult {
+@@ -3280,10 +3280,10 @@ fn test_git_push_sign_on_push_separate_transaction() -> TestResult {
          insta::assert_snapshot!(output, @"
          ------- stderr -------
          Updated signatures of 2 commits.
@@ -127,7 +127,7 @@ index 6404843..1146041 100644
          remote: error: hook declined to update refs/heads/bookmark2
          Warning: The remote rejected the following updates:
            refs/heads/bookmark2 (reason: hook declined)
-@@ -3309,7 +3309,7 @@ fn test_git_push_sign_on_push_separate_transaction() -> TestResult {
+@@ -3312,7 +3312,7 @@ fn test_git_push_sign_on_push_separate_transaction() -> TestResult {
      insta::assert_snapshot!(output, @"
      ------- stderr -------
      Changes to push to origin:
@@ -136,7 +136,7 @@ index 6404843..1146041 100644
      [EOF]
      ");
      Ok(())
-@@ -3359,10 +3359,10 @@ fn test_git_push_sign_on_push_separate_transaction_change_bookmark() -> TestResu
+@@ -3362,10 +3362,10 @@ fn test_git_push_sign_on_push_separate_transaction_change_bookmark() -> TestResu
          ------- stderr -------
          Creating bookmark push-vruxwmqvtpmx for revision vruxwmqvtpmx
          Updated signatures of 1 commits.
@@ -149,7 +149,7 @@ index 6404843..1146041 100644
          remote: error: hook declined to update refs/heads/push-vruxwmqvtpmx
          Warning: The remote rejected the following updates:
            refs/heads/push-vruxwmqvtpmx (reason: hook declined)
-@@ -3401,12 +3401,80 @@ fn test_git_push_sign_on_push_separate_transaction_change_bookmark() -> TestResu
+@@ -3404,12 +3404,80 @@ fn test_git_push_sign_on_push_separate_transaction_change_bookmark() -> TestResu
      ------- stderr -------
      Creating bookmark push-vruxwmqvtpmx for revision vruxwmqvtpmx
      Changes to push to origin:

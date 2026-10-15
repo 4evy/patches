@@ -6,17 +6,17 @@ Subject: git: share fetch context and support raw ref patterns
 Assisted-by: GPT-6
 ---
  cli/src/command_error.rs  |   2 +-
- lib/src/git.rs            | 444 ++++++++++++++++++++++----------------
+ lib/src/git.rs            | 473 ++++++++++++++++++++++----------------
  lib/src/git_subprocess.rs |   1 -
  lib/tests/test_git.rs     |  94 ++++++++
- 4 files changed, 355 insertions(+), 186 deletions(-)
+ 4 files changed, 370 insertions(+), 200 deletions(-)
 
 diff --git a/cli/src/command_error.rs b/cli/src/command_error.rs
-index 1777b50..c329329 100644
+index 1a83527..cb427d2 100644
 --- a/cli/src/command_error.rs
 +++ b/cli/src/command_error.rs
-@@ -594,7 +594,7 @@ jj currently does not support partial clones. To use jj with this repository, tr
-                 }
+@@ -595,7 +595,7 @@ jj currently does not support partial clones. To use jj with this repository, tr
+                 GitFetchError::RefExpansion(err) => err.into(),
                  GitFetchError::RejectedUpdates(_)
                  | GitFetchError::FailedToPrune(_)
 -                | GitFetchError::TemporaryRefCleanup { .. }
@@ -25,10 +25,10 @@ index 1777b50..c329329 100644
                  | GitFetchError::ShallowCommits(_)
                  | GitFetchError::RefreshShallowState(_)
 diff --git a/lib/src/git.rs b/lib/src/git.rs
-index 863f59c..c7ff624 100644
+index bca3883..ecace30 100644
 --- a/lib/src/git.rs
 +++ b/lib/src/git.rs
-@@ -2935,9 +2935,9 @@ pub enum GitFetchError {
+@@ -3000,9 +3000,9 @@ pub enum GitFetchError {
          remote: RemoteNameBuf,
          fetch_source: String,
      },
@@ -41,7 +41,7 @@ index 863f59c..c7ff624 100644
          #[source]
          source: Box<dyn std::error::Error + Send + Sync>,
      },
-@@ -3293,68 +3293,57 @@ fn parse_fetch_refspec(
+@@ -3347,68 +3347,57 @@ fn parse_fetch_refspec(
      }
  }
  
@@ -139,7 +139,7 @@ index 863f59c..c7ff624 100644
          remote_name: &RemoteName,
          refspecs: &[RefSpec],
          negative_refspecs: &[NegativeRefSpec],
-@@ -3369,11 +3358,93 @@ impl<'a> GitFetch<'a> {
+@@ -3423,11 +3412,93 @@ impl<'a> GitFetch<'a> {
              shallow,
          );
          // Git may update the shallow boundary even when the overall fetch
@@ -235,7 +235,7 @@ index 863f59c..c7ff624 100644
      /// Perform a `git fetch` on the local git repo, updating the
      /// remote-tracking branches in the git repo.
      ///
-@@ -3391,12 +3462,7 @@ impl<'a> GitFetch<'a> {
+@@ -3441,12 +3512,7 @@ impl<'a> GitFetch<'a> {
          callback: &mut dyn GitSubprocessCallback,
          depth: Option<NonZeroU32>,
      ) -> Result<(), GitFetchError> {
@@ -247,9 +247,9 @@ index 863f59c..c7ff624 100644
 -        }
 +        self.context.check_remote(remote_name)?;
  
+         let (mut remaining_refspecs, negative_refspecs) = expand_fetch_refspecs(remote_name, expr)?;
          if remaining_refspecs.is_empty() {
-             // Don't fall back to the base refspecs.
-@@ -3411,12 +3477,13 @@ impl<'a> GitFetch<'a> {
+@@ -3462,12 +3528,13 @@ impl<'a> GitFetch<'a> {
          // even more unfortunately, git errors out one refspec at a time,
          // meaning that the below cycle runs in O(#failed refspecs)
          let updates = loop {
@@ -265,7 +265,7 @@ index 863f59c..c7ff624 100644
              )?;
              let failing_refspec = match status {
                  GitFetchStatus::Updates(updates) => break updates,
-@@ -3428,6 +3495,7 @@ impl<'a> GitFetch<'a> {
+@@ -3479,6 +3546,7 @@ impl<'a> GitFetch<'a> {
              {
                  // Even with --prune, an explicit ref won't be deleted during fetch.
                  if let Some(git_ref) = self
@@ -273,7 +273,7 @@ index 863f59c..c7ff624 100644
                      .git_repo
                      .try_find_reference(&refspec.destination)
                      .map_err(GitFetchError::FailedToPrune)?
-@@ -3458,10 +3526,8 @@ impl<'a> GitFetch<'a> {
+@@ -3509,10 +3577,8 @@ impl<'a> GitFetch<'a> {
          &self,
          remote_name: &RemoteName,
      ) -> Result<Option<RefNameBuf>, GitFetchError> {
@@ -286,16 +286,45 @@ index 863f59c..c7ff624 100644
          tracing::debug!(?default_branch);
          Ok(default_branch)
      }
-@@ -3478,7 +3544,7 @@ impl<'a> GitFetch<'a> {
-         let all_remote_tags = true;
-         let refs_to_import = diff_refs_to_import(
-             self.mut_repo.view(),
--            &self.git_repo,
+@@ -3526,21 +3592,22 @@ impl<'a> GitFetch<'a> {
+     #[tracing::instrument(skip(self))]
+     pub async fn import_refs(&mut self) -> Result<GitImportStats, GitImportError> {
+         tracing::debug!("import_refs");
+-        let refs_to_import =
+-            diff_fetched_refs_to_import(self.mut_repo.view(), &self.git_repo, |kind, symbol| {
+-                match kind {
+-                    GitRefKind::Bookmark => self
+-                        .fetched
+-                        .iter()
+-                        .filter(|fetched| fetched.remote == symbol.remote)
+-                        .any(|fetched| fetched.bookmark_matcher.is_match(symbol.name.as_str())),
+-                    GitRefKind::Tag => self
+-                        .fetched
+-                        .iter()
+-                        .filter(|fetched| fetched.remote == symbol.remote)
+-                        .any(|fetched| fetched.tag_matcher.is_match(symbol.name.as_str())),
+-                }
+-            })?;
++        let refs_to_import = diff_fetched_refs_to_import(
++            self.mut_repo.view(),
 +            &self.context.git_repo,
-             all_remote_tags,
-             |kind, symbol| match kind {
-                 GitRefKind::Bookmark => self
-@@ -3503,7 +3569,7 @@ impl<'a> GitFetch<'a> {
++            |kind, symbol| match kind {
++                GitRefKind::Bookmark => self
++                    .fetched
++                    .iter()
++                    .filter(|fetched| fetched.remote == symbol.remote)
++                    .any(|fetched| fetched.bookmark_matcher.is_match(symbol.name.as_str())),
++                GitRefKind::Tag => self
++                    .fetched
++                    .iter()
++                    .filter(|fetched| fetched.remote == symbol.remote)
++                    .any(|fetched| fetched.tag_matcher.is_match(symbol.name.as_str())),
++            },
++        )?;
+         let import_stats =
+             import_refs_inner(self.mut_repo, refs_to_import, self.import_options).await?;
+ 
+@@ -3551,7 +3618,7 @@ impl<'a> GitFetch<'a> {
  
      /// Whether a fetch changed the Git shallow boundary.
      pub fn shallow_boundary_changed(&self) -> bool {
@@ -304,7 +333,7 @@ index 863f59c..c7ff624 100644
      }
  }
  
-@@ -3590,156 +3656,166 @@ pub fn fetch_commits_with_options(
+@@ -3638,156 +3705,166 @@ pub fn fetch_commits_with_options(
              );
          }
      }
@@ -609,10 +638,10 @@ index e405e84..2b3a476 100644
      /// Git ref `(name, (old_oid, new_oid)`s that are rejected or failed to
      /// update.
 diff --git a/lib/tests/test_git.rs b/lib/tests/test_git.rs
-index 9feccc0..e989116 100644
+index 8985d94..1ceca53 100644
 --- a/lib/tests/test_git.rs
 +++ b/lib/tests/test_git.rs
-@@ -4196,6 +4196,35 @@ fn test_fetch_empty_repo() -> TestResult {
+@@ -4194,6 +4194,35 @@ fn test_fetch_empty_repo() -> TestResult {
      Ok(())
  }
  
@@ -648,7 +677,7 @@ index 9feccc0..e989116 100644
  #[test]
  fn test_fetch_commits_from_refs() -> TestResult {
      let test_data = GitRepoData::create();
-@@ -4348,6 +4377,71 @@ fn test_fetch_commit_rejects_invalid_source() -> TestResult {
+@@ -4346,6 +4375,71 @@ fn test_fetch_commit_rejects_invalid_source() -> TestResult {
      Ok(())
  }
  

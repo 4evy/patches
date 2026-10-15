@@ -15,9 +15,9 @@ Co-authored-by: 4evy <git@evy.pink>
  cli/src/commands/git/ref/list.rs   |   74 ++
  cli/src/commands/git/ref/mod.rs    |   10 +
  cli/tests/cli-reference@.md.snap   |   76 ++
- cli/tests/test_git_fetch.rs        | 1181 +++++++++++++++++++++++++---
+ cli/tests/test_git_fetch.rs        | 1183 +++++++++++++++++++++++++---
  docs/git-compatibility.md          |   12 +-
- 7 files changed, 1384 insertions(+), 129 deletions(-)
+ 7 files changed, 1385 insertions(+), 130 deletions(-)
  create mode 100644 cli/src/commands/git/ref/forget.rs
  create mode 100644 cli/src/commands/git/ref/list.rs
 
@@ -376,7 +376,7 @@ index ce9771f..c13a4ca 100644
      }
  }
 diff --git a/cli/tests/cli-reference@.md.snap b/cli/tests/cli-reference@.md.snap
-index ac8c5cf..4a60c0c 100644
+index 9eb9a91..c873865 100644
 --- a/cli/tests/cli-reference@.md.snap
 +++ b/cli/tests/cli-reference@.md.snap
 @@ -1,5 +1,6 @@
@@ -397,7 +397,7 @@ index ac8c5cf..4a60c0c 100644
  * [`jj git push`↴](#jj-git-push)
  * [`jj git ref`↴](#jj-git-ref)
  * [`jj git ref fetch`↴](#jj-git-ref-fetch)
-@@ -1718,6 +1723,7 @@ See this [comparison], including a [table of commands].
+@@ -1716,6 +1721,7 @@ See this [comparison], including a [table of commands].
  * `fetch` — Fetch from a Git remote
  * `import` — Update repo with changes made in the underlying Git repo
  * `init` — Create a new Git backed repo
@@ -405,7 +405,7 @@ index ac8c5cf..4a60c0c 100644
  * `push` — Push to a Git remote
  * `ref` — Manage raw Git refs
  * `remote` — Manage Git remotes
-@@ -1949,6 +1955,76 @@ If the setting `git.colocate` has the value `false`, then new repositories will
+@@ -1947,6 +1953,76 @@ If the setting `git.colocate` has the value `false`, then new repositories will
  
  
  
@@ -483,7 +483,7 @@ index ac8c5cf..4a60c0c 100644
  
  Push to a Git remote
 diff --git a/cli/tests/test_git_fetch.rs b/cli/tests/test_git_fetch.rs
-index 0cb518a..f31c41a 100644
+index 2b9e8f6..a14f031 100644
 --- a/cli/tests/test_git_fetch.rs
 +++ b/cli/tests/test_git_fetch.rs
 @@ -43,6 +43,30 @@ fn add_commit_to_branch(git_repo: &gix::Repository, branch: &str, message: &str)
@@ -517,27 +517,17 @@ index 0cb518a..f31c41a 100644
  /// Creates a remote Git repo containing a bookmark with the same name
  fn init_git_remote(test_env: &TestEnvironment, remote: &str) -> gix::Repository {
      let git_repo_path = test_env.env_root().join(remote);
-@@ -90,189 +114,1100 @@ fn get_log_output(work_dir: &TestWorkDir) -> CommandOutput {
-     work_dir.run_jj(["log", "-T", template, "-r", "all()"])
- }
+@@ -99,190 +123,1101 @@ fn clone_git_remote_into(
+     let fork_path = test_env.env_root().join(fork);
+     let fork_repo = git::clone(&fork_path, upstream_path.to_str().unwrap(), Some(upstream));
  
--fn clone_git_remote_into(
--    test_env: &TestEnvironment,
--    upstream: &str,
--    fork: &str,
--) -> gix::Repository {
--    let upstream_path = test_env.env_root().join(upstream);
--    let fork_path = test_env.env_root().join(fork);
--    let fork_repo = git::clone(&fork_path, upstream_path.to_str().unwrap(), Some(upstream));
-+fn clone_git_remote_into(
-+    test_env: &TestEnvironment,
-+    upstream: &str,
-+    fork: &str,
-+) -> gix::Repository {
-+    let upstream_path = test_env.env_root().join(upstream);
-+    let fork_path = test_env.env_root().join(fork);
-+    let fork_repo = git::clone(&fork_path, upstream_path.to_str().unwrap(), Some(upstream));
-+
+-    // create local branch mirroring the upstream
+-    let upstream_head = fork_repo
+-        .find_reference(&format!("refs/remotes/{upstream}/{upstream}"))
+-        .unwrap()
+-        .peel_to_id()
+-        .unwrap()
+-        .detach();
 +    // create local branch mirroring the upstream
 +    let upstream_head = fork_repo
 +        .find_reference(&format!("refs/remotes/{upstream}/{upstream}"))
@@ -561,20 +551,30 @@ index 0cb518a..f31c41a 100644
 +#[test]
 +fn test_git_fetch_with_default_config() {
 +    let test_env = TestEnvironment::default();
-+    test_env.run_jj_in(".", ["git", "init", "repo"]).success();
++    test_env
++        .run_jj_in(".", ["git", "init", "--colocate", "repo"])
++        .success();
 +    let work_dir = test_env.work_dir("repo");
 +    add_git_remote(&test_env, &work_dir, "origin");
 +
-+    // If supported, this should show fetched refs without actually updating
-+    // refs on disk.
++    // No refs should be exported to Git.
 +    let output = work_dir.run_jj(["git", "fetch", "--no-integrate-operation"]);
 +    insta::assert_snapshot!(output, @"
 +    ------- stderr -------
-+    Error: --no-integrate-operation is not respected
++    Fetching from Git remotes: origin
++    bookmark: origin@origin [new] untracked
++    Operation left uncommitted because --no-integrate-operation was requested: 5500d10ac059
 +    [EOF]
-+    [exit status: 2]
++    ");
++    // No remote refs to import.
++    let output = work_dir.run_jj(["util", "snapshot"]);
++    insta::assert_snapshot!(output, @"
++    ------- stderr -------
++    No snapshot needed.
++    [EOF]
 +    ");
 +
++    // Remote refs can be fetched again.
 +    let output = work_dir.run_jj(["git", "fetch"]);
 +    insta::assert_snapshot!(output, @"
 +    ------- stderr -------
@@ -1252,20 +1252,6 @@ index 0cb518a..f31c41a 100644
 +    Changed commits:
 +    ○  + zttwxqyv 0b54cc6a pull request 123 v2
  
--    // create local branch mirroring the upstream
--    let upstream_head = fork_repo
--        .find_reference(&format!("refs/remotes/{upstream}/{upstream}"))
--        .unwrap()
--        .peel_to_id()
--        .unwrap()
--        .detach();
-+    Changed fetched Git refs:
-+    refs/pull/123/head@origin:
-+    + zttwxqyv 0b54cc6a pull request 123 v2
-+    - vrvtsttm b182bf31 pull request 123 v1
-+    [EOF]
-+    ");
- 
 -    fork_repo
 -        .reference(
 -            format!("refs/heads/{upstream}"),
@@ -1274,6 +1260,14 @@ index 0cb518a..f31c41a 100644
 -            "create tracking head",
 -        )
 -        .unwrap();
++    Changed fetched Git refs:
++    refs/pull/123/head@origin:
++    + zttwxqyv 0b54cc6a pull request 123 v2
++    - vrvtsttm b182bf31 pull request 123 v1
++    [EOF]
++    ");
+ 
+-    fork_repo
 +    work_dir
 +        .run_jj([
 +            "git",
@@ -1287,8 +1281,7 @@ index 0cb518a..f31c41a 100644
 +    insta::assert_snapshot!(work_dir.run_jj(["op", "diff", "--from", "@-", "--to", "@"]), @r"
 +    From operation: 126fe8d19df5 (2001-02-03 08:05:11) fetch ref refs/pull/123/head from git remote origin
 +      To operation: 5437b9bba2ad (2001-02-03 08:05:13) forget fetched git ref refs/pull/123/head@origin
- 
--    fork_repo
++
 +    Changed fetched Git refs:
 +    refs/pull/123/head@origin:
 +    + (absent)
@@ -1301,16 +1294,22 @@ index 0cb518a..f31c41a 100644
 -fn test_git_fetch_with_default_config() {
 +fn test_git_ref_fetch_undo_and_op_restore() {
      let test_env = TestEnvironment::default();
-     test_env.run_jj_in(".", ["git", "init", "repo"]).success();
+-    test_env
+-        .run_jj_in(".", ["git", "init", "--colocate", "repo"])
+-        .success();
++    test_env.run_jj_in(".", ["git", "init", "repo"]).success();
      let work_dir = test_env.work_dir("repo");
 -    add_git_remote(&test_env, &work_dir, "origin");
 +    let git_repo = add_git_remote(&test_env, &work_dir, "origin");
 +    add_commit_to_ref(&git_repo, "refs/pull/123/head", "pr123", "pull request 123");
  
--    // If supported, this should show fetched refs without actually updating
--    // refs on disk.
+-    // No refs should be exported to Git.
 -    let output = work_dir.run_jj(["git", "fetch", "--no-integrate-operation"]);
 -    insta::assert_snapshot!(output, @"
+-    ------- stderr -------
+-    Fetching from Git remotes: origin
+-    bookmark: origin@origin [new] untracked
+-    Operation left uncommitted because --no-integrate-operation was requested: 5500d10ac059
 +    work_dir
 +        .run_jj([
 +            "git",
@@ -1323,8 +1322,11 @@ index 0cb518a..f31c41a 100644
 +        .success();
 +    insta::assert_snapshot!(work_dir.run_jj(["git", "ref", "list"]), @r"
 +    origin refs/pull/123/head 84c6f409c8199d0f3fd9b29fb5119c090da42d5e
-+    [EOF]
-+    ");
+     [EOF]
+     ");
+-    // No remote refs to import.
+-    let output = work_dir.run_jj(["util", "snapshot"]);
+-    insta::assert_snapshot!(output, @"
 +
 +    // Fetched refs live in the operation view, so restoring to the operation
 +    // before the fetch should remove the label just like other view state.
@@ -1333,12 +1335,12 @@ index 0cb518a..f31c41a 100644
 +        .success();
 +    insta::assert_snapshot!(work_dir.run_jj(["git", "ref", "list"]), @r"
      ------- stderr -------
--    Error: --no-integrate-operation is not respected
+-    No snapshot needed.
 +    No fetched Git refs.
      [EOF]
--    [exit status: 2]
      ");
  
+-    // Remote refs can be fetched again.
 -    let output = work_dir.run_jj(["git", "fetch"]);
 -    insta::assert_snapshot!(output, @"
 +    work_dir
@@ -1733,18 +1735,18 @@ index 0cb518a..f31c41a 100644
  }
  
  #[test]
-@@ -1653,8 +2588,8 @@ fn test_git_fetch_undo() {
+@@ -1667,8 +2602,8 @@ fn test_git_fetch_undo() {
      let output = target_dir.run_jj(["undo"]);
      insta::assert_snapshot!(output, @"
      ------- stderr -------
--    Undid operation: 450e0713ac6d (2001-02-03 08:05:20) fetch from git remote(s) origin
+-    Undid operation: 23c6d6089da4 (2001-02-03 08:05:20) fetch from git remote(s) origin
 -    Restored to operation: f9f128e730c0 (2001-02-03 08:05:07) add git remote origin
 +    Undid operation: 523ad534b8db (2001-02-03 08:05:20) fetch from git remote(s) origin
 +    Restored to operation: 2104a40bd9a0 (2001-02-03 08:05:07) add git remote origin
      [EOF]
      ");
      // The undo works as expected
-@@ -1746,7 +2681,7 @@ fn test_fetch_undo_what() {
+@@ -1760,7 +2695,7 @@ fn test_fetch_undo_what() {
      let output = work_dir.run_jj(["op", "restore", "--what", "repo", &base_operation_id]);
      insta::assert_snapshot!(output, @"
      ------- stderr -------
@@ -1753,38 +1755,38 @@ index 0cb518a..f31c41a 100644
      [EOF]
      ");
      insta::assert_snapshot!(get_bookmark_output(&work_dir), @"
-@@ -2294,12 +3229,12 @@ fn test_git_fetch_remotely_rewritten() {
+@@ -2308,12 +3243,12 @@ fn test_git_fetch_remotely_rewritten() {
      insta::assert_snapshot!(output, @"
      ◆  kkmpptxz test.user@example.com 2001-02-03 08:05:14 book@origin 3ee37bc8
      │  (empty) bookmarked
--    │  -- operation bc9504529c2b fetch from git remote(s) origin
+-    │  -- operation c25ac3fc51ad fetch from git remote(s) origin
 +    │  -- operation a833df244aca fetch from git remote(s) origin
      ○  kkmpptxz/1 test.user@example.com 2001-02-03 08:05:09 eedc2709 (hidden)
         (empty) bookmarked
      ◆  qpvuntsm test.user@example.com 2001-02-03 08:05:14 f30445f7
      │  (empty) modified
--    │  -- operation bc9504529c2b fetch from git remote(s) origin
+-    │  -- operation c25ac3fc51ad fetch from git remote(s) origin
 +    │  -- operation a833df244aca fetch from git remote(s) origin
      ○  qpvuntsm/1 test.user@example.com 2001-02-03 08:05:08 97604bbe (hidden)
         (empty) original
      [EOF]
-@@ -2510,17 +3445,17 @@ fn test_git_fetch_remotely_rewritten_descendants() {
+@@ -2524,17 +3459,17 @@ fn test_git_fetch_remotely_rewritten_descendants() {
      insta::assert_snapshot!(output, @"
      ◆  mzvwutvl test.user@example.com 2001-02-03 08:05:16 book2@origin 3faff772
      │  (empty) bookmarked 2
--    │  -- operation c59a4ba1a1a9 fetch from git remote(s) origin
+-    │  -- operation 3a6ebafd42f1 fetch from git remote(s) origin
 +    │  -- operation 8eedd689d8c5 fetch from git remote(s) origin
      ○  mzvwutvl/1 test.user@example.com 2001-02-03 08:05:11 cce448c2 (hidden)
         (empty) bookmarked 2
      ◆  kkmpptxz test.user@example.com 2001-02-03 08:05:16 book1@origin ad5c5f3c
      │  (empty) bookmarked 1
--    │  -- operation 2cce05945865 fetch from git remote(s) origin
+-    │  -- operation f7a9e010b837 fetch from git remote(s) origin
 +    │  -- operation 26e7f5578508 fetch from git remote(s) origin
      ○  kkmpptxz/1 test.user@example.com 2001-02-03 08:05:09 2a6bbeb4 (hidden)
         (empty) bookmarked 1
      ◆  qpvuntsm test.user@example.com 2001-02-03 08:05:16 a843bfad
      │  (empty) modified
--    │  -- operation 2cce05945865 fetch from git remote(s) origin
+-    │  -- operation f7a9e010b837 fetch from git remote(s) origin
 +    │  -- operation 26e7f5578508 fetch from git remote(s) origin
      ○  qpvuntsm/1 test.user@example.com 2001-02-03 08:05:08 97604bbe (hidden)
         (empty) original

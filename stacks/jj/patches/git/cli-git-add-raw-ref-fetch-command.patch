@@ -32,10 +32,10 @@ Co-authored-by: 4evy <git@evy.pink>
  create mode 100644 cli/src/commands/git/ref/mod.rs
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index 9a10615..5937f39 100644
+index 025b036..51376bc 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -276,6 +276,10 @@ None
+@@ -283,6 +283,10 @@ None
    directory or loaded via `--config-file`). This allows precise file targeting
    and avoids interactive prompts when multiple config files exist.
  
@@ -47,7 +47,7 @@ index 9a10615..5937f39 100644
  
  * [The default `immutable_heads()` set](docs/config.md#set-of-immutable-commits)
 diff --git a/cli/src/commands/git/fetch.rs b/cli/src/commands/git/fetch.rs
-index 8fdeafa..62f2dea 100644
+index 8657448..3b41fa1 100644
 --- a/cli/src/commands/git/fetch.rs
 +++ b/cli/src/commands/git/fetch.rs
 @@ -16,7 +16,6 @@ use std::io;
@@ -58,14 +58,13 @@ index 8fdeafa..62f2dea 100644
  use jj_lib::git;
  use jj_lib::git::GitFetch;
  use jj_lib::git::GitFetchRefExpression;
-@@ -32,14 +31,13 @@ use jj_lib::repo::Repo as _;
+@@ -31,13 +30,12 @@ use jj_lib::repo::Repo as _;
  use jj_lib::str_util::StringExpression;
  
  use crate::cli_util::CommandHelper;
 -use crate::cli_util::WorkspaceCommandHelper;
  use crate::cli_util::WorkspaceCommandTransaction;
  use crate::command_error::CommandError;
- use crate::command_error::cli_error;
  use crate::command_error::user_error;
 -use crate::commands::git::get_single_remote;
  use crate::complete;
@@ -74,7 +73,7 @@ index 8fdeafa..62f2dea 100644
  use crate::git_util::load_git_import_options;
  use crate::git_util::print_git_import_stats;
  use crate::revset_util::parse_remote_fetch_bookmarks;
-@@ -263,33 +261,6 @@ pub async fn cmd_git_fetch(
+@@ -254,33 +252,6 @@ pub async fn cmd_git_fetch(
      Ok(())
  }
  
@@ -446,7 +445,7 @@ index f32b4d0..38e14aa 100644
      let Ok(git_backend) = git::get_git_backend(workspace.repo_loader().store()) else {
          return Ok(false);
 diff --git a/cli/tests/cli-reference@.md.snap b/cli/tests/cli-reference@.md.snap
-index cba7b0d..fd90a54 100644
+index 72e306a..400c89e 100644
 --- a/cli/tests/cli-reference@.md.snap
 +++ b/cli/tests/cli-reference@.md.snap
 @@ -68,6 +68,8 @@ This document contains the help content for the `jj` command-line program.
@@ -458,7 +457,7 @@ index cba7b0d..fd90a54 100644
  * [`jj git remote`↴](#jj-git-remote)
  * [`jj git remote add`↴](#jj-git-remote-add)
  * [`jj git remote list`↴](#jj-git-remote-list)
-@@ -1716,6 +1718,7 @@ See this [comparison], including a [table of commands].
+@@ -1714,6 +1716,7 @@ See this [comparison], including a [table of commands].
  * `import` — Update repo with changes made in the underlying Git repo
  * `init` — Create a new Git backed repo
  * `push` — Push to a Git remote
@@ -466,7 +465,7 @@ index cba7b0d..fd90a54 100644
  * `remote` — Manage Git remotes
  * `root` — Show the underlying Git directory of a repository using the Git backend
  
-@@ -2014,6 +2017,38 @@ Before the command actually moves, creates, or deletes a remote bookmark, it mak
+@@ -2012,6 +2015,38 @@ Before the command actually moves, creates, or deletes a remote bookmark, it mak
  
  
  
@@ -506,10 +505,10 @@ index cba7b0d..fd90a54 100644
  
  Manage Git remotes
 diff --git a/cli/tests/test_git_fetch.rs b/cli/tests/test_git_fetch.rs
-index 6ed2975..0cb518a 100644
+index a5c11ea..2b9e8f6 100644
 --- a/cli/tests/test_git_fetch.rs
 +++ b/cli/tests/test_git_fetch.rs
-@@ -149,6 +149,132 @@ fn test_git_fetch_with_default_config() {
+@@ -159,6 +159,132 @@ fn test_git_fetch_with_default_config() {
      ");
  }
  
