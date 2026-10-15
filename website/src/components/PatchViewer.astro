@@ -52,9 +52,7 @@ function lineNumberBackgroundClass(kind: LineKind) {
   class="mt-4 overflow-hidden rounded-md border border-[var(--diff-border)] bg-[var(--diff-bg)] shadow-[inset_0_1px_0_rgb(255_255_255_/_0.08),0_8px_22px_var(--shadow-deep)]"
   aria-labelledby="patch-content-title"
 >
-  <header
-    class="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--diff-border)] bg-linear-to-b from-[var(--diff-top)] to-[var(--diff-bottom)] px-3 py-2 text-[var(--diff-text)] shadow-[inset_0_1px_0_rgb(255_255_255_/_0.18)]"
-  >
+  <header class="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--diff-border)] bg-linear-to-b from-[var(--diff-top)] to-[var(--diff-bottom)] px-3 py-2 text-[var(--diff-text)] shadow-[inset_0_1px_0_rgb(255_255_255_/_0.18)]">
     <div>
       <h2 id="patch-content-title" class="text-xs font-bold">
         Patch contents
@@ -75,7 +73,10 @@ function lineNumberBackgroundClass(kind: LineKind) {
         <Clipboard aria-hidden="true" size={14} />
         <span>Copy</span>
       </button>
-      <span id="copy-status" class="visually-hidden" role="status"
+      <span
+        id="copy-status"
+        class="visually-hidden"
+        role="status"
       ></span>
       <a
         class="inline-flex min-h-8 items-center gap-1.5 rounded border border-[var(--border)] bg-linear-to-b from-[var(--highlight)] to-[var(--raised)] px-2.5 py-1 text-xs font-bold !text-[var(--accent-dark)] !no-underline shadow-[inset_0_1px_0_var(--highlight),0_1px_2px_var(--shadow)] transition hover:border-[var(--accent-hi)] hover:brightness-105 active:translate-y-px"
@@ -89,7 +90,8 @@ function lineNumberBackgroundClass(kind: LineKind) {
   <pre
     class="m-0 max-h-[min(72vh,54rem)] overflow-auto py-3 font-mono text-xs leading-relaxed text-[var(--diff-text)]"
     aria-describedby="patch-scroll-hint"
-    tabindex="0"><code class="block w-max min-w-full">{
+    tabindex="0"
+  ><code class="block w-max min-w-full">{
     renderedLines.map((line) => (
       <span class:list={[
           'flex w-max min-w-full pr-6 whitespace-pre',

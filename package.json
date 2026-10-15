@@ -19,6 +19,6 @@
     "test:website": "sh tests/website-check.sh"
   },
   "devDependencies": {
-    "prettier": "^3.9.6"
+    "prettier": "^3.9.10"
   }
 }

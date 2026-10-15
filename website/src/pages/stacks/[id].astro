@@ -59,7 +59,9 @@ function encodePath(path: string) {
   <main id="main-content" class="stack-page page-shell">
     <nav class="breadcrumb" aria-label="Breadcrumb">
       <ol>
-        <li><a href={base}>Patch stacks</a></li>
+        <li>
+          <a href={base}>Patch stacks</a>
+        </li>
         <li aria-current="page">{stack.id}</li>
       </ol>
     </nav>
@@ -69,9 +71,10 @@ function encodePath(path: string) {
       <p class="lede">
         {stack.patches.length}{' '}
         {stack.patches.length === 1 ? 'change' : 'changes'} for{' '}
-        <a href={upstreamUrl}
-          >{repositoryName(stack.manifest.source.canonical)}</a
-        >.
+        <a href={upstreamUrl}>
+          {repositoryName(stack.manifest.source.canonical)}
+        </a>
+        .
       </p>
       <p class="hero-actions">
         <GlassButton href={repositoryUrl} variant="quiet">
@@ -111,8 +114,9 @@ function encodePath(path: string) {
               <a class="revision-link" href={revisionUrl}>
                 <code>{stack.manifest.source.revision}</code>
                 <ExternalLink aria-hidden="true" size={14} />
-                <span class="visually-hidden">View upstream commit</span
-                >
+                <span class="visually-hidden">
+                  View upstream commit
+                </span>
               </a>
             </dd>
           </div>
@@ -135,34 +139,32 @@ function encodePath(path: string) {
       </header>
 
       <ol class="series-list">
-        {
-          stack.patches.map((patch, index) => {
-            const parts = patch.split('/');
-            const filename = parts.at(-1) ?? patch;
-            const directory = parts.slice(0, -1).join('/');
+        {stack.patches.map((patch, index) => {
+          const parts = patch.split('/');
+          const filename = parts.at(-1) ?? patch;
+          const directory = parts.slice(0, -1).join('/');
 
-            return (
-              <li>
-                <span class="series-number" aria-hidden="true">
-                  {String(index + 1).padStart(2, '0')}
-                </span>
-                <p>
-                  <strong>{patchTitle(patch)}</strong>
-                  <a
-                    class="patch-path"
-                    href={`${base}stacks/${stack.id}/patches/${encodePath(patch)}/`}
-                  >
-                    {directory && (
-                      <span class="patch-directory">{directory}/</span>
-                    )}
-                    <code>{filename}</code>
-                    <span class="visually-hidden"> (view patch)</span>
-                  </a>
-                </p>
-              </li>
-            );
-          })
-        }
+          return (
+            <li>
+              <span class="series-number" aria-hidden="true">
+                {String(index + 1).padStart(2, '0')}
+              </span>
+              <p>
+                <strong>{patchTitle(patch)}</strong>
+                <a
+                  class="patch-path"
+                  href={`${base}stacks/${stack.id}/patches/${encodePath(patch)}/`}
+                >
+                  {directory && (
+                    <span class="patch-directory">{directory}/</span>
+                  )}
+                  <code>{filename}</code>
+                  <span class="visually-hidden"> (view patch)</span>
+                </a>
+              </p>
+            </li>
+          );
+        })}
       </ol>
     </section>
   </main>

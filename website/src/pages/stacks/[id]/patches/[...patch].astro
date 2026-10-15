@@ -56,30 +56,28 @@ const rawUrl =
 
 <Layout
   title={'Patch · ' + stack.id + ' · 4evy patches'}
-  description={'Patch source for ' +
-    patchPath +
-    ' in the ' +
-    stack.id +
-    ' stack.'}
+  description={
+    'Patch source for ' + patchPath + ' in the ' + stack.id + ' stack.'
+  }
 >
   <main id="main-content" class="patch-page page-shell">
     <nav class="breadcrumb" aria-label="Breadcrumb">
       <ol>
-        <li><a href={base}>Patch stacks</a></li>
+        <li>
+          <a href={base}>Patch stacks</a>
+        </li>
         <li>
           <a href={base + 'stacks/' + stack.id + '/'}>{stack.id}</a>
         </li>
-        {
-          pathParts.map((part, index) => (
-            <li
-              aria-current={
-                index === pathParts.length - 1 ? 'page' : undefined
-              }
-            >
-              <code>{part}</code>
-            </li>
-          ))
-        }
+        {pathParts.map((part, index) => (
+          <li
+            aria-current={
+              index === pathParts.length - 1 ? 'page' : undefined
+            }
+          >
+            <code>{part}</code>
+          </li>
+        ))}
       </ol>
     </nav>
 

@@ -42,91 +42,82 @@ function revisionUrl(canonical: string, revision: string) {
       </header>
     </section>
 
-    {
-      catalog.stacks.length === 0 ? (
-        <section class="empty-state" aria-labelledby="empty-title">
-          <p class="eyebrow">Stacks · 0</p>
-          <h2 id="empty-title">The garden is quiet.</h2>
-          <p>
-            There are no published patch stacks yet. Add one under{' '}
-            <code>stacks/</code> and the catalog will update
-            immediately.
-          </p>
-        </section>
-      ) : (
-        <section
-          class="stack-index"
-          id="stacks"
-          aria-labelledby="stacks-title"
-        >
-          <header class="section-heading">
-            <h2 id="stacks-title">Patch stacks</h2>
-          </header>
+    {catalog.stacks.length === 0 ? (
+      <section class="empty-state" aria-labelledby="empty-title">
+        <p class="eyebrow">Stacks · 0</p>
+        <h2 id="empty-title">The garden is quiet.</h2>
+        <p>
+          There are no published patch stacks yet. Add one under{' '}
+          <code>stacks/</code> and the catalog will update immediately.
+        </p>
+      </section>
+    ) : (
+      <section
+        class="stack-index"
+        id="stacks"
+        aria-labelledby="stacks-title"
+      >
+        <header class="section-heading">
+          <h2 id="stacks-title">Patch stacks</h2>
+        </header>
 
-          <div class="stack-table">
-            <ol class="stack-list">
-              {catalog.stacks.map((stack) => (
-                <li>
-                  <article class="stack-card">
-                    <div class="card-main">
-                      <header>
-                        <p class="card-kicker">
-                          {repositoryName(
-                            stack.manifest.source.canonical,
-                          )}
-                        </p>
-                        <h3>
-                          <a href={`${base}stacks/${stack.id}/`}>
-                            {stack.id}
-                          </a>
-                        </h3>
-                      </header>
+        <div class="stack-table">
+          <ol class="stack-list">
+            {catalog.stacks.map((stack) => (
+              <li>
+                <article class="stack-card">
+                  <div class="card-main">
+                    <header>
+                      <p class="card-kicker">
+                        {repositoryName(
+                          stack.manifest.source.canonical,
+                        )}
+                      </p>
+                      <h3>
+                        <a href={`${base}stacks/${stack.id}/`}>
+                          {stack.id}
+                        </a>
+                      </h3>
+                    </header>
+                  </div>
+                  <dl class="card-meta">
+                    <div>
+                      <dt>Patches</dt>
+                      <dd>{stack.patches.length}</dd>
                     </div>
-                    <dl class="card-meta">
-                      <div>
-                        <dt>Patches</dt>
-                        <dd>{stack.patches.length}</dd>
-                      </div>
-                      <div>
-                        <dt>Revision</dt>
-                        <dd>
-                          <a
-                            class="revision-link"
-                            href={revisionUrl(
-                              stack.manifest.source.canonical,
-                              stack.manifest.source.revision,
-                            )}
-                          >
-                            <code>
-                              {stack.manifest.source.revision.slice(
-                                0,
-                                9,
-                              )}
-                            </code>
-                            <ExternalLink
-                              aria-hidden="true"
-                              size={13}
-                            />
-                            <span class="visually-hidden">
-                              View upstream commit
-                            </span>
-                          </a>
-                        </dd>
-                      </div>
-                    </dl>
-                    <a
-                      class="card-action"
-                      href={`${base}stacks/${stack.id}/`}
-                    >
-                      Open stack
-                    </a>
-                  </article>
-                </li>
-              ))}
-            </ol>
-          </div>
-        </section>
-      )
-    }
+                    <div>
+                      <dt>Revision</dt>
+                      <dd>
+                        <a
+                          class="revision-link"
+                          href={revisionUrl(
+                            stack.manifest.source.canonical,
+                            stack.manifest.source.revision,
+                          )}
+                        >
+                          <code>
+                            {stack.manifest.source.revision.slice(0, 9)}
+                          </code>
+                          <ExternalLink aria-hidden="true" size={13} />
+                          <span class="visually-hidden">
+                            View upstream commit
+                          </span>
+                        </a>
+                      </dd>
+                    </div>
+                  </dl>
+                  <a
+                    class="card-action"
+                    href={`${base}stacks/${stack.id}/`}
+                  >
+                    Open stack
+                  </a>
+                </article>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </section>
+    )}
   </main>
 </Layout>
