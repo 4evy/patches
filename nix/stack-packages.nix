@@ -7,28 +7,31 @@ let
     stackPath:
     let
       patchRoot = lib.path.append stackPath "patches";
-      lines = lib.splitString "\n" (builtins.readFile (lib.path.append patchRoot "series"));
-      matchPatch = line: builtins.match "[[:space:]]*([^#[:space:]]+).*" line;
-      matches = builtins.filter (match: match != null) (map matchPatch lines);
     in
-    map (match: lib.path.append patchRoot (lib.head match)) matches;
+    lib.trivial.pipe (builtins.readFile (lib.path.append patchRoot "series")) [
+      (lib.strings.splitString "\n")
+      (lib.lists.concatMap (
+        line:
+        let
+          match = builtins.match "[[:space:]]*([^#[:space:]]+).*" line;
+        in
+        lib.lists.optional (match != null) (lib.path.append patchRoot (lib.lists.head match))
+      ))
+    ];
 
-  callStackPackage =
-    packagePath: overrides:
+  packages = lib.attrsets.concatMapAttrs (
+    name: type:
     let
-      stackPath = dirOf packagePath;
+      stackPath = lib.path.append stackRoot name;
+      packagePath = lib.path.append stackPath "package.nix";
     in
-    callPackage packagePath (
-      overrides
-      // {
-        manifest = lib.importJSON (lib.path.append stackPath "stack.json");
+    lib.attrsets.optionalAttrs (type == "directory" && lib.filesystem.pathIsRegularFile packagePath) {
+      ${name} = callPackage packagePath {
+        manifest = lib.trivial.importJSON (lib.path.append stackPath "stack.json");
         patches = patchesFor stackPath;
-      }
-    );
-
-  discoveredPackages = lib.packagesFromDirectoryRecursive {
-    callPackage = callStackPackage;
-    directory = stackRoot;
-  };
+      };
+    }
+  ) (lib.filesystem.readDir stackRoot);
 in
-lib.filterAttrs (_: lib.isDerivation) discoveredPackages
+# A stack can return null when it does not support the target platform
+lib.attrsets.filterAttrs (_: package: package != null) packages
