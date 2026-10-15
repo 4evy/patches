@@ -1,7 +1,7 @@
 # Patch licensing
 
-The repository's original tooling, documentation, tests, and fixture
-content are MIT licensed. The full text is in [LICENSE](LICENSE).
+The repository's original package definitions and documentation are MIT
+licensed. The full text is in [LICENSE](LICENSE).
 
 Patch files need a more careful boundary. A patch may contain original
 work, copied context, or a transformation of an upstream work. This

@@ -1,8 +1,0 @@
-# Exclude the entire build context by default.
-**
-
-# Keep only the files copied by Dockerfile.
-!cmd/
-!cmd/brew-patches.rb
-!stacks/
-!stacks/**

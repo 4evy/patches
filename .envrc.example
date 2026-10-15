@@ -1,3 +1,0 @@
-# shellcheck shell=sh
-# Install direnv and nix-direnv, then copy this file to .envrc.
-use flake

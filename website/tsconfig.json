@@ -1,9 +1,0 @@
-{
-  "extends": "astro/tsconfigs/strictest",
-  "compilerOptions": {
-    "erasableSyntaxOnly": true,
-    "noUncheckedSideEffectImports": true
-  },
-  "include": [".astro/types.d.ts", "**/*"],
-  "exclude": ["dist"]
-}

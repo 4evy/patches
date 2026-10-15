@@ -1,3 +1,0 @@
-[allowlist]
-description = "Lockfiles are dependency data, not secrets."
-paths = ['''(^|/)(package-lock\\.json|Gemfile\\.lock|flake\\.lock)$''']
