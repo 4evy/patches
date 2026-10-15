@@ -15,7 +15,7 @@ codepoints without force-unwrapping the iterator.
  1 file changed, 61 insertions(+), 37 deletions(-)
 
 diff --git a/src/font/discovery.zig b/src/font/discovery.zig
-index 1847693..11175b7 100644
+index f74b426..b4e765c 100644
 --- a/src/font/discovery.zig
 +++ b/src/font/discovery.zig
 @@ -183,19 +183,6 @@ pub const Descriptor = struct {

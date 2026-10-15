@@ -6,7 +6,9 @@ Subject: apprt: edit scrollback in a terminal surface
 Add a `scrollback-editor` command for opening text exports inside Ghostty.
 A dedicated application action lets macOS and GTK temporarily replace the
 current pane, restore the original surface when the editor exits, and remove
-the exported directory without overloading URL handling.
+the exported directory without overloading URL handling. GTK keeps this
+session on the editor surface and uses its existing close and finalization
+paths, restoring into the current pane even after the editor is moved.
 
 Scrollback exports now include the visible screen, while alternate screens
 export their active contents. Unsupported runtimes retain the existing
@@ -15,20 +17,21 @@ operating-system opener fallback.
 Refs #2504
 Refs #3496
 ---
- include/ghostty.h                             |   9 ++
- .../Terminal/BaseTerminalController.swift     |   5 +-
- .../Terminal/TerminalController.swift         |   6 +-
- macos/Sources/Ghostty/Ghostty.App.swift       | 101 ++++++++++++
- .../Surface View/SurfaceView_AppKit.swift     |   6 +
- src/Surface.zig                               | 109 +++++++++++--
- src/apprt/action.zig                          |  31 ++++
- src/apprt/gtk/class/application.zig           | 151 ++++++++++++++++++
- src/apprt/gtk/class/split_tree.zig            |  21 +++
- src/config/Config.zig                         |  38 +++++
- 10 files changed, 458 insertions(+), 19 deletions(-)
+ include/ghostty.h                                  |   9 ++
+ .../Features/Terminal/BaseTerminalController.swift |   5 +-
+ .../Features/Terminal/TerminalController.swift     |   6 +-
+ macos/Sources/Ghostty/Ghostty.App.swift            | 101 +++++++++++++++
+ .../Ghostty/Surface View/SurfaceView_AppKit.swift  |   6 +
+ src/Surface.zig                                    | 144 ++++++++++++++-------
+ src/apprt/action.zig                               |  31 +++++
+ src/apprt/gtk/class/application.zig                |  16 +++
+ src/apprt/gtk/class/split_tree.zig                 |  24 ++++
+ src/apprt/gtk/class/surface.zig                    |  78 +++++++++++
+ src/config/Config.zig                              |  38 ++++++
+ 11 files changed, 406 insertions(+), 52 deletions(-)
 
 diff --git a/include/ghostty.h b/include/ghostty.h
-index eec6550..4ae44de 100644
+index 9a12b9cad..b934ccaf0 100644
 --- a/include/ghostty.h
 +++ b/include/ghostty.h
 @@ -884,6 +884,13 @@ typedef struct {
@@ -62,7 +65,7 @@ index eec6550..4ae44de 100644
  
  typedef struct {
 diff --git a/macos/Sources/Features/Terminal/BaseTerminalController.swift b/macos/Sources/Features/Terminal/BaseTerminalController.swift
-index 79ca5b6..ebeeb8a 100644
+index 79ca5b6e0..ebeeb8a4c 100644
 --- a/macos/Sources/Features/Terminal/BaseTerminalController.swift
 +++ b/macos/Sources/Features/Terminal/BaseTerminalController.swift
 @@ -541,7 +541,8 @@ class BaseTerminalController: NSWindowController,
@@ -85,7 +88,7 @@ index 79ca5b6..ebeeb8a 100644
              undoManager.setActionName(undoAction)
          }
 diff --git a/macos/Sources/Features/Terminal/TerminalController.swift b/macos/Sources/Features/Terminal/TerminalController.swift
-index bb898bd..dea9ea8 100644
+index 56d9647e9..67ec2c5b0 100644
 --- a/macos/Sources/Features/Terminal/TerminalController.swift
 +++ b/macos/Sources/Features/Terminal/TerminalController.swift
 @@ -190,7 +190,8 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
@@ -109,7 +112,7 @@ index bb898bd..dea9ea8 100644
  
      // MARK: Terminal Creation
 diff --git a/macos/Sources/Ghostty/Ghostty.App.swift b/macos/Sources/Ghostty/Ghostty.App.swift
-index 838b2b8..0809352 100644
+index b9dc4b298..81a5cea84 100644
 --- a/macos/Sources/Ghostty/Ghostty.App.swift
 +++ b/macos/Sources/Ghostty/Ghostty.App.swift
 @@ -290,6 +290,29 @@ extension Ghostty {
@@ -142,7 +145,7 @@ index 838b2b8..0809352 100644
              NotificationCenter.default.post(name: Notification.ghosttyCloseSurface, object: surface, userInfo: [
                  "process_alive": processAlive,
              ])
-@@ -747,6 +770,9 @@ extension Ghostty {
+@@ -746,6 +769,9 @@ extension Ghostty {
              case GHOSTTY_ACTION_OPEN_URL:
                  return openURL(action.action.open_url)
  
@@ -152,7 +155,7 @@ index 838b2b8..0809352 100644
              case GHOSTTY_ACTION_UNDO:
                  return undo(app, target: target)
  
-@@ -858,6 +884,81 @@ extension Ghostty {
+@@ -866,6 +892,81 @@ extension Ghostty {
              return true
          }
  
@@ -235,7 +238,7 @@ index 838b2b8..0809352 100644
              let target = UntrustedURL(value)
              switch target.decision {
 diff --git a/macos/Sources/Ghostty/Surface View/SurfaceView_AppKit.swift b/macos/Sources/Ghostty/Surface View/SurfaceView_AppKit.swift
-index f77985f..30b005e 100644
+index edbbd61cd..91468bed6 100644
 --- a/macos/Sources/Ghostty/Surface View/SurfaceView_AppKit.swift	
 +++ b/macos/Sources/Ghostty/Surface View/SurfaceView_AppKit.swift	
 @@ -180,6 +180,12 @@ extension Ghostty {
@@ -252,7 +255,7 @@ index f77985f..30b005e 100644
          override var surface: ghostty_surface_t? {
              surfaceModel?.unsafeCValue
 diff --git a/src/Surface.zig b/src/Surface.zig
-index dd738cc..70aa81a 100644
+index 568b74d83..d057e398d 100644
 --- a/src/Surface.zig
 +++ b/src/Surface.zig
 @@ -344,6 +344,7 @@ const DerivedConfig = struct {
@@ -274,7 +277,7 @@ index dd738cc..70aa81a 100644
              .scroll_to_bottom = config.@"scroll-to-bottom",
              .notify_on_command_finish = config.@"notify-on-command-finish",
              .notify_on_command_finish_action = config.@"notify-on-command-finish-action",
-@@ -5780,6 +5785,24 @@ const WriteScreenLoc = enum {
+@@ -5808,6 +5813,24 @@ const WriteScreenLoc = enum {
      selection, // Selected text
  };
  
@@ -299,30 +302,73 @@ index dd738cc..70aa81a 100644
  fn writeScreenFile(
      self: *Surface,
      loc: WriteScreenLoc,
-@@ -5830,15 +5853,14 @@ fn writeScreenFile(
-         const pages = &self.io.terminal.screens.active.pages;
-         const sel_: ?terminal.Selection = switch (loc) {
-             .history => history: {
+@@ -5852,43 +5875,6 @@ fn writeScreenFile(
+         self.renderer_state.mutex.lockUncancelable(global.io());
+         defer self.renderer_state.mutex.unlock(global.io());
+ 
+-        // We only dump history if we have history. We still keep
+-        // the file and write the empty file to the pty so that this
+-        // command always works on the primary screen.
+-        const pages = &self.io.terminal.screens.active.pages;
+-        const sel_: ?terminal.Selection = switch (loc) {
+-            .history => history: {
 -                // We do not support this for alternate screens
 -                // because they don't have scrollback anyways.
 -                if (self.io.terminal.screens.active_key == .alternate) {
 -                    break :history null;
 -                }
 -
-                 break :history terminal.Selection.init(
+-                break :history terminal.Selection.init(
 -                    pages.getTopLeft(.history),
 -                    pages.getBottomRight(.history) orelse
-+                    pages.getTopLeft(
-+                        if (self.io.terminal.screens.active_key == .alternate)
-+                            .screen
-+                        else
-+                            .history,
-+                    ),
-+                    pages.getBottomRight(.screen) orelse
-                         break :history null,
-                     false,
-                 );
-@@ -5899,13 +5921,44 @@ fn writeScreenFile(
+-                        break :history null,
+-                    false,
+-                );
+-            },
+-
+-            .screen => screen: {
+-                break :screen terminal.Selection.init(
+-                    pages.getTopLeft(.screen),
+-                    pages.getBottomRight(.screen) orelse
+-                        break :screen null,
+-                    false,
+-                );
+-            },
+-
+-            .selection => self.io.terminal.screens.active.selection,
+-        };
+-
+-        const sel = sel_ orelse {
+-            // If we have no selection we have no data so we do nothing.
+-            return;
+-        };
+-
+         const ScreenFormatter = terminal.formatter.ScreenFormatter;
+         var formatter: ScreenFormatter = .init(self.io.terminal.screens.active, .{
+             .emit = switch (write_screen.emit) {
+@@ -5902,10 +5888,17 @@ fn writeScreenFile(
+             .foreground = self.io.terminal.colors.foreground.get(),
+             .palette = &self.io.terminal.colors.palette.current,
+         });
+-        formatter.content = .{ .selection = sel.ordered(
+-            self.io.terminal.screens.active,
+-            .forward,
+-        ) };
++        formatter.content = .{
++            .selection = switch (loc) {
++                // The formatter's default selection includes the full screen
++                // and scrollback, including alternate screens without history
++                .history, .screen => null,
++                .selection => (self.io.terminal.screens.active.selection orelse return).ordered(
++                    self.io.terminal.screens.active,
++                    .forward,
++                ),
++            },
++        };
+         try formatter.format(buf_writer);
+     }
+     try buf_writer.flush();
+@@ -5927,13 +5920,42 @@ fn writeScreenFile(
                  .data = pathZ,
              }}, false);
          },
@@ -340,14 +386,12 @@ index dd738cc..70aa81a 100644
 +            // opener remains the fallback.
 +            if (loc == .history and write_screen.emit != .html) {
 +                if (self.config.scrollback_editor) |editor| {
-+                    var arena: ArenaAllocator = .init(self.alloc);
-+                    defer arena.deinit();
-+
 +                    const command = try scrollbackEditorCommand(
-+                        arena.allocator(),
++                        self.alloc,
 +                        editor,
 +                        path,
 +                    );
++                    defer self.alloc.free(command);
 +                    const handled = self.rt_app.performAction(
 +                        .{ .surface = self },
 +                        .edit_scrollback,
@@ -374,7 +418,7 @@ index dd738cc..70aa81a 100644
          .paste => self.queueIo(try termio.Message.writeReq(
              self.alloc,
              path,
-@@ -5916,6 +5969,32 @@ fn writeScreenFile(
+@@ -5944,6 +5966,32 @@ fn writeScreenFile(
      retain_tmp_dir = true;
  }
  
@@ -408,7 +452,7 @@ index dd738cc..70aa81a 100644
  /// completeClipboardRequest.
  pub const CompleteClipboard = struct {
 diff --git a/src/apprt/action.zig b/src/apprt/action.zig
-index 54a8faf..4739d0a 100644
+index e58260cfb..7b46007ab 100644
 --- a/src/apprt/action.zig
 +++ b/src/apprt/action.zig
 @@ -363,6 +363,10 @@ pub const Action = union(Key) {
@@ -464,28 +508,23 @@ index 54a8faf..4739d0a 100644
  // runtime. The small size cost doesn't make a difference in our union.
  pub const SplitDirection = enum(c_int) {
 diff --git a/src/apprt/gtk/class/application.zig b/src/apprt/gtk/class/application.zig
-index 80cc8bd..4405968 100644
+index cd07efaec..4d1149ebc 100644
 --- a/src/apprt/gtk/class/application.zig
 +++ b/src/apprt/gtk/class/application.zig
-@@ -750,6 +750,12 @@ pub const Application = extern struct {
+@@ -750,6 +750,8 @@ pub const Application = extern struct {
  
              .open_url => Action.openUrl(self, value),
  
-+            .edit_scrollback => return Action.editScrollback(
-+                self,
-+                target,
-+                value,
-+            ),
++            .edit_scrollback => return Action.editScrollback(target, value),
 +
              .pwd => Action.pwd(target, value),
  
              .present_terminal => return Action.presentTerminal(target),
-@@ -2732,6 +2738,151 @@ const Action = struct {
+@@ -2736,6 +2738,20 @@ const Action = struct {
          };
      }
  
 +    pub fn editScrollback(
-+        self: *Application,
 +        target: apprt.Target,
 +        value: apprt.action.EditScrollback,
 +    ) bool {
@@ -493,154 +532,24 @@ index 80cc8bd..4405968 100644
 +            .app => return false,
 +            .surface => |surface| surface,
 +        };
-+        const original = core.rt_surface.surface;
-+        const split_tree = ext.getAncestor(
-+            SplitTree,
-+            original.as(gtk.Widget),
-+        ) orelse return false;
-+
-+        // Only replace a surface that still occupies its pane. This also
-+        // avoids racing a second transient replacement.
-+        if (split_tree.getActiveSurface() != original) return false;
-+
-+        const editor: *Surface = .new(.{
-+            .command = .{ .shell = value.command },
-+            .shell_integration = null,
-+            .working_directory = null,
-+            .wait_after_command = false,
-+            .title = std.mem.span(i18n._("Scrollback")),
-+        });
-+        _ = editor.refSink();
-+        editor.setParent(core, .split);
-+        editor.bindIsSplit(split_tree);
-+
-+        const alloc = self.allocator();
-+        const temp_dir = alloc.dupe(u8, value.directory) catch {
-+            editor.unref();
++        return core.rt_surface.surface.editScrollback(value) catch |err| {
++            log.warn("unable to open scrollback editor err={}", .{err});
 +            return false;
 +        };
-+        const state = alloc.create(EditScrollbackState) catch {
-+            alloc.free(temp_dir);
-+            editor.unref();
-+            return false;
-+        };
-+        state.* = .{
-+            .app = self,
-+            .original = original.ref(),
-+            .temp_dir = temp_dir,
-+        };
-+        state.split_tree.set(split_tree);
-+
-+        state.close_handler = Surface.signals.@"close-request".connect(
-+            editor,
-+            *EditScrollbackState,
-+            editScrollbackClose,
-+            state,
-+            .{},
-+        );
-+        editor.as(gobject.Object).weakRef(editScrollbackWeakNotify, state);
-+
-+        if (!(split_tree.replaceSurface(original, editor) catch false)) {
-+            editor.as(gobject.Object).weakUnref(editScrollbackWeakNotify, state);
-+            gobject.signalHandlerDisconnect(
-+                editor.as(gobject.Object),
-+                state.close_handler,
-+            );
-+            state.split_tree.deinit();
-+            state.original.unref();
-+            alloc.free(state.temp_dir);
-+            alloc.destroy(state);
-+            editor.unref();
-+            return false;
-+        }
-+
-+        // The split tree now owns the editor. The state deliberately keeps
-+        // only a weak association so closing the containing window cannot
-+        // form a reference cycle.
-+        editor.unref();
-+        editor.grabFocus();
-+        return true;
-+    }
-+
-+    const EditScrollbackState = struct {
-+        app: *Application,
-+        split_tree: WeakRef(SplitTree) = .empty,
-+        original: *Surface,
-+        temp_dir: []u8,
-+        close_handler: c_ulong = 0,
-+        restoring: bool = false,
-+    };
-+
-+    fn editScrollbackClose(
-+        editor: *Surface,
-+        state: *EditScrollbackState,
-+    ) callconv(.c) void {
-+        if (state.restoring) return;
-+        state.restoring = true;
-+
-+        editor.as(gobject.Object).weakUnref(editScrollbackWeakNotify, state);
-+        gobject.signalHandlerDisconnect(
-+            editor.as(gobject.Object),
-+            state.close_handler,
-+        );
-+        state.close_handler = 0;
-+
-+        if (state.split_tree.get()) |split_tree| {
-+            defer split_tree.unref();
-+            if (split_tree.replaceSurface(editor, state.original) catch false) {
-+                state.original.grabFocus();
-+            }
-+        }
-+
-+        // Release the original surface and delete the export only after the
-+        // close signal has finished emitting.
-+        _ = glib.idleAdd(editScrollbackCleanup, state);
-+    }
-+
-+    fn editScrollbackWeakNotify(
-+        ud: ?*anyopaque,
-+        _: *gobject.Object,
-+    ) callconv(.c) void {
-+        const state: *EditScrollbackState = @ptrCast(@alignCast(
-+            ud orelse return,
-+        ));
-+        destroyEditScrollbackState(state);
-+    }
-+
-+    fn editScrollbackCleanup(ud: ?*anyopaque) callconv(.c) c_int {
-+        const state: *EditScrollbackState = @ptrCast(@alignCast(
-+            ud orelse return 0,
-+        ));
-+        destroyEditScrollbackState(state);
-+        return 0;
-+    }
-+
-+    fn destroyEditScrollbackState(state: *EditScrollbackState) void {
-+        state.split_tree.deinit();
-+        state.original.unref();
-+
-+        const app = state.app;
-+        std.Io.Dir.cwd().deleteTree(global.io(), state.temp_dir) catch |err|
-+            log.warn("failed to delete scrollback directory path={s} err={}", .{
-+                state.temp_dir,
-+                err,
-+            });
-+        app.allocator().free(state.temp_dir);
-+        app.allocator().destroy(state);
 +    }
 +
      pub fn pwd(
          target: apprt.Target,
          value: apprt.action.Pwd,
 diff --git a/src/apprt/gtk/class/split_tree.zig b/src/apprt/gtk/class/split_tree.zig
-index b2190ec..b979c3c 100644
+index b2190ec91..64022f9d6 100644
 --- a/src/apprt/gtk/class/split_tree.zig
 +++ b/src/apprt/gtk/class/split_tree.zig
-@@ -449,6 +449,27 @@ pub const SplitTree = extern struct {
+@@ -449,6 +449,30 @@ pub const SplitTree = extern struct {
          }
      }
  
-+    /// Replace a surface without changing its position in the split tree.
++    /// Replace a surface without changing its position in the split tree
 +    pub fn replaceSurface(
 +        self: *Self,
 +        old: *Surface,
@@ -656,16 +565,130 @@ index b2190ec..b979c3c 100644
 +        );
 +        defer new_tree.deinit();
 +
-+        self.private().last_focused.set(new);
++        const last_focused = self.private().last_focused.get();
++        defer if (last_focused) |surface| surface.unref();
++        if (last_focused == old) self.private().last_focused.set(new);
 +        self.setTree(&new_tree);
++        new.bindIsSplit(self);
 +        return true;
 +    }
 +
      fn disconnectSurfaceHandlers(self: *Self) void {
          const tree = self.getTree() orelse return;
          var it = tree.iterator();
+diff --git a/src/apprt/gtk/class/surface.zig b/src/apprt/gtk/class/surface.zig
+index d80fba3da..c63dce6fb 100644
+--- a/src/apprt/gtk/class/surface.zig
++++ b/src/apprt/gtk/class/surface.zig
+@@ -652,6 +652,10 @@ pub const Surface = extern struct {
+         /// then be realized when the widget itself is realized.
+         core_surface: ?*CoreSurface = null,
+ 
++        /// Owned by the editor surface until it is finalized, including when
++        /// its containing window is closed
++        scrollback_editor: ?ScrollbackEditor = null,
++
+         /// Cached metrics for libghostty callbacks
+         size: apprt.SurfaceSize,
+         cursor_pos: apprt.CursorPos,
+@@ -1511,7 +1515,76 @@ pub const Surface = extern struct {
+     //---------------------------------------------------------------
+     // Libghostty Callbacks
+ 
++    const ScrollbackEditor = struct {
++        original: *Self,
++        directory: []const u8,
++
++        fn deinit(self: ScrollbackEditor) void {
++            self.original.unref();
++            std.Io.Dir.cwd().deleteTree(global.io(), self.directory) catch |err|
++                log.warn("failed to delete scrollback directory err={}", .{err});
++            Application.default().allocator().free(self.directory);
++        }
++    };
++
++    /// Open the exported scrollback in an editor that temporarily occupies
++    /// this surface's pane
++    pub fn editScrollback(
++        self: *Self,
++        value: apprt.action.EditScrollback,
++    ) Allocator.Error!bool {
++        const core_surface = self.core() orelse return false;
++        const split_tree = ext.getAncestor(
++            SplitTree,
++            self.as(gtk.Widget),
++        ) orelse return false;
++
++        const editor: *Self = .new(.{
++            .command = .{ .shell = value.command },
++            .shell_integration = null,
++            .working_directory = null,
++            .wait_after_command = false,
++            .title = std.mem.span(i18n._("Scrollback")),
++        });
++        _ = editor.refSink();
++        defer editor.unref();
++        editor.setParent(core_surface, .split);
++
++        const alloc = Application.default().allocator();
++        const directory = try alloc.dupe(u8, value.directory);
++        errdefer alloc.free(directory);
++
++        // Keep the original alive while the tree releases its reference
++        _ = self.ref();
++        defer self.unref();
++        if (!try split_tree.replaceSurface(self, editor)) {
++            alloc.free(directory);
++            return false;
++        }
++
++        editor.private().scrollback_editor = .{
++            .original = self.ref(),
++            .directory = directory,
++        };
++        editor.grabFocus();
++        return true;
++    }
++
+     pub fn close(self: *Self) void {
++        if (self.private().scrollback_editor) |session| {
++            // The editor may have moved to another tab or window, so restore
++            // the original into the pane that currently contains the editor
++            _ = self.ref();
++            defer self.unref();
++            if (ext.getAncestor(SplitTree, self.as(gtk.Widget))) |split_tree| {
++                const focused = self.getFocused();
++                if (split_tree.replaceSurface(self, session.original) catch false) {
++                    if (focused) session.original.grabFocus();
++                    return;
++                }
++            }
++        }
++
+         signals.@"close-request".impl.emit(
+             self,
+             null,
+@@ -1831,6 +1904,7 @@ pub const Surface = extern struct {
+         priv.size = .{ .width = 0, .height = 0 };
+         priv.vadj_signal_group = null;
+         priv.desktop_notifications = .{};
++        priv.scrollback_editor = null;
+ 
+         // If our configuration is null then we get the configuration
+         // from the application.
+@@ -1984,6 +2058,10 @@ pub const Surface = extern struct {
+ 
+             priv.core_surface = null;
+         }
++        if (priv.scrollback_editor) |session| {
++            session.deinit();
++            priv.scrollback_editor = null;
++        }
+         if (priv.mouse_hover_url) |v| {
+             glib.free(@ptrCast(@constCast(v)));
+             priv.mouse_hover_url = null;
 diff --git a/src/config/Config.zig b/src/config/Config.zig
-index 754cf47..9c577e5 100644
+index 83a1322c8..219a08df6 100644
 --- a/src/config/Config.zig
 +++ b/src/config/Config.zig
 @@ -1435,6 +1435,24 @@ input: RepeatableReadableIO = .{},
@@ -693,7 +716,7 @@ index 754cf47..9c577e5 100644
  /// Control when the scrollbar is shown to scroll the scrollback buffer.
  ///
  /// The default value is `system`.
-@@ -11180,6 +11198,26 @@ test "clipboard write limit" {
+@@ -11249,6 +11267,26 @@ test "clipboard write limit" {
      );
  }
  
