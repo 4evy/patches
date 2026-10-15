@@ -2,9 +2,13 @@
   applyPatches,
   fetchFromGitHub,
   kanata,
+  lib,
   manifest,
   patches,
+  pkg-config,
   rustPlatform,
+  stdenv,
+  udev,
 }:
 
 let
@@ -13,7 +17,7 @@ let
     owner = "jtroo";
     repo = "kanata";
     rev = revision;
-    hash = "sha256-I40ECXVAXJyyOC9QJB27cDOgaQ/zg3729k2t6/6k6IU=";
+    hash = "sha256-aaGzlj/VAYJfTdOK41iokhufvlBVqusLyh8JwAQkBJA=";
   };
   patchedSource = applyPatches {
     name = "kanata-${builtins.substring 0 12 revision}-patched-source";
@@ -23,13 +27,18 @@ let
 in
 kanata.overrideAttrs (oldAttrs: {
   pname = "kanata-patched";
-  version = "1.12.1-prerelease-1+git.${builtins.substring 0 12 revision}";
+  version = "1.13.0-prerelease-2+git.${builtins.substring 0 12 revision}";
   src = patchedSource;
   patches = oldAttrs.patches or [ ];
   cargoDeps = rustPlatform.fetchCargoVendor {
     src = patchedSource;
-    hash = "sha256-QbxpUX8z1vrgVEiPTLs5ah6+qqMtZGJgbMPSYXACr10=";
+    hash = "sha256-9HfETrrZQuobMkU5/rVlRUJ+4oJC+Qwyn9/B63A3UV8=";
   };
+
+  # Gamepad support needs libudev on Linux
+  nativeBuildInputs =
+    (oldAttrs.nativeBuildInputs or [ ]) ++ lib.optionals stdenv.hostPlatform.isLinux [ pkg-config ];
+  buildInputs = (oldAttrs.buildInputs or [ ]) ++ lib.optionals stdenv.hostPlatform.isLinux [ udev ];
 
   # Release packages compile only. Tests exercise hardware-facing behavior and
   # belong in dedicated upstream environments, not this distributable build.

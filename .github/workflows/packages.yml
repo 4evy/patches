@@ -50,8 +50,10 @@ jobs:
             libgtk-4-dev \
             libgtk4-layer-shell-dev \
             libonig-dev \
+            libudev-dev \
             libxml2-utils \
             pandoc \
+            pkg-config \
             rpm \
             xz-utils \
             zip \

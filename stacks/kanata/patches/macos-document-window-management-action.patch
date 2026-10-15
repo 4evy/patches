@@ -8,10 +8,10 @@ Subject: doc(macos): document window management action
  1 file changed, 93 insertions(+)
 
 diff --git a/docs/config.adoc b/docs/config.adoc
-index 615232a..833d021 100644
+index c7600e2..ff7632c 100644
 --- a/docs/config.adoc
 +++ b/docs/config.adoc
-@@ -1707,6 +1707,99 @@ The coordinate system is platform-specific:
+@@ -1710,6 +1710,99 @@ The coordinate system is platform-specific:
  
  Experimentation will be needed to find the correct values for your setup.
  

@@ -147,11 +147,11 @@ index 54eb134..673a88e 100644
  
      #[test]
 diff --git a/parser/src/keys/mod.rs b/parser/src/keys/mod.rs
-index af41ed6..3345759 100644
+index 7e26946..bdbbb4e 100644
 --- a/parser/src/keys/mod.rs
 +++ b/parser/src/keys/mod.rs
-@@ -1227,32 +1227,6 @@ fn parser_key_max_lt_keyberon_key_max() {
-     assert!(u16::from(OsCode::KEY_MAX) < KEY_MAX);
+@@ -1436,32 +1436,6 @@ fn parser_key_max_lt_keyberon_key_max() {
+     assert!(u16::from(OsCode::OSCODE_MAX) < KEY_MAX);
  }
  
 -#[cfg(test)]
@@ -183,7 +183,7 @@ index af41ed6..3345759 100644
  impl TryFrom<usize> for OsCode {
      type Error = ();
      fn try_from(item: usize) -> Result<Self, Self::Error> {
-@@ -1309,3 +1283,29 @@ impl From<&KeyCode> for OsCode {
+@@ -1518,3 +1492,29 @@ impl From<&KeyCode> for OsCode {
          (*item).into()
      }
  }

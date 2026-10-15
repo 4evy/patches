@@ -3,17 +3,22 @@ From: 4evy <git@evy.pink>
 Date: Thu, 1 Jan 1970 00:00:00 +0000
 Subject: feat(macos): add window layout runtime
 
+Run window layout requests on a bounded worker queue using the existing
+macOS dependencies. Apply Accessibility timeouts to the owned app and window
+objects, preserving the process-wide default and avoiding a timeout guard
+for every request. Reuse Core Graphics geometry and Objective-C ownership
+helpers, and share the frame retry sequence between attempts.
+
 ---
  Cargo.lock                  |   10 +
  Cargo.toml                  |    1 +
  parser/src/custom_action.rs |   66 +++
- src/kanata/macos_window.rs  | 1093 +++++++++++++++++++++++++++++++++++
+ src/kanata/macos_window.rs  | 1031 +++++++++++++++++++++++++++++++++++++++++++
  src/kanata/mod.rs           |   12 +
- 5 files changed, 1182 insertions(+)
- create mode 100644 src/kanata/macos_window.rs
+ 5 files changed, 1120 insertions(+)
 
 diff --git a/Cargo.lock b/Cargo.lock
-index d7232fd..ac1ba53 100644
+index 536a5a1..2f63136 100644
 --- a/Cargo.lock
 +++ b/Cargo.lock
 @@ -2,6 +2,15 @@
@@ -32,19 +37,19 @@ index d7232fd..ac1ba53 100644
  [[package]]
  name = "addr2line"
  version = "0.24.2"
-@@ -719,6 +728,7 @@ dependencies = [
+@@ -771,6 +780,7 @@ dependencies = [
  name = "kanata"
- version = "1.12.1-prerelease-1"
+ version = "1.13.0-prerelease-2"
  dependencies = [
 + "accessibility-sys",
   "anyhow",
   "arboard",
   "clap",
 diff --git a/Cargo.toml b/Cargo.toml
-index 3da0836..5370f08 100644
+index f2c7325..55c540e 100644
 --- a/Cargo.toml
 +++ b/Cargo.toml
-@@ -63,6 +63,7 @@ kanata-tcp-protocol = { path = "tcp_protocol", version = "0.1121.0" }
+@@ -75,6 +75,7 @@ gilrs = { version = "0.11.2", default-features = false, features = ["xinput"] }
  arboard = "3.4"
  
  [target.'cfg(target_os = "macos")'.dependencies]
@@ -53,7 +58,7 @@ index 3da0836..5370f08 100644
  objc = "0.2.7"
  core-graphics = "0.25.0"
 diff --git a/parser/src/custom_action.rs b/parser/src/custom_action.rs
-index 38b9466..3a7a396 100644
+index b4c1dc6..fb43895 100644
 --- a/parser/src/custom_action.rs
 +++ b/parser/src/custom_action.rs
 @@ -55,6 +55,7 @@ pub enum CustomAction {
@@ -64,7 +69,7 @@ index 38b9466..3a7a396 100644
      SequenceCancel,
      SequenceLeader(u16, SequenceInputMode),
      /// Purpose:
-@@ -100,6 +101,71 @@ pub enum CustomAction {
+@@ -107,6 +108,71 @@ pub enum CustomAction {
      ClipboardSaveSwap(u16, u16),
  }
  
@@ -138,10 +143,10 @@ index 38b9466..3a7a396 100644
      Left,
 diff --git a/src/kanata/macos_window.rs b/src/kanata/macos_window.rs
 new file mode 100644
-index 0000000..66f9b85
+index 0000000..5d1572c
 --- /dev/null
 +++ b/src/kanata/macos_window.rs
-@@ -0,0 +1,1093 @@
+@@ -0,0 +1,1031 @@
 +use accessibility_sys::{
 +    AXUIElementCopyAttributeValue, AXUIElementCreateApplication, AXUIElementCreateSystemWide,
 +    AXUIElementGetPid, AXUIElementRef, AXUIElementSetAttributeValue,
@@ -161,7 +166,7 @@ index 0000000..66f9b85
 +    kCGWindowListExcludeDesktopElements, kCGWindowListOptionOnScreenOnly, kCGWindowOwnerPID,
 +};
 +use kanata_parser::custom_action::{MacosWindowFrame, MacosWindowLayout, MacosWindowPreset};
-+use objc::rc::autoreleasepool;
++use objc::rc::{StrongPtr, autoreleasepool};
 +use objc::runtime::Object;
 +use objc::{Encode, Encoding, class, msg_send, sel, sel_impl};
 +use std::ffi::c_void;
@@ -176,19 +181,8 @@ index 0000000..66f9b85
 +const AX_MESSAGING_TIMEOUT: f32 = 1.0;
 +const WINDOW_REQUEST_QUEUE_CAPACITY: usize = 16;
 +
-+#[repr(C)]
-+#[derive(Clone, Copy, Debug)]
-+struct NSPoint {
-+    x: f64,
-+    y: f64,
-+}
-+
-+#[repr(C)]
-+#[derive(Clone, Copy, Debug)]
-+struct NSSize {
-+    width: f64,
-+    height: f64,
-+}
++type NSPoint = CGPoint;
++type NSSize = CGSize;
 +
 +#[repr(C)]
 +#[derive(Clone, Copy, Debug)]
@@ -320,7 +314,6 @@ index 0000000..66f9b85
 +                    log::warn!("macos-window dropped a stale layout request");
 +                    continue;
 +                }
-+                let _timeout = AxMessagingTimeout::install();
 +                if let Err(err) = apply_window_layouts(request, &mut cycle_state) {
 +                    cycle_state.reset();
 +                    log::error!("macos-window action failed: {err}");
@@ -335,8 +328,12 @@ index 0000000..66f9b85
 +    autoreleasepool(|| unsafe {
 +        // Rust creates POSIX threads directly. Apple requires one NSThread-created thread before
 +        // Cocoa is used from secondary threads so that Cocoa enables its internal synchronization.
++        let is_multithreaded: bool = msg_send![class!(NSThread), isMultiThreaded];
++        if is_multithreaded {
++            return Ok(());
++        }
 +        let center: *mut Object = msg_send![class!(NSNotificationCenter), defaultCenter];
-+        let observer: *mut Object = msg_send![class!(NSObject), new];
++        let observer = StrongPtr::new(msg_send![class!(NSObject), new]);
 +        if center.is_null() || observer.is_null() {
 +            return Err("failed to initialize Cocoa threading support".into());
 +        }
@@ -344,9 +341,8 @@ index 0000000..66f9b85
 +            class!(NSThread),
 +            detachNewThreadSelector: sel!(removeObserver:)
 +            toTarget: center
-+            withObject: observer
++            withObject: *observer
 +        ];
-+        let _: () = msg_send![observer, release];
 +
 +        let is_multithreaded: bool = msg_send![class!(NSThread), isMultiThreaded];
 +        if !is_multithreaded {
@@ -356,76 +352,34 @@ index 0000000..66f9b85
 +    })
 +}
 +
-+struct AxMessagingTimeout {
-+    system_wide: CFType,
-+    installed: bool,
-+}
-+
-+impl AxMessagingTimeout {
-+    fn install() -> Option<Self> {
-+        // SAFETY: the create function returns either null or an owned CF object.
-+        let system_wide = unsafe { AXUIElementCreateSystemWide() };
-+        if system_wide.is_null() {
-+            log::warn!("macos-window could not create the system-wide AX element");
-+            return None;
-+        }
-+        // SAFETY: `system_wide` is non-null and follows the create rule.
-+        let system_wide = unsafe { CFType::wrap_under_create_rule(system_wide as CFTypeRef) };
-+        // Apple documents the system-wide element as setting this process's global AX timeout.
-+        let err = unsafe {
-+            AXUIElementSetMessagingTimeout(
-+                system_wide.as_CFTypeRef() as AXUIElementRef,
-+                AX_MESSAGING_TIMEOUT,
-+            )
-+        };
-+        if err != kAXErrorSuccess {
-+            log::warn!(
-+                "macos-window could not set the AX messaging timeout: {} ({err})",
-+                error_string(err)
-+            );
-+        }
-+        Some(Self {
-+            system_wide,
-+            installed: err == kAXErrorSuccess,
-+        })
-+    }
-+}
-+
-+impl Drop for AxMessagingTimeout {
-+    fn drop(&mut self) {
-+        if self.installed {
-+            // A zero timeout on the system-wide element restores Apple's default.
-+            let err = unsafe {
-+                AXUIElementSetMessagingTimeout(
-+                    self.system_wide.as_CFTypeRef() as AXUIElementRef,
-+                    0.0,
-+                )
-+            };
-+            if err != kAXErrorSuccess {
-+                log::warn!(
-+                    "macos-window could not restore the AX messaging timeout: {} ({err})",
-+                    error_string(err)
-+                );
-+            }
-+        }
++fn set_ax_timeout(element: AXUIElementRef) {
++    // This timeout belongs to this object alone, leaving other Accessibility
++    // clients in the process and the global default unchanged
++    let err = unsafe { AXUIElementSetMessagingTimeout(element, AX_MESSAGING_TIMEOUT) };
++    if err != kAXErrorSuccess {
++        log::warn!(
++            "macos-window could not set the AX messaging timeout: {} ({err})",
++            error_string(err)
++        );
 +    }
 +}
 +
 +fn apply_window_layouts(request: WindowRequest, cycle_state: &mut CycleState) -> Result<()> {
 +    let window = focused_window(request.pid)?;
-+    let current_frame = window_frame(window.element)?;
++    let element = window.as_CFTypeRef() as AXUIElementRef;
++    let current_frame = window_frame(element)?;
 +    let screen = screen_for_rect(current_frame)?;
 +    let step = cycle_state.next_index(
 +        &request.layouts,
-+        &window.window,
++        &window,
 +        current_frame,
 +        request.requested_at,
 +    );
 +    let requested_frame = resolve_layout(screen, current_frame, request.layouts[step]);
-+    let achieved_frame = set_window_frame(window.element, current_frame, requested_frame)?;
++    let achieved_frame = set_window_frame(element, current_frame, requested_frame)?;
 +    cycle_state.record(
 +        &request.layouts,
-+        &window.window,
++        &window,
 +        step,
 +        achieved_frame,
 +        request.requested_at,
@@ -433,23 +387,14 @@ index 0000000..66f9b85
 +    Ok(())
 +}
 +
-+struct FocusedWindow {
-+    _app: CFType,
-+    window: CFType,
-+    element: AXUIElementRef,
-+}
-+
-+fn focused_window(pid: i32) -> Result<FocusedWindow> {
++fn focused_window(pid: i32) -> Result<CFType> {
 +    let app = application_for_pid(pid)?;
 +    let app_element = app.as_CFTypeRef() as AXUIElementRef;
 +    let window = copy_ax_attr(app_element, kAXFocusedWindowAttribute)
 +        .or_else(|_| copy_ax_attr(app_element, kAXMainWindowAttribute))?;
-+    let element = window.as_CFTypeRef() as AXUIElementRef;
-+    Ok(FocusedWindow {
-+        _app: app,
-+        window,
-+        element,
-+    })
++    set_ax_timeout(window.as_CFTypeRef() as AXUIElementRef);
++    // The copied window owns its CF reference and can outlive the app lookup
++    Ok(window)
 +}
 +
 +fn application_for_pid(pid: i32) -> Result<CFType> {
@@ -457,7 +402,9 @@ index 0000000..66f9b85
 +    if app.is_null() {
 +        bail!("AXUIElementCreateApplication({pid}) returned null");
 +    }
-+    Ok(unsafe { CFType::wrap_under_create_rule(app as CFTypeRef) })
++    let app = unsafe { CFType::wrap_under_create_rule(app as CFTypeRef) };
++    set_ax_timeout(app.as_CFTypeRef() as AXUIElementRef);
++    Ok(app)
 +}
 +
 +fn focused_application_pid() -> Result<i32> {
@@ -935,18 +882,11 @@ index 0000000..66f9b85
 +) -> Result<CGRect> {
 +    let should_resize = !sizes_nearly_equal(current_frame.size, requested_frame.size);
 +
-+    // AX exposes position and size separately. Some apps constrain one based on the other,
-+    // so repeat the size after moving and retry the complete sequence once if needed.
-+    if should_resize {
-+        set_ax_size(window, kAXSizeAttribute, requested_frame.size)?;
-+    }
-+    set_ax_point(window, kAXPositionAttribute, requested_frame.origin)?;
-+    if should_resize {
-+        set_ax_size(window, kAXSizeAttribute, requested_frame.size)?;
-+    }
-+
-+    let mut actual = window_frame(window)?;
-+    if !rects_nearly_equal(actual, requested_frame) {
++    // AX exposes position and size separately. Some apps constrain one based
++    // on the other, so repeat the size after moving and retry the complete
++    // sequence once if needed
++    let mut actual = current_frame;
++    for _ in 0..2 {
 +        if should_resize {
 +            set_ax_size(window, kAXSizeAttribute, requested_frame.size)?;
 +        }
@@ -955,6 +895,9 @@ index 0000000..66f9b85
 +            set_ax_size(window, kAXSizeAttribute, requested_frame.size)?;
 +        }
 +        actual = window_frame(window)?;
++        if rects_nearly_equal(actual, requested_frame) {
++            break;
++        }
 +    }
 +    if !rects_nearly_equal(actual, requested_frame) {
 +        log::debug!("macos-window requested frame {requested_frame:?}, app applied {actual:?}");
@@ -1236,7 +1179,7 @@ index 0000000..66f9b85
 +    }
 +}
 diff --git a/src/kanata/mod.rs b/src/kanata/mod.rs
-index 8a32dfb..54eb14b 100644
+index ea7ad5f..e5ca766 100644
 --- a/src/kanata/mod.rs
 +++ b/src/kanata/mod.rs
 @@ -119,6 +119,9 @@ mod linux;
@@ -1249,7 +1192,7 @@ index 8a32dfb..54eb14b 100644
  mod output_logic;
  use output_logic::*;
  
-@@ -1722,6 +1725,15 @@ impl Kanata {
+@@ -1881,6 +1884,15 @@ impl Kanata {
                              self.move_mouse_speed_modifiers
                          );
                      }

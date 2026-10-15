@@ -5,14 +5,14 @@ Subject: macos: respect menu-bar auto-hide in window layouts
 
 ---
  docs/config.adoc           |  3 +-
- src/kanata/macos_window.rs | 76 +++++++++++++++++++++++++++++++++++++-
+ src/kanata/macos_window.rs | 76 ++++++++++++++++++++++++++++++++++++++++++++--
  2 files changed, 76 insertions(+), 3 deletions(-)
 
 diff --git a/docs/config.adoc b/docs/config.adoc
-index 833d021..c6ebab2 100644
+index ff7632c..cd48411 100644
 --- a/docs/config.adoc
 +++ b/docs/config.adoc
-@@ -1785,7 +1785,8 @@ window's current display:
+@@ -1788,7 +1788,8 @@ window's current display:
  `(x y width height)`, where `10000` means 100%.
  All four values are signed integers; `width` and `height` must be positive.
  Negative positions and positions beyond `10000` are allowed.
@@ -23,10 +23,10 @@ index 833d021..c6ebab2 100644
  larger than the work area.
  
 diff --git a/src/kanata/macos_window.rs b/src/kanata/macos_window.rs
-index 66f9b85..0a624f3 100644
+index 5d1572c..f9aa238 100644
 --- a/src/kanata/macos_window.rs
 +++ b/src/kanata/macos_window.rs
-@@ -61,6 +61,57 @@ unsafe impl Encode for NSRect {
+@@ -50,6 +50,57 @@ unsafe impl Encode for NSRect {
      }
  }
  
@@ -84,7 +84,7 @@ index 66f9b85..0a624f3 100644
  #[derive(Clone, Copy, Debug)]
  struct Screen {
      full_frame: CGRect,
-@@ -278,6 +329,10 @@ fn apply_window_layouts(request: WindowRequest, cycle_state: &mut CycleState) ->
+@@ -227,6 +278,10 @@ fn apply_window_layouts(request: WindowRequest, cycle_state: &mut CycleState) ->
          request.requested_at,
      );
      let requested_frame = resolve_layout(screen, current_frame, request.layouts[step]);
@@ -92,10 +92,10 @@ index 66f9b85..0a624f3 100644
 +        "macos-window pid={} screen={screen:?} current={current_frame:?} requested={requested_frame:?}",
 +        request.pid,
 +    );
-     let achieved_frame = set_window_frame(window.element, current_frame, requested_frame)?;
+     let achieved_frame = set_window_frame(element, current_frame, requested_frame)?;
      cycle_state.record(
          &request.layouts,
-@@ -506,7 +561,7 @@ fn rect_max_y(rect: CGRect) -> f64 {
+@@ -448,7 +503,7 @@ fn rect_max_y(rect: CGRect) -> f64 {
  }
  
  fn active_screens() -> Result<Vec<Screen>> {
@@ -104,7 +104,7 @@ index 66f9b85..0a624f3 100644
      // Core Graphics only provides the full display bounds, so use that solely as a fallback.
      let screens = appkit_visible_screens();
      if !screens.is_empty() {
-@@ -540,6 +595,7 @@ fn appkit_visible_screens() -> Vec<Screen> {
+@@ -482,6 +537,7 @@ fn appkit_visible_screens() -> Vec<Screen> {
          let zero_frame: NSRect = msg_send![zero_screen, frame];
          let zero_screen_top = zero_frame.origin.y + zero_frame.size.height;
          let mut result = Vec::with_capacity(count);
@@ -112,7 +112,7 @@ index 66f9b85..0a624f3 100644
  
          for index in 0..count {
              let screen: *mut Object = msg_send![screens, objectAtIndex: index];
-@@ -548,7 +604,23 @@ fn appkit_visible_screens() -> Vec<Screen> {
+@@ -490,7 +546,23 @@ fn appkit_visible_screens() -> Vec<Screen> {
              }
  
              let ns_frame: NSRect = msg_send![screen, frame];
