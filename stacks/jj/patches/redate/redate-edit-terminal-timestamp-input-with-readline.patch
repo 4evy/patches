@@ -1,0 +1,156 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: 4evy <git@evy.pink>
+Date: Thu, 1 Jan 1970 00:00:00 +0000
+Subject: redate: edit terminal timestamp input with readline
+
+Use readline for terminal timestamp input so cursor movement, insertion,
+deletion, and pasted text are handled as editing commands. Preserve
+standard prompting for piped input
+---
+ Cargo.lock                 | 35 +++++++++++++++++++++++++++++++++++
+ Cargo.toml                 |  1 +
+ cli/Cargo.toml             |  1 +
+ cli/src/commands/redate.rs | 32 +++++++++++++++++++++++++++-----
+ 4 files changed, 64 insertions(+), 5 deletions(-)
+
+diff --git a/Cargo.lock b/Cargo.lock
+index 80d0ea8..df47924 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -519,6 +519,15 @@ dependencies = [
+  "roff",
+ ]
+ 
++[[package]]
++name = "clipboard-win"
++version = "5.4.1"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "bde03770d3df201d4fb868f2c9c59e66a3e4e2bd06692a0fe701e7103c7e84d4"
++dependencies = [
++ "error-code",
++]
++
+ [[package]]
+ name = "clru"
+ version = "0.6.3"
+@@ -1109,6 +1118,12 @@ dependencies = [
+  "windows-sys",
+ ]
+ 
++[[package]]
++name = "error-code"
++version = "3.4.0"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "0b5343afd4a8365a643ac588dab4cf234a190c7f6c88c9f6dd6ffe00837661b7"
++
+ [[package]]
+ name = "escape8259"
+ version = "0.5.3"
+@@ -2713,6 +2728,7 @@ dependencies = [
+  "ratatui",
+  "regex",
+  "rpassword",
++ "rustyline",
+  "sapling-renderdag",
+  "sapling-streampager",
+  "scm-record",
+@@ -4217,6 +4233,25 @@ dependencies = [
+  "wait-timeout",
+ ]
+ 
++[[package]]
++name = "rustyline"
++version = "18.0.1"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "53f6a737db68eb1a8ccff86b584b2fc13eca6a7bb6f78ebc7c529547e3ab9684"
++dependencies = [
++ "bitflags 2.13.2",
++ "cfg-if",
++ "clipboard-win",
++ "libc",
++ "log",
++ "memchr",
++ "nix 0.31.3",
++ "unicode-segmentation",
++ "unicode-width 0.2.2",
++ "utf8parse",
++ "windows-sys",
++]
++
+ [[package]]
+ name = "ryu"
+ version = "1.0.23"
+diff --git a/Cargo.toml b/Cargo.toml
+index b4bec6c..baf04b4 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -107,6 +107,7 @@ regex = "1.12.3"
+ rpassword = "7.5.4"
+ rustix = { version = "1.1.4", features = ["fs"] }
+ rustversion = "1.0.22"
++rustyline = { version = "18.0.1", default-features = false }
+ same-file = "1.0.6"
+ sapling-renderdag = "0.1.0"
+ sapling-streampager = "0.12.0"
+diff --git a/cli/Cargo.toml b/cli/Cargo.toml
+index dd7aee8..fbc6dc0 100644
+--- a/cli/Cargo.toml
++++ b/cli/Cargo.toml
+@@ -96,6 +96,7 @@ rand_chacha = { workspace = true }
+ regex = { workspace = true }
+ ratatui = { workspace = true }
+ rpassword = { workspace = true }
++rustyline = { workspace = true }
+ sapling-renderdag = { workspace = true }
+ sapling-streampager = { workspace = true }
+ scm-record = { workspace = true }
+diff --git a/cli/src/commands/redate.rs b/cli/src/commands/redate.rs
+index e8c963a..7d54258 100644
+--- a/cli/src/commands/redate.rs
++++ b/cli/src/commands/redate.rs
+@@ -46,6 +46,7 @@ use ratatui::widgets::List;
+ use ratatui::widgets::ListItem;
+ use ratatui::widgets::ListState;
+ use ratatui::widgets::Paragraph;
++use rustyline::error::ReadlineError;
+ use tracing::instrument;
+ 
+ use super::metaedit;
+@@ -568,11 +569,32 @@ fn prompt_timestamp(ui: &Ui) -> Result<Timestamp, CommandError> {
+         ui.hint_default(),
+         "Enter a local date and time, such as `yesterday 5pm`, or an exact timestamp."
+     )?;
+-    Ok(
+-        ui.prompt_choice_with("Timestamp [now]", Some("now"), |input| {
+-            parse_datetime_expression(input, now)
+-        })?,
+-    )
++    if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
++        return Ok(
++            ui.prompt_choice_with("Timestamp [now]", Some("now"), |input| {
++                parse_datetime_expression(input, now)
++            })?,
++        );
++    }
++
++    let mut editor = rustyline::DefaultEditor::new().map_err(internal_error)?;
++    loop {
++        let input = editor
++            .readline("Timestamp [now]: ")
++            .map_err(|error| match error {
++                ReadlineError::Eof | ReadlineError::Interrupted => {
++                    user_error("Timestamp input canceled")
++                }
++                ReadlineError::Io(error) => error.into(),
++                error => internal_error(error),
++            })?;
++        let input = input.trim();
++        let input = if input.is_empty() { "now" } else { input };
++        match parse_datetime_expression(input, now) {
++            Ok(timestamp) => return Ok(timestamp),
++            Err(error) => writeln!(ui.warning_no_heading(), "{error}")?,
++        }
++    }
+ }
+ 
+ fn parse_timestamp_arg(input: &str) -> Result<Timestamp, String> {

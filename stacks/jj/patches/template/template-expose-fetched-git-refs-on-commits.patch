@@ -1,6 +1,6 @@
-From 872bf09b5c980d0ab564740fb502f89e7838569e Mon Sep 17 00:00:00 2001
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Josh McKinney <joshka@users.noreply.github.com>
-Date: Sat, 5 Sep 2026 13:00:00 +0300
+Date: Thu, 1 Jan 1970 00:00:00 +0000
 Subject: template: expose fetched Git refs on commits
 
 Add a commit template method for displaying fetched Git refs so log
@@ -9,10 +9,11 @@ commits they name.
 ---
  cli/src/commit_templater.rs       | 37 ++++++++++++
  cli/tests/test_commit_template.rs | 96 +++++++++++++++++++++++++++++++
- 2 files changed, 133 insertions(+)
+ docs/templates.md                 |  3 +
+ 3 files changed, 136 insertions(+)
 
 diff --git a/cli/src/commit_templater.rs b/cli/src/commit_templater.rs
-index 2c1daccad..bbc11fd99 100644
+index 318a1b2..af9786f 100644
 --- a/cli/src/commit_templater.rs
 +++ b/cli/src/commit_templater.rs
 @@ -17,6 +17,7 @@
@@ -23,7 +24,7 @@ index 2c1daccad..bbc11fd99 100644
  use std::collections::HashMap;
  use std::fmt;
  use std::fmt::Display;
-@@ -64,7 +65,9 @@ use jj_lib::op_store::LocalRemoteRefTarget;
+@@ -62,7 +63,9 @@ use jj_lib::op_store::LocalRemoteRefTarget;
  use jj_lib::op_store::OperationId;
  use jj_lib::op_store::RefTarget;
  use jj_lib::op_store::RemoteRef;
@@ -33,15 +34,15 @@ index 2c1daccad..bbc11fd99 100644
  use jj_lib::ref_name::WorkspaceName;
  use jj_lib::ref_name::WorkspaceNameBuf;
  use jj_lib::repo::Repo;
-@@ -1029,6 +1032,7 @@ pub struct CommitKeywordCache<'repo> {
+@@ -1096,6 +1099,7 @@ pub struct CommitKeywordCache {
      bookmarks_index: OnceCell<Rc<CommitRefsIndex>>,
      tags_index: OnceCell<Rc<CommitRefsIndex>>,
      git_refs_index: OnceCell<Rc<CommitRefsIndex>>,
 +    fetched_git_refs_index: OnceCell<Rc<CommitRefsIndex>>,
-     is_immutable_fn: OnceCell<Rc<RevsetContainingFn<'repo>>>,
+     is_immutable_fn: OnceCell<Rc<RevsetContainingFn<'static>>>,
  }
  
-@@ -1048,6 +1052,11 @@ impl<'repo> CommitKeywordCache<'repo> {
+@@ -1115,6 +1119,11 @@ impl CommitKeywordCache {
              .get_or_init(|| Rc::new(build_commit_refs_index(repo.view().git_refs())))
      }
  
@@ -52,8 +53,8 @@ index 2c1daccad..bbc11fd99 100644
 +
      pub fn is_immutable_fn(
          &self,
-         language: &CommitTemplateLanguage<'repo>,
-@@ -1235,6 +1244,18 @@ fn builtin_commit_methods<'repo>() -> CommitTemplateBuildMethodFnMap<'repo, Comm
+         language: &CommitTemplateLanguage,
+@@ -1374,6 +1383,18 @@ fn builtin_commit_methods<'repo>() -> CommitTemplateBuildMethodFnMap<'repo, Comm
              Ok(out_property.into_dyn_wrapped())
          },
      );
@@ -72,7 +73,7 @@ index 2c1daccad..bbc11fd99 100644
      map.insert(
          "tags",
          |language, _diagnostics, _build_ctx, self_property, function| {
-@@ -2049,6 +2070,22 @@ fn build_commit_refs_index<'a, K: Into<String>>(
+@@ -2221,6 +2242,22 @@ fn build_commit_refs_index<'a, K: Into<String>>(
      index
  }
  
@@ -86,7 +87,7 @@ index 2c1daccad..bbc11fd99 100644
 +        for (ref_name, target) in fetched_refs {
 +            let commit_ref =
 +                CommitRef::remote_only(ref_name.as_str(), remote_name.as_str(), target.clone());
-+            index.insert(target.added_ids(), commit_ref);
++            index.insert(target.present_adds(), commit_ref);
 +        }
 +    }
 +    index
@@ -96,7 +97,7 @@ index 2c1daccad..bbc11fd99 100644
      commit_refs
          .iter()
 diff --git a/cli/tests/test_commit_template.rs b/cli/tests/test_commit_template.rs
-index 98f89dbec..f5d88a6b1 100644
+index 410f985..51f3381 100644
 --- a/cli/tests/test_commit_template.rs
 +++ b/cli/tests/test_commit_template.rs
 @@ -15,9 +15,34 @@
@@ -134,7 +135,7 @@ index 98f89dbec..f5d88a6b1 100644
  #[test]
  fn test_log_parents() {
      let test_env = TestEnvironment::default();
-@@ -742,6 +767,77 @@ fn test_log_bookmarks() {
+@@ -777,6 +802,77 @@ fn test_log_bookmarks() {
      ");
  }
  
@@ -212,3 +213,17 @@ index 98f89dbec..f5d88a6b1 100644
  #[test]
  fn test_log_tags() {
      let test_env = TestEnvironment::default();
+diff --git a/docs/templates.md b/docs/templates.md
+index 3a8c8a2..c18049e 100644
+--- a/docs/templates.md
++++ b/docs/templates.md
+@@ -280,6 +280,9 @@ This type cannot be printed. The following methods are defined.
+   commit.
+ * `.remote_bookmarks() -> List<CommitRef>`: All remote bookmarks pointing to the
+   commit.
++* `.fetched_git_refs() -> List<CommitRef>`: Raw Git refs fetched with `jj git
++  ref fetch` that point to the commit. The ref's `.name()` is its complete Git
++  ref name and `.remote()` is the configured Git remote.
+ * `.tags() -> List<CommitRef>`: Local and remote tags pointing to the commit. A
+   tracked remote tag will be included only if its target is different from the
+   local one.

@@ -1,29 +1,50 @@
-From 3685f4e46196a25a3766c300884edcc817bda569 Mon Sep 17 00:00:00 2001
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Sat, 5 Sep 2026 13:00:00 +0300
-Subject: metaedit: parameterize the commit edit transaction
+Date: Thu, 1 Jan 1970 00:00:00 +0000
+Subject: metaedit: share a configurable commit edit transaction
 
-Add explicit transaction policy for status text, target signing, and descendant metadata preservation. Keep metaedit's default behavior unchanged while allowing sibling commands to reuse the same rewrite path with different policies.
+Separate revision selection from metadata mutation and extract the
+transaction-backed editing path behind dedicated argument and policy types
+
+Keep metaedit behavior unchanged while allowing sibling commands to choose
+status text, target signing, and descendant metadata preservation
 ---
- cli/src/commands/metaedit.rs | 68 ++++++++++++++++++++++++++++++------
- 1 file changed, 58 insertions(+), 10 deletions(-)
+ cli/src/commands/metaedit.rs | 74 +++++++++++++++++++++++++++++++-----
+ 1 file changed, 65 insertions(+), 9 deletions(-)
 
 diff --git a/cli/src/commands/metaedit.rs b/cli/src/commands/metaedit.rs
-index be88bfd0f..9f10d2708 100644
+index f1f3421..7f137e6 100644
 --- a/cli/src/commands/metaedit.rs
 +++ b/cli/src/commands/metaedit.rs
-@@ -18,7 +18,10 @@ use clap_complete::ArgValueCompleter;
- use futures::TryStreamExt as _;
+@@ -19,11 +19,13 @@ use futures::TryStreamExt as _;
  use jj_lib::backend::Timestamp;
  use jj_lib::commit::Commit;
-+use jj_lib::commit_builder::CommitBuilder;
  use jj_lib::object_id::ObjectId as _;
-+use jj_lib::rewrite::CommitRewriter;
 +use jj_lib::settings::SignBehavior;
  use jj_lib::time_util::parse_datetime;
  use tracing::instrument;
  
-@@ -166,6 +169,23 @@ pub(crate) struct CommitEditArgs {
+ use crate::cli_util::CommandHelper;
+ use crate::cli_util::RevisionArg;
++use crate::cli_util::WorkspaceCommandHelper;
+ use crate::cli_util::print_updated_commits;
+ use crate::command_error::CommandError;
+ use crate::complete;
+@@ -48,6 +50,13 @@ pub(crate) struct MetaeditArgs {
+     #[arg(add = ArgValueCompleter::new(complete::revset_expression_mutable))]
+     revisions_opt: Vec<RevisionArg>,
+ 
++    #[command(flatten)]
++    edit_args: CommitEditArgs,
++}
++
++/// Metadata changes applied by the shared commit-edit transaction.
++#[derive(clap::Args, Clone, Debug, Default)]
++pub(crate) struct CommitEditArgs {
+     /// Generate a new change-id
+     ///
+     /// This generates a new change-id for the revision.
+@@ -158,6 +167,23 @@ pub(crate) struct MetaeditArgs {
      force_rewrite: bool,
  }
  
@@ -47,11 +68,10 @@ index be88bfd0f..9f10d2708 100644
  #[instrument(skip_all)]
  pub(crate) async fn cmd_metaedit(
      ui: &mut Ui,
-@@ -194,26 +214,33 @@ pub(crate) async fn cmd_metaedit(
+@@ -186,17 +212,33 @@ pub(crate) async fn cmd_metaedit(
          return Ok(());
      }
  
--    edit_commits(ui, &mut workspace_command, &args.edit_args, commit_ids).await
 +    edit_commits(
 +        ui,
 +        &mut workspace_command,
@@ -60,15 +80,15 @@ index be88bfd0f..9f10d2708 100644
 +        commit_ids,
 +    )
 +    .await
- }
- 
- pub(crate) async fn edit_commits(
-     ui: &mut Ui,
-     workspace_command: &mut WorkspaceCommandHelper,
-     args: &CommitEditArgs,
++}
++
++pub(crate) async fn edit_commits(
++    ui: &mut Ui,
++    workspace_command: &mut WorkspaceCommandHelper,
++    args: &CommitEditArgs,
 +    options: CommitEditOptions,
-     commit_ids: Vec<jj_lib::backend::CommitId>,
- ) -> Result<(), CommandError> {
++    commit_ids: Vec<jj_lib::backend::CommitId>,
++) -> Result<(), CommandError> {
      let mut tx = workspace_command.start_transaction();
      let tx_description = match commit_ids.as_slice() {
          [] => unreachable!(),
@@ -90,7 +110,7 @@ index be88bfd0f..9f10d2708 100644
      };
  
      let new_description = args
-@@ -237,6 +264,7 @@ pub(crate) async fn edit_commits(
+@@ -220,6 +262,7 @@ pub(crate) async fn cmd_metaedit(
  
                  let old_author = rewriter.old_commit().author().clone();
                  let old_committer = rewriter.old_commit().committer().clone();
@@ -98,7 +118,7 @@ index be88bfd0f..9f10d2708 100644
                  let mut commit_builder = rewriter.reparent();
                  let mut new_author = commit_builder.author().clone();
                  if let Some((name, email)) = args.author.clone() {
-@@ -298,12 +326,21 @@ pub(crate) async fn edit_commits(
+@@ -281,12 +324,25 @@ pub(crate) async fn cmd_metaedit(
                      rewrite = true;
                  }
  
@@ -114,25 +134,14 @@ index be88bfd0f..9f10d2708 100644
              } else if rewriter.parents_changed() {
 -                rewriter.reparent().write().await?;
 +                if options.preserve_descendant_metadata {
-+                    reparent_preserving_metadata(rewriter).write().await?;
++                    rewriter
++                        .reparent_preserving_metadata()
++                        .set_sign_behavior(SignBehavior::Keep)
++                        .write()
++                        .await?;
 +                } else {
 +                    rewriter.reparent().write().await?;
 +                }
                  num_reparented += 1;
              }
              Ok(())
-@@ -321,3 +358,14 @@ pub(crate) async fn edit_commits(
-     tx.finish(ui, tx_description).await?;
-     Ok(())
- }
-+
-+fn reparent_preserving_metadata(rewriter: CommitRewriter<'_>) -> CommitBuilder<'_> {
-+    let old_commit = rewriter.old_commit();
-+    let author = old_commit.author().clone();
-+    let committer = old_commit.committer().clone();
-+    rewriter
-+        .reparent()
-+        .set_author(author)
-+        .set_committer(committer)
-+        .set_sign_behavior(SignBehavior::Keep)
-+}

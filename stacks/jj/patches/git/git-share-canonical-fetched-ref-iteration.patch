@@ -1,0 +1,323 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: 4evy <git@evy.pink>
+Date: Thu, 1 Jan 1970 00:00:00 +0000
+Subject: git: share canonical fetched ref iteration
+
+---
+ cli/src/commands/operation/diff.rs | 45 ++++-------------------
+ cli/src/commit_templater.rs        | 26 +++++++-------
+ lib/src/git.rs                     |  4 +--
+ lib/src/repo.rs                    | 57 +++++++-----------------------
+ lib/src/revset.rs                  | 10 ++----
+ lib/src/view.rs                    | 23 ++++++++----
+ 6 files changed, 51 insertions(+), 114 deletions(-)
+
+diff --git a/cli/src/commands/operation/diff.rs b/cli/src/commands/operation/diff.rs
+index 8712cf0..c860465 100644
+--- a/cli/src/commands/operation/diff.rs
++++ b/cli/src/commands/operation/diff.rs
+@@ -12,7 +12,6 @@
+ // See the License for the specific language governing permissions and
+ // limitations under the License.
+ 
+-use std::collections::BTreeMap;
+ use std::collections::HashMap;
+ use std::collections::HashSet;
+ use std::slice;
+@@ -32,7 +31,6 @@ use jj_lib::matchers::EverythingMatcher;
+ use jj_lib::op_store::RefTarget;
+ use jj_lib::op_store::RemoteRef;
+ use jj_lib::op_store::RemoteRefState;
+-use jj_lib::ref_name::GitRefName;
+ use jj_lib::refs::diff_named_commit_ids;
+ use jj_lib::refs::diff_named_ref_targets;
+ use jj_lib::refs::diff_named_remote_refs;
+@@ -594,42 +592,11 @@ pub async fn show_op_diff(
+         }
+     }
+ 
+-    let mut fetched_ref_remotes = BTreeMap::new();
+-    for remote_name in from_repo
+-        .view()
+-        .fetched_git_refs()
+-        .keys()
+-        .chain(to_repo.view().fetched_git_refs().keys())
+-    {
+-        fetched_ref_remotes.insert(remote_name.clone(), ());
+-    }
+-    let empty_fetched_refs = BTreeMap::new();
+-    let mut changed_fetched_refs = vec![];
+-    for remote_name in fetched_ref_remotes.keys() {
+-        let from_refs = from_repo
+-            .view()
+-            .fetched_git_refs()
+-            .get(remote_name)
+-            .unwrap_or(&empty_fetched_refs);
+-        let to_refs = to_repo
+-            .view()
+-            .fetched_git_refs()
+-            .get(remote_name)
+-            .unwrap_or(&empty_fetched_refs);
+-        changed_fetched_refs.extend(
+-            diff_named_ref_targets(
+-                from_refs.iter().map(|(name, target)| {
+-                    let name: &GitRefName = name.as_ref();
+-                    (name, target)
+-                }),
+-                to_refs.iter().map(|(name, target)| {
+-                    let name: &GitRefName = name.as_ref();
+-                    (name, target)
+-                }),
+-            )
+-            .map(|(ref_name, targets)| (remote_name, ref_name, targets)),
+-        );
+-    }
++    let changed_fetched_refs = diff_named_ref_targets(
++        from_repo.view().all_fetched_git_refs(),
++        to_repo.view().all_fetched_git_refs(),
++    )
++    .collect_vec();
+     if !changed_fetched_refs.is_empty() {
+         writeln!(formatter)?;
+         with_content_format
+@@ -637,7 +604,7 @@ pub async fn show_op_diff(
+                 writeln!(formatter, "Changed fetched Git refs:")
+             })
+             .await?;
+-        for (remote_name, ref_name, (from_target, to_target)) in changed_fetched_refs {
++        for ((remote_name, ref_name), (from_target, to_target)) in changed_fetched_refs {
+             with_content_format
+                 .write(formatter, async |formatter| {
+                     writeln!(
+diff --git a/cli/src/commit_templater.rs b/cli/src/commit_templater.rs
+index af9786f..6cf70a2 100644
+--- a/cli/src/commit_templater.rs
++++ b/cli/src/commit_templater.rs
+@@ -17,7 +17,6 @@
+ use std::any::Any;
+ use std::cmp::Ordering;
+ use std::cmp::max;
+-use std::collections::BTreeMap;
+ use std::collections::HashMap;
+ use std::fmt;
+ use std::fmt::Display;
+@@ -63,9 +62,9 @@ use jj_lib::op_store::LocalRemoteRefTarget;
+ use jj_lib::op_store::OperationId;
+ use jj_lib::op_store::RefTarget;
+ use jj_lib::op_store::RemoteRef;
+-use jj_lib::ref_name::GitRefNameBuf;
++use jj_lib::ref_name::GitRefName;
+ use jj_lib::ref_name::RefName;
+-use jj_lib::ref_name::RemoteNameBuf;
++use jj_lib::ref_name::RemoteName;
+ use jj_lib::ref_name::WorkspaceName;
+ use jj_lib::ref_name::WorkspaceNameBuf;
+ use jj_lib::repo::Repo;
+@@ -1120,8 +1119,11 @@ impl CommitKeywordCache {
+     }
+ 
+     pub fn fetched_git_refs_index(&self, repo: &dyn Repo) -> &Rc<CommitRefsIndex> {
+-        self.fetched_git_refs_index
+-            .get_or_init(|| Rc::new(build_fetched_git_refs_index(repo.view().fetched_git_refs())))
++        self.fetched_git_refs_index.get_or_init(|| {
++            Rc::new(build_fetched_git_refs_index(
++                repo.view().all_fetched_git_refs(),
++            ))
++        })
+     }
+ 
+     pub fn is_immutable_fn(
+@@ -2243,17 +2245,13 @@ fn build_commit_refs_index<'a, K: Into<String>>(
+ }
+ 
+ fn build_fetched_git_refs_index<'a>(
+-    fetched_refs_by_remote: impl IntoIterator<
+-        Item = (&'a RemoteNameBuf, &'a BTreeMap<GitRefNameBuf, RefTarget>),
+-    >,
++    fetched_refs: impl IntoIterator<Item = ((&'a RemoteName, &'a GitRefName), &'a RefTarget)>,
+ ) -> CommitRefsIndex {
+     let mut index = CommitRefsIndex::default();
+-    for (remote_name, fetched_refs) in fetched_refs_by_remote {
+-        for (ref_name, target) in fetched_refs {
+-            let commit_ref =
+-                CommitRef::remote_only(ref_name.as_str(), remote_name.as_str(), target.clone());
+-            index.insert(target.present_adds(), commit_ref);
+-        }
++    for ((remote_name, ref_name), target) in fetched_refs {
++        let commit_ref =
++            CommitRef::remote_only(ref_name.as_str(), remote_name.as_str(), target.clone());
++        index.insert(target.present_adds(), commit_ref);
+     }
+     index
+ }
+diff --git a/lib/src/git.rs b/lib/src/git.rs
+index c7ff624..f7660b8 100644
+--- a/lib/src/git.rs
++++ b/lib/src/git.rs
+@@ -1185,9 +1185,7 @@ fn pinned_commit_ids(view: &View) -> Vec<CommitId> {
+     itertools::chain!(
+         view.local_bookmarks().map(|(_, target)| target),
+         view.local_tags().map(|(_, target)| target),
+-        view.fetched_git_refs()
+-            .values()
+-            .flat_map(|refs| refs.values())
++        view.all_fetched_git_refs().map(|(_, target)| target)
+     )
+     .flat_map(|target| target.present_adds())
+     .cloned()
+diff --git a/lib/src/repo.rs b/lib/src/repo.rs
+index d111242..beaf753 100644
+--- a/lib/src/repo.rs
++++ b/lib/src/repo.rs
+@@ -1407,13 +1407,12 @@ impl MutableRepo {
+         // the user's later local rewrite of that change. If that commit is
+         // rewritten locally, removing the old head would otherwise leave refs
+         // like refs/pull/123/head@origin pointing at a hidden commit.
+-        let fetched_ref_heads = view
+-            .fetched_git_refs
+-            .values()
+-            .flat_map(|refs| refs.values())
+-            .flat_map(|target| target.present_adds().cloned())
+-            .collect_vec();
+-        view.head_ids.extend(fetched_ref_heads);
++        view.head_ids.extend(
++            view.fetched_git_refs
++                .values()
++                .flat_map(|refs| refs.values())
++                .flat_map(|target| target.present_adds().cloned()),
++        );
+         self.set_view(view);
+         // TODO: indexing error shouldn't be a "RevsetEvaluationError"
+         self.normalize_heads()
+@@ -1759,9 +1758,8 @@ impl MutableRepo {
+                 // user's later local rewrite of that change. Keep that original
+                 // commit visible so refs like refs/pull/123/head@origin don't
+                 // end up pointing at a hidden commit after `jj edit`.
+-                view.fetched_git_refs()
+-                    .values()
+-                    .flat_map(|refs| refs.values())
++                view.all_fetched_git_refs()
++                    .map(|(_, target)| target)
+                     .flat_map(|target| target.present_adds()),
+             )
+             .any(|id| id == commit_id)
+@@ -2163,42 +2161,11 @@ impl MutableRepo {
+             self.merge_git_ref(name, base_target, other_target).await?;
+         }
+ 
+-        let mut fetched_ref_remotes = BTreeMap::new();
+-        for remote_name in base
+-            .fetched_git_refs()
+-            .keys()
+-            .chain(self.view().fetched_git_refs().keys())
+-            .chain(other.fetched_git_refs().keys())
+-        {
+-            fetched_ref_remotes.insert(remote_name.clone(), ());
+-        }
+-        for remote_name in fetched_ref_remotes.keys() {
+-            let empty_refs = BTreeMap::new();
+-            let base_refs = base
+-                .fetched_git_refs()
+-                .get(remote_name)
+-                .unwrap_or(&empty_refs);
+-            let other_refs = other
+-                .fetched_git_refs()
+-                .get(remote_name)
+-                .unwrap_or(&empty_refs);
+-            let changed_fetched_refs = diff_named_ref_targets(
+-                base_refs
+-                    .iter()
+-                    .map(|(name, target)| (name.as_ref(), target)),
+-                other_refs
+-                    .iter()
+-                    .map(|(name, target)| (name.as_ref(), target)),
+-            );
+-            for (ref_name, (base_target, other_target)) in changed_fetched_refs {
+-                self.merge_fetched_git_ref(
+-                    remote_name.as_ref(),
+-                    ref_name,
+-                    base_target,
+-                    other_target,
+-                )
++        let changed_fetched_refs =
++            diff_named_ref_targets(base.all_fetched_git_refs(), other.all_fetched_git_refs());
++        for ((remote_name, ref_name), (base_target, other_target)) in changed_fetched_refs {
++            self.merge_fetched_git_ref(remote_name, ref_name, base_target, other_target)
+                 .await?;
+-            }
+         }
+ 
+         let changed_remote_bookmarks =
+diff --git a/lib/src/revset.rs b/lib/src/revset.rs
+index 0b796ef..813acc7 100644
+--- a/lib/src/revset.rs
++++ b/lib/src/revset.rs
+@@ -2641,12 +2641,8 @@ fn make_no_such_symbol_error(repo: &dyn Repo, name: String) -> RevsetResolutionE
+     let bookmark_names = all_formatted_ref_symbols(repo.view().bookmarks(), include_synced_remotes);
+     let fetched_ref_names = repo
+         .view()
+-        .fetched_git_refs()
+-        .iter()
+-        .flat_map(|(remote, refs)| {
+-            refs.keys()
+-                .map(|ref_name| format_remote_symbol(ref_name.as_str(), remote.as_str()))
+-        });
++        .all_fetched_git_refs()
++        .map(|((remote, ref_name), _)| format_remote_symbol(ref_name.as_str(), remote.as_str()));
+     let mut candidates = collect_similar(
+         &name,
+         itertools::chain!(tag_names, bookmark_names, fetched_ref_names),
+@@ -2985,7 +2981,7 @@ fn resolve_commit_ref(
+             let commit_ids = repo
+                 .view()
+                 .fetched_git_refs_matching(&name_matcher, &remote_matcher)
+-                .flat_map(|(_, _, target)| target.present_adds())
++                .flat_map(|(_, target)| target.present_adds())
+                 .cloned()
+                 .collect();
+             Ok(commit_ids)
+diff --git a/lib/src/view.rs b/lib/src/view.rs
+index 48b7034..af78498 100644
+--- a/lib/src/view.rs
++++ b/lib/src/view.rs
+@@ -113,6 +113,20 @@ impl View {
+         &self.data.fetched_git_refs
+     }
+ 
++    /// Iterates over all fetched Git refs in `(remote, ref)` order.
++    pub fn all_fetched_git_refs(
++        &self,
++    ) -> impl Iterator<Item = ((&RemoteName, &GitRefName), &RefTarget)> {
++        self.data
++            .fetched_git_refs
++            .iter()
++            .flat_map(|(remote_name, refs)| {
++                refs.iter().map(move |(ref_name, target)| {
++                    ((remote_name.as_ref(), ref_name.as_ref()), target)
++                })
++            })
++    }
++
+     pub fn git_head(&self, workspace: &WorkspaceName) -> &RefTarget {
+         self.data.git_heads.get(workspace).flatten()
+     }
+@@ -604,16 +618,13 @@ impl View {
+         &self,
+         ref_matcher: &StringMatcher,
+         remote_matcher: &StringMatcher,
+-    ) -> impl Iterator<Item = (&RemoteName, &GitRefName, &RefTarget)> {
++    ) -> impl Iterator<Item = ((&RemoteName, &GitRefName), &RefTarget)> {
+         remote_matcher
+             .filter_btree_map_as_deref(&self.data.fetched_git_refs)
+-            .map(|(remote, refs)| {
++            .flat_map(|(remote, refs)| {
+                 ref_matcher
+                     .filter_btree_map_as_deref(refs)
+-                    .map(move |(name, target)| (remote.as_ref(), name.as_ref(), target))
+-            })
+-            .kmerge_by(|(remote1, name1, _), (remote2, name2, _)| {
+-                (remote1, name1) < (remote2, name2)
++                    .map(move |(name, target)| ((remote.as_ref(), name.as_ref()), target))
+             })
+     }
+ 

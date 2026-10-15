@@ -1,6 +1,6 @@
-From bb9732495c23edc2584052040d298a198ae3b069 Mon Sep 17 00:00:00 2001
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Josh McKinney <joshka@users.noreply.github.com>
-Date: Sat, 5 Sep 2026 13:00:00 +0300
+Date: Thu, 1 Jan 1970 00:00:00 +0000
 Subject: git: expose fetched refs to queries
 
 Allow stored fetched Git refs to be resolved from revsets and reported
@@ -8,11 +8,13 @@ in operation diffs. This makes the durable state visible before adding
 higher-level CLI management commands.
 ---
  cli/src/commands/operation/diff.rs | 77 ++++++++++++++++++++++++++++++
+ docs/revsets.md                    |  5 ++
  lib/src/revset.rs                  | 40 +++++++++++++++-
- 2 files changed, 116 insertions(+), 1 deletion(-)
+ lib/src/view.rs                    |  3 +-
+ 4 files changed, 122 insertions(+), 3 deletions(-)
 
 diff --git a/cli/src/commands/operation/diff.rs b/cli/src/commands/operation/diff.rs
-index 47274462e..8712cf01f 100644
+index 4727446..8712cf0 100644
 --- a/cli/src/commands/operation/diff.rs
 +++ b/cli/src/commands/operation/diff.rs
 @@ -12,6 +12,7 @@
@@ -113,11 +115,27 @@ index 47274462e..8712cf01f 100644
      Ok(())
  }
  
+diff --git a/docs/revsets.md b/docs/revsets.md
+index a6b6194..1b139d4 100644
+--- a/docs/revsets.md
++++ b/docs/revsets.md
+@@ -333,6 +333,11 @@ revsets (expressions) as arguments.
+   targets of untracked remote tags. Supports the same optional arguments as
+   `remote_tags()`.
+ 
++* `fetched_git_refs([name_pattern], [[remote=]remote_pattern])`: Targets of raw
++  Git refs fetched with `jj git ref fetch`. `name_pattern` matches the complete
++  Git ref name, such as `refs/pull/*/head`. See `remote_bookmarks()` for the
++  optional remote-pattern argument.
++
+ * `visible_heads()`: All visible heads (same as `heads(all())` if no hidden
+   revisions are mentioned).
+ 
 diff --git a/lib/src/revset.rs b/lib/src/revset.rs
-index 698b31112..f057e5194 100644
+index 270657d..0b796ef 100644
 --- a/lib/src/revset.rs
 +++ b/lib/src/revset.rs
-@@ -57,6 +57,7 @@ use crate::op_store::OperationId;
+@@ -49,6 +49,7 @@ use crate::op_store::OperationId;
  use crate::op_store::RefTarget;
  use crate::op_store::RemoteRefState;
  use crate::op_walk;
@@ -125,7 +143,7 @@ index 698b31112..f057e5194 100644
  use crate::ref_name::RefName;
  use crate::ref_name::RemoteName;
  use crate::ref_name::RemoteRefSymbol;
-@@ -167,6 +168,7 @@ pub enum RevsetCommitRef {
+@@ -144,6 +145,7 @@ pub enum RevsetCommitRef {
          symbol: RemoteRefSymbolExpression,
          remote_ref_state: Option<RemoteRefState>,
      },
@@ -133,7 +151,7 @@ index 698b31112..f057e5194 100644
  }
  
  /// String expressions to match `name@remote` bookmarks/tags.
-@@ -472,6 +474,10 @@ impl<St: ExpressionState<CommitRef = RevsetCommitRef>> RevsetExpression<St> {
+@@ -393,6 +395,10 @@ impl<St: ExpressionState<CommitRef = RevsetCommitRef>> RevsetExpression<St> {
              remote_ref_state,
          }))
      }
@@ -144,7 +162,7 @@ index 698b31112..f057e5194 100644
  }
  
  // Compound expression
-@@ -1081,6 +1087,10 @@ static BUILTIN_FUNCTION_MAP: LazyLock<HashMap<&str, RevsetFunction>> = LazyLock:
+@@ -914,6 +920,10 @@ static BUILTIN_FUNCTION_MAP: LazyLock<HashMap<&str, RevsetFunction>> = LazyLock:
          let state = None;
          Ok(RevsetExpression::remote_tags(symbol, state))
      });
@@ -155,7 +173,7 @@ index 698b31112..f057e5194 100644
      map.insert("tracked_remote_tags", |diagnostics, function, context| {
          let symbol = parse_remote_refs_arguments(diagnostics, function, context)?;
          let state = Some(RemoteRefState::Tracked);
-@@ -2745,6 +2755,12 @@ fn resolve_remote_symbol(
+@@ -2578,6 +2588,12 @@ fn resolve_remote_symbol(
      if let Some(id) = to_resolved_ref("remote_bookmark", symbol, &remote_ref.target)? {
          return Ok(id);
      }
@@ -168,7 +186,7 @@ index 698b31112..f057e5194 100644
      Err(make_no_such_symbol_error(repo, symbol.to_string()))
  }
  
-@@ -2790,7 +2806,18 @@ fn make_no_such_symbol_error(repo: &dyn Repo, name: String) -> RevsetResolutionE
+@@ -2623,7 +2639,18 @@ fn make_no_such_symbol_error(repo: &dyn Repo, name: String) -> RevsetResolutionE
      let include_synced_remotes = name.contains('@');
      let tag_names = all_formatted_ref_symbols(repo.view().tags(), include_synced_remotes);
      let bookmark_names = all_formatted_ref_symbols(repo.view().bookmarks(), include_synced_remotes);
@@ -188,7 +206,7 @@ index 698b31112..f057e5194 100644
      candidates.dedup(); // tags and bookmarks may have duplicate symbols
      RevsetResolutionError::NoSuchRevision { name, candidates }
  }
-@@ -3119,6 +3146,17 @@ fn resolve_commit_ref(
+@@ -2952,6 +2979,17 @@ fn resolve_commit_ref(
                  .collect();
              Ok(commit_ids)
          }
@@ -198,7 +216,7 @@ index 698b31112..f057e5194 100644
 +            let commit_ids = repo
 +                .view()
 +                .fetched_git_refs_matching(&name_matcher, &remote_matcher)
-+                .flat_map(|(_, _, target)| target.added_ids())
++                .flat_map(|(_, _, target)| target.present_adds())
 +                .cloned()
 +                .collect();
 +            Ok(commit_ids)
@@ -206,3 +224,18 @@ index 698b31112..f057e5194 100644
      }
  }
  
+diff --git a/lib/src/view.rs b/lib/src/view.rs
+index 58a5025..48b7034 100644
+--- a/lib/src/view.rs
++++ b/lib/src/view.rs
+@@ -596,9 +596,8 @@ impl View {
+         self.data
+             .fetched_git_refs
+             .get(remote_name)
+-            .map(|refs| refs.iter().map(|(name, target)| (name.as_ref(), target)))
+             .into_iter()
+-            .flatten()
++            .flat_map(|refs| refs.iter().map(|(name, target)| (name.as_ref(), target)))
+     }
+ 
+     pub fn fetched_git_refs_matching(

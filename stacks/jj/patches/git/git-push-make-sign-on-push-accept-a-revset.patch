@@ -1,28 +1,30 @@
-From 6eea15d1e49f4ad266a43d295708fa04cabaf0a6 Mon Sep 17 00:00:00 2001
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Sat, 5 Sep 2026 13:00:00 +0300
+Date: Thu, 1 Jan 1970 00:00:00 +0000
 Subject: git push: make sign-on-push accept a revset
 
-Let users define signing policy with the same revset language used by other jj configuration. Intersect the configured selector with commits outgoing to the pushed references and force-sign exactly the selected commits.
+Intersect the configured signing selector with outgoing commits and force-sign
+the mutable matches. Warn about immutable matches that cannot be rewritten
 
-Default to none() and migrate boolean values for six releases so existing configurations keep their old mutable, unsigned, own-commit behavior.
+Default to none() and migrate boolean values for six releases so existing
+configurations keep their old mutable, unsigned, own-commit behavior
 ---
- CHANGELOG.md                            |  4 ++
- cli/src/commands/git/push.rs            | 59 +++++++++++--------------
+ CHANGELOG.md                            |  7 +++
+ cli/src/commands/git/push.rs            | 63 ++++++++++++-------------
  cli/src/config-schema.json              |  6 +--
  cli/src/config.rs                       | 24 ++++++++++
  cli/src/config/misc.toml                |  2 +-
  cli/tests/sample-configs/valid/git.toml |  2 +-
- cli/tests/test_config_command.rs        | 39 ++++++++++++++++
- cli/tests/test_git_push.rs              |  2 +-
- docs/config.md                          | 15 +++----
- 9 files changed, 107 insertions(+), 46 deletions(-)
+ cli/tests/test_config_command.rs        | 39 +++++++++++++++
+ cli/tests/test_git_push.rs              |  6 +--
+ docs/config.md                          | 15 +++---
+ 9 files changed, 116 insertions(+), 48 deletions(-)
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index 797198229..6169910c5 100644
+index fa33b42..e717a91 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -143,6 +143,10 @@ published.
+@@ -251,6 +251,10 @@ published.
  * `jj git import` in non-colocated repositories no longer imports commits from a
    detached Git HEAD branch.
  
@@ -33,8 +35,18 @@ index 797198229..6169910c5 100644
  ### Deprecations
  
  None
+@@ -302,6 +306,9 @@ None
+   when the commit stack is taller than the terminal.
+   [#9033](https://github.com/jj-vcs/jj/issues/9033).
+ 
++* `jj git push` now warns when `git.sign-on-push` selects immutable commits
++  instead of silently leaving them unsigned.
++
+ * The default pager flags now include `-K` (`--quit-on-intr`), so pressing
+   Ctrl+C in `less` exits cleanly instead of leaving the terminal in a
+   corrupted state (raw mode, visible escape sequences, broken input).
 diff --git a/cli/src/commands/git/push.rs b/cli/src/commands/git/push.rs
-index 9b1dda15b..31995fdd3 100644
+index 6a98d00..d08ce0d 100644
 --- a/cli/src/commands/git/push.rs
 +++ b/cli/src/commands/git/push.rs
 @@ -14,7 +14,6 @@
@@ -45,7 +57,7 @@ index 9b1dda15b..31995fdd3 100644
  use std::io;
  use std::io::Write as _;
  use std::iter;
-@@ -563,19 +562,18 @@ pub async fn cmd_git_push(
+@@ -564,19 +563,19 @@ pub async fn cmd_git_push(
          return Ok(());
      }
  
@@ -55,7 +67,7 @@ index 9b1dda15b..31995fdd3 100644
 -            .map(|(remote, ref_updates)| ready_to_push_revset_expression(&tx, remote, ref_updates))
 -            .collect_vec();
 -
--        by_remote = sign_commits_before_push(
+-        let (signed_by_remote, num_signed) = sign_commits_before_push(
 -            ui,
 -            &mut tx,
 -            UserRevsetExpression::union_all(&to_push_exprs),
@@ -73,18 +85,28 @@ index 9b1dda15b..31995fdd3 100644
 +    commits_to_sign.intersect_with(&UserRevsetExpression::union_all(&to_push_exprs));
 +    let commits_to_sign = commits_to_sign.resolve()?;
 +    if !args.dry_run {
-+        by_remote = sign_commits_before_push(ui, &mut tx, commits_to_sign, by_remote).await?;
-     }
++        let (signed_by_remote, num_signed) =
++            sign_commits_before_push(ui, &mut tx, commits_to_sign, by_remote).await?;
+         by_remote = signed_by_remote;
  
-     let git_settings = GitSettings::from_settings(tx.settings())?;
-@@ -918,22 +916,18 @@ fn ready_to_push_revset_expression(
+         // Signing rewrites the commits that are about to be pushed, so
+@@ -941,29 +940,26 @@ fn ready_to_push_revset_expression(
+ 
+ /// Signs commits before pushing.
+ ///
+-/// Warns about commits that need a signature but are immutable.
++/// Warns about selected commits that are immutable and therefore cannot be
++/// rewritten.
+ ///
+ /// Returns the updated list of bookmark names and corresponding
+ /// [`BookmarkPushUpdate`]s, and the number of signed commits.
  async fn sign_commits_before_push<'a>(
      ui: &Ui,
      tx: &mut WorkspaceCommandTransaction<'_>,
 -    commits_to_push: Arc<UserRevsetExpression>,
 +    commits_to_sign: Arc<ResolvedRevsetExpression>,
      by_remote: Vec<(&'a RemoteName, GitPushRefTargets)>,
- ) -> Result<Vec<(&'a RemoteName, GitPushRefTargets)>, CommandError> {
+ ) -> Result<(Vec<(&'a RemoteName, GitPushRefTargets)>, usize), CommandError> {
 -    let mut sign_settings = tx.settings().sign_settings();
 -    sign_settings.behavior = SignBehavior::Own;
 -    // TODO: make filter condition configurable by revset?
@@ -109,7 +131,7 @@ index 9b1dda15b..31995fdd3 100644
          .take(11)
          .try_collect()
          .await?;
-@@ -955,10 +949,11 @@ async fn sign_commits_before_push<'a>(
+@@ -985,11 +981,10 @@ async fn sign_commits_before_push<'a>(
          )?;
      }
  
@@ -117,15 +139,15 @@ index 9b1dda15b..31995fdd3 100644
 -        .attach_revset_evaluator(commits_to_push.minus(&immutable))
 -        .evaluate_to_commits()?
 -        .try_filter(needs_signing)
+-        .map_ok(|commit| commit.id().clone())
 +    let commit_ids: IndexSet<CommitId> = commits_to_sign
 +        .minus(&immutable)
 +        .evaluate(tx.base_repo().as_ref())?
 +        .stream()
-+        .commits(tx.base_repo().store())
-         .map_ok(|commit| commit.id().clone())
          .try_collect()
          .await?;
-@@ -985,7 +980,7 @@ async fn sign_commits_before_push<'a>(
+     if commit_ids.is_empty() {
+@@ -1015,7 +1010,7 @@ async fn sign_commits_before_push<'a>(
                      if commit_ids.contains(&old_commit_id) {
                          let commit = rewriter
                              .reparent()
@@ -135,7 +157,7 @@ index 9b1dda15b..31995fdd3 100644
                              .await?;
                          old_to_new_commits_map.insert(old_commit_id, commit.id().clone());
 diff --git a/cli/src/config-schema.json b/cli/src/config-schema.json
-index 426dc7710..d1ac5cbc8 100644
+index 4ce5e19..1d91785 100644
 --- a/cli/src/config-schema.json
 +++ b/cli/src/config-schema.json
 @@ -546,9 +546,9 @@
@@ -152,10 +174,10 @@ index 426dc7710..d1ac5cbc8 100644
                  "track-default-bookmark-on-clone": {
                      "type": "boolean",
 diff --git a/cli/src/config.rs b/cli/src/config.rs
-index 7beb656d8..032227b1a 100644
+index b38096b..820c706 100644
 --- a/cli/src/config.rs
 +++ b/cli/src/config.rs
-@@ -1047,6 +1047,30 @@ pub fn default_config_migrations() -> Vec<ConfigMigrationRule> {
+@@ -1048,6 +1048,30 @@ pub fn default_config_migrations() -> Vec<ConfigMigrationRule> {
                  Ok(messages.join(", "))
              },
          ),
@@ -187,7 +209,7 @@ index 7beb656d8..032227b1a 100644
  }
  
 diff --git a/cli/src/config/misc.toml b/cli/src/config/misc.toml
-index 70ed210c1..0178cf955 100644
+index 70ed210..0178cf9 100644
 --- a/cli/src/config/misc.toml
 +++ b/cli/src/config/misc.toml
 @@ -28,7 +28,7 @@ disabled-branches = []
@@ -200,7 +222,7 @@ index 70ed210c1..0178cf955 100644
  
  [ui]
 diff --git a/cli/tests/sample-configs/valid/git.toml b/cli/tests/sample-configs/valid/git.toml
-index f42fee952..c0d64f8e1 100644
+index f42fee9..c0d64f8 100644
 --- a/cli/tests/sample-configs/valid/git.toml
 +++ b/cli/tests/sample-configs/valid/git.toml
 @@ -5,7 +5,7 @@ fetch = ["origin", "fork"]
@@ -213,7 +235,7 @@ index f42fee952..c0d64f8e1 100644
  write-change-id-header = true
  executable-path = "/home/linus/.local/bin/git"
 diff --git a/cli/tests/test_config_command.rs b/cli/tests/test_config_command.rs
-index a6e7fac21..dacfd7ce2 100644
+index a6e7fac..dacfd7c 100644
 --- a/cli/tests/test_config_command.rs
 +++ b/cli/tests/test_config_command.rs
 @@ -27,6 +27,45 @@ use crate::common::fake_editor_path;
@@ -263,7 +285,7 @@ index a6e7fac21..dacfd7ce2 100644
  fn test_config_list_single() {
      let test_env = TestEnvironment::default();
 diff --git a/cli/tests/test_git_push.rs b/cli/tests/test_git_push.rs
-index 22c0fb822..5120b1156 100644
+index 5cdf1cf..6404843 100644
 --- a/cli/tests/test_git_push.rs
 +++ b/cli/tests/test_git_push.rs
 @@ -3075,7 +3075,7 @@ fn test_git_push_sign_on_push() {
@@ -275,20 +297,34 @@ index 22c0fb822..5120b1156 100644
      "#,
      );
      let output = work_dir.run_jj(["git", "push", "--dry-run"]);
+@@ -3247,7 +3247,7 @@ fn test_git_push_sign_on_push_separate_transaction() -> TestResult {
+         r#"
+     signing.backend = "test"
+     signing.key = "impeccable"
+-    git.sign-on-push = true
++    git.sign-on-push = "~signed() & mine()"
+     "#,
+     );
+ 
+@@ -3329,7 +3329,7 @@ fn test_git_push_sign_on_push_separate_transaction_change_bookmark() -> TestResu
+         r#"
+     signing.backend = "test"
+     signing.key = "impeccable"
+-    git.sign-on-push = true
++    git.sign-on-push = "~signed() & mine()"
+     "#,
+     );
+ 
 diff --git a/docs/config.md b/docs/config.md
-index 4df7ac265..ef8d94cc4 100644
+index 8584385..2d0537f 100644
 --- a/docs/config.md
 +++ b/docs/config.md
-@@ -1756,22 +1756,21 @@ to do with signing commits on modification of a change (e.g., rebasing or edits)
+@@ -1788,24 +1788,27 @@ to do with signing commits on modification of a change (e.g., rebasing or edits)
  - `force`: sign all commits after modification, always, even if you are not the
    author.
  
--Instead of signing all commits during creation when `signing.behavior` is
--set to `own`, the `git.sign-on-push` configuration can be used to sign
--commits only upon running `jj git push`. All mutable unsigned commits
--being pushed will be signed prior to pushing. This might be preferred if the
--signing backend requires user interaction or is slow, so that signing is
--performed in a single batch operation.
+-To sign commits only when pushing, set `signing.behavior = "drop"` and
+-`git.sign-on-push = true`:
 +If the signing backend requires user interaction for every signature, or is
 +slow, you might not want to sign each commit at creation time. Instead, the
 +`git.sign-on-push` configuration can be set to a revset of commits to sign only
@@ -308,4 +344,12 @@ index 4df7ac265..ef8d94cc4 100644
 +sign-on-push = "~signed() & mine()"
  ```
  
- ## Commit Signature Verification
+ With this setup, commits are not signed when they are created or rewritten. At
+ push time, `git.sign-on-push` only signs commits that are not yet signed (that
+-are mutable and authored by you, behaving like `own` even though write-time
+-signing uses `drop`).
++are mutable and authored by you). A different revset can select other commits
++for signing even though write-time signing uses `drop`.
+ 
+ This is useful when the signing backend requires user interaction or is slow,
+ because the signing work is deferred to push time. If `signing.behavior` is set

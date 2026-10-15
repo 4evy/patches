@@ -1,33 +1,42 @@
-From 39e436874bf2cfdb4e4a51a19b39bb5652b160a2 Mon Sep 17 00:00:00 2001
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Sat, 5 Sep 2026 13:00:00 +0300
+Date: Thu, 1 Jan 1970 00:00:00 +0000
 Subject: redate: add an interactive timestamp editor
 
-Add a revision picker that renders jj's topologically grouped graph with the configured graph style, log node template, and a command-specific row template. Offer all mutable revisions by default, including sibling branches when the working copy starts at the trunk.
+Add a revision picker using the configured graph style, log node template,
+and command-specific row template. Show all mutable revisions by default
 
-Apply exact timestamps through the shared metadata transaction. Preserve descendant metadata with jj's standard keep signing behavior, and make signing selected revisions opt-in with --sign.
+Use stable checked markers, full-row focus highlighting, responsive key
+hints, select-all, boundary navigation, anchored Shift range selection,
+and the standard c-to-confirm binding
+
+Accept exact and relative local-time expressions and --timestamp for
+non-interactive use. Preserve explicit offsets and descendant metadata,
+and make signing selected revisions opt-in with --sign
+
+Assisted-by: GPT-6
 ---
  CHANGELOG.md                     |   4 +
- cli/src/commands/metaedit.rs     |  19 ++
+ cli/src/commands/metaedit.rs     |  19 +
  cli/src/commands/mod.rs          |   3 +
- cli/src/commands/redate.rs       | 476 +++++++++++++++++++++++++++++++
+ cli/src/commands/redate.rs       | 823 +++++++++++++++++++++++++++++++
  cli/src/config-schema.json       |   9 +
- cli/src/config/colors.toml       |   7 +
+ cli/src/config/colors.toml       |   4 +
  cli/src/config/revsets.toml      |   1 +
- cli/src/config/templates.toml    |   7 +
- cli/tests/cli-reference@.md.snap |  18 ++
+ cli/src/config/templates.toml    |   6 +
+ cli/tests/cli-reference@.md.snap |  21 +
  cli/tests/runner.rs              |   1 +
- cli/tests/test_redate_command.rs | 143 ++++++++++
- docs/config.md                   |  26 ++
- 12 files changed, 714 insertions(+)
+ cli/tests/test_redate_command.rs | 243 +++++++++
+ docs/config.md                   |  26 +
+ 12 files changed, 1160 insertions(+)
  create mode 100644 cli/src/commands/redate.rs
  create mode 100644 cli/tests/test_redate_command.rs
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index 8bc2e9aaa..fa5a2ec7a 100644
+index b578091..8c2f2a5 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -189,6 +189,10 @@ None
+@@ -297,6 +297,10 @@ None
    repositories. `jj git ref fetch --shallow-exclude` can fetch a review stack
    plus one parent generation for a usable diff base.
  
@@ -39,10 +48,10 @@ index 8bc2e9aaa..fa5a2ec7a 100644
  
  * [The default `immutable_heads()` set](docs/config.md#set-of-immutable-commits)
 diff --git a/cli/src/commands/metaedit.rs b/cli/src/commands/metaedit.rs
-index 9f10d2708..ffed93b34 100644
+index 7f137e6..47b4411 100644
 --- a/cli/src/commands/metaedit.rs
 +++ b/cli/src/commands/metaedit.rs
-@@ -169,6 +169,15 @@ pub(crate) struct CommitEditArgs {
+@@ -167,6 +167,15 @@ pub(crate) struct CommitEditArgs {
      force_rewrite: bool,
  }
  
@@ -58,7 +67,7 @@ index 9f10d2708..ffed93b34 100644
  #[derive(Clone, Copy)]
  pub(crate) struct CommitEditOptions {
      transaction_action: &'static str,
-@@ -186,6 +195,16 @@ impl Default for CommitEditOptions {
+@@ -184,6 +193,16 @@ impl Default for CommitEditOptions {
      }
  }
  
@@ -76,7 +85,7 @@ index 9f10d2708..ffed93b34 100644
  pub(crate) async fn cmd_metaedit(
      ui: &mut Ui,
 diff --git a/cli/src/commands/mod.rs b/cli/src/commands/mod.rs
-index e2a55b887..63e954800 100644
+index e2a55b8..63e9548 100644
 --- a/cli/src/commands/mod.rs
 +++ b/cli/src/commands/mod.rs
 @@ -45,6 +45,7 @@ mod operation;
@@ -105,10 +114,10 @@ index e2a55b887..63e954800 100644
          Command::Restore(args) => restore::cmd_restore(ui, command_helper, args).await,
 diff --git a/cli/src/commands/redate.rs b/cli/src/commands/redate.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..974c35f5f
+index 0000000..e8c963a
 --- /dev/null
 +++ b/cli/src/commands/redate.rs
-@@ -0,0 +1,476 @@
+@@ -0,0 +1,823 @@
 +// Copyright 2026 The Jujutsu Authors
 +//
 +// Licensed under the Apache License, Version 2.0 (the "License");
@@ -129,7 +138,6 @@ index 0000000000000000000000000000000000000000..974c35f5f
 +
 +use ansi_to_tui::IntoText as _;
 +use chrono::Local;
-+use chrono::SecondsFormat;
 +use clap_complete::ArgValueCompleter;
 +use crossterm::event;
 +use crossterm::event::Event;
@@ -142,15 +150,18 @@ index 0000000000000000000000000000000000000000..974c35f5f
 +use jj_lib::graph::GraphEdge;
 +use jj_lib::graph::TopoGroupedGraph;
 +use jj_lib::repo::Repo as _;
-+use jj_lib::time_util::parse_datetime;
++use jj_lib::time_util::parse_datetime_expression;
 +use ratatui::Terminal;
++use ratatui::layout::Alignment;
 +use ratatui::layout::Constraint;
 +use ratatui::layout::Layout;
++use ratatui::layout::Rect;
 +use ratatui::style::Color;
++use ratatui::style::Modifier;
 +use ratatui::style::Style;
 +use ratatui::text::Line;
++use ratatui::text::Span;
 +use ratatui::text::Text;
-+use ratatui::widgets::Block;
 +use ratatui::widgets::List;
 +use ratatui::widgets::ListItem;
 +use ratatui::widgets::ListState;
@@ -187,6 +198,13 @@ index 0000000000000000000000000000000000000000..974c35f5f
 +    #[arg(add = ArgValueCompleter::new(complete::revset_expression_mutable))]
 +    revisions_opt: Vec<RevisionArg>,
 +
++    /// Set the timestamp without prompting
++    ///
++    /// Accepts exact timestamps and local-time expressions such as `now`,
++    /// `yesterday 5pm`, or `2026-08-28 14:30 +03:00`.
++    #[arg(long, value_name = "TIMESTAMP", value_parser = parse_timestamp_arg)]
++    timestamp: Option<Timestamp>,
++
 +    /// Sign the rewritten revisions
 +    #[arg(long)]
 +    sign: bool,
@@ -205,14 +223,14 @@ index 0000000000000000000000000000000000000000..974c35f5f
 +             https://docs.jj-vcs.dev/latest/config/#commit-signing",
 +        ));
 +    }
-+    if !ui.can_prompt() {
-+        return Err(user_error("Cannot prompt for a redate timestamp")
-+            .hinted("Run from a terminal or set JJ_INTERACTIVE=1"));
-+    }
 +    let interactive = args.revisions_pos.is_empty()
 +        && args.revisions_opt.is_empty()
 +        && io::stdin().is_terminal()
 +        && io::stdout().is_terminal();
++    if (interactive || args.timestamp.is_none()) && !ui.can_prompt() {
++        return Err(user_error("Cannot prompt for redate input")
++            .hinted("Run from a terminal, set JJ_INTERACTIVE=1, or pass --timestamp"));
++    }
 +    let target_expression = if !args.revisions_pos.is_empty() || !args.revisions_opt.is_empty() {
 +        workspace_command
 +            .parse_union_revsets(ui, &[&*args.revisions_pos, &*args.revisions_opt].concat())?
@@ -229,17 +247,17 @@ index 0000000000000000000000000000000000000000..974c35f5f
 +    let commits = {
 +        let revset = target_expression.evaluate(workspace_command.repo().as_ref())?;
 +        let graph_stream = TopoGroupedGraph::new(revset.stream_graph(), |id| id).stream();
-+        futures::pin_mut!(graph_stream);
-+        let mut commits = vec![];
-+        while let Some((commit_id, edges)) = graph_stream.try_next().await? {
-+            let commit = workspace_command
-+                .repo()
-+                .store()
-+                .get_commit_async(&commit_id)
-+                .await?;
-+            commits.push((commit, edges));
-+        }
-+        commits
++        graph_stream
++            .and_then(async |(commit_id, edges)| {
++                let commit = workspace_command
++                    .repo()
++                    .store()
++                    .get_commit_async(&commit_id)
++                    .await?;
++                Ok((commit, edges))
++            })
++            .try_collect::<Vec<_>>()
++            .await?
 +    };
 +    if commits.is_empty() {
 +        writeln!(ui.status(), "No revisions to redate.")?;
@@ -261,7 +279,11 @@ index 0000000000000000000000000000000000000000..974c35f5f
 +            .map(|(commit, _)| commit.id().clone())
 +            .collect()
 +    };
-+    let timestamp = prompt_timestamp(ui)?;
++    let timestamp = if let Some(timestamp) = args.timestamp {
++        timestamp
++    } else {
++        prompt_timestamp(ui)?
++    };
 +    let display_timestamp = timestamp
 +        .to_datetime()
 +        .map_err(internal_error)?
@@ -270,10 +292,12 @@ index 0000000000000000000000000000000000000000..974c35f5f
 +        [_] => "1 revision".to_owned(),
 +        revisions => format!("{} revisions", revisions.len()),
 +    };
-+    if !ui.prompt_yes_no(
-+        &format!("Redate {revision_label} to {display_timestamp}?"),
-+        Some(true),
-+    )? {
++    if args.timestamp.is_none()
++        && !ui.prompt_yes_no(
++            &format!("Redate {revision_label} to {display_timestamp}?"),
++            Some(true),
++        )?
++    {
 +        return Ok(());
 +    }
 +    metaedit::edit_commits(
@@ -323,6 +347,13 @@ index 0000000000000000000000000000000000000000..974c35f5f
 +                edges: edges.clone(),
 +                node_symbol: format_template(ui, &Some(commit.clone()), &node_template),
 +                text: output,
++                timestamp: commit
++                    .committer()
++                    .timestamp
++                    .to_datetime()
++                    .map_err(internal_error)?
++                    .format("%Y-%m-%d %H:%M")
++                    .to_string(),
 +            })
 +        })
 +        .collect()
@@ -333,7 +364,24 @@ index 0000000000000000000000000000000000000000..974c35f5f
 +    edges: Vec<GraphEdge<CommitId>>,
 +    node_symbol: String,
 +    text: Vec<u8>,
++    timestamp: String,
 +}
++
++const SELECTOR_HELP: &[(&str, &str)] = &[
++    ("↑↓/jk", "move"),
++    ("⇧↑↓", "range"),
++    ("space", "toggle"),
++    ("a", "all/none"),
++    ("c", "confirm"),
++    ("q", "cancel"),
++];
++
++const SELECTOR_HELP_COMPACT: &[(&str, &str)] = &[
++    ("↑↓", "move"),
++    ("⇧↑↓", "range"),
++    ("space", "toggle"),
++    ("c", "confirm"),
++];
 +
 +fn select_revisions(
 +    ui: &Ui,
@@ -351,30 +399,22 @@ index 0000000000000000000000000000000000000000..974c35f5f
 +) -> Result<Option<Vec<usize>>, CommandError> {
 +    let mut list_state = ListState::default().with_selected(Some(0));
 +    let mut state = SelectorState::default();
++    let help_line = tui_util::key_help_line(SELECTOR_HELP);
++    let compact_help_line = tui_util::key_help_line(SELECTOR_HELP_COMPACT);
 +
 +    loop {
 +        let rendered_rows = render_graph_rows(ui, graph_style, rows, &state)?;
 +        terminal
 +            .draw(|frame| {
-+                let areas = Layout::vertical([Constraint::Fill(1), Constraint::Length(1)])
-+                    .split(frame.area());
-+                let items = rendered_rows.iter().cloned().map(ListItem::new);
-+                let list = List::new(items)
-+                    .block(Block::bordered().title(format!(
-+                        " Select revisions ({} selected) ",
-+                        state.selected.len()
-+                    )))
-+                    .scroll_padding(1);
-+                frame.render_stateful_widget(list, areas[0], &mut list_state);
-+
-+                let footer = if state.invalid {
-+                    Line::from("Select at least one revision")
-+                        .style(Style::default().fg(Color::Red))
-+                } else {
-+                    Line::from("↑↓/jk move · space toggle · enter confirm · q cancel")
-+                        .style(Style::default().fg(Color::DarkGray))
-+                };
-+                frame.render_widget(Paragraph::new(footer), areas[1]);
++                render_selector(
++                    frame,
++                    &rendered_rows,
++                    rows,
++                    &state,
++                    &mut list_state,
++                    &help_line,
++                    &compact_help_line,
++                );
 +            })
 +            .map_err(|error| internal_error(format!("Failed to draw redate TUI: {error}")))?;
 +
@@ -394,6 +434,107 @@ index 0000000000000000000000000000000000000000..974c35f5f
 +    }
 +}
 +
++fn render_selector(
++    frame: &mut ratatui::Frame<'_>,
++    rendered_rows: &[Text<'static>],
++    rows: &[RevisionRow],
++    state: &SelectorState,
++    list_state: &mut ListState,
++    help_line: &Line<'static>,
++    compact_help_line: &Line<'static>,
++) {
++    let areas = Layout::vertical([
++        Constraint::Length(1),
++        Constraint::Fill(1),
++        Constraint::Length(1),
++    ])
++    .split(frame.area());
++    let timestamp_width = if areas[0].width >= 65 { 29 } else { 0 };
++    let header_areas =
++        Layout::horizontal([Constraint::Fill(1), Constraint::Length(timestamp_width)])
++            .split(areas[0]);
++    let header_style = Style::default().add_modifier(Modifier::REVERSED);
++    let header = Line::from(vec![
++        Span::styled(
++            " Redate revisions",
++            Style::default().add_modifier(Modifier::BOLD),
++        ),
++        Span::raw(format!(
++            "  {}/{} selected",
++            state.selected.len(),
++            rows.len()
++        )),
++    ]);
++    frame.render_widget(Paragraph::new(header).style(header_style), header_areas[0]);
++    if timestamp_width > 0 {
++        frame.render_widget(
++            Paragraph::new(format!("committed  {} ", rows[state.cursor].timestamp))
++                .alignment(Alignment::Right)
++                .style(header_style),
++            header_areas[1],
++        );
++    }
++
++    let items = rendered_rows.iter().cloned().map(|mut row| {
++        // List requires each item to fit within the viewport
++        row.lines.truncate(usize::from(areas[1].height));
++        ListItem::new(row)
++    });
++    let list = List::new(items).scroll_padding(2);
++    frame.render_stateful_widget(list, areas[1], list_state);
++    highlight_cursor_line(
++        frame,
++        areas[1],
++        rendered_rows,
++        state.cursor,
++        list_state.offset(),
++    );
++
++    let footer = if state.invalid {
++        Line::from("Select at least one revision").style(Style::default().fg(Color::Red))
++    } else if help_line.width() <= usize::from(areas[2].width) {
++        help_line.clone()
++    } else {
++        compact_help_line.clone()
++    };
++    frame.render_widget(Paragraph::new(footer), areas[2]);
++}
++
++fn highlight_cursor_line(
++    frame: &mut ratatui::Frame<'_>,
++    area: Rect,
++    rendered_rows: &[Text<'static>],
++    cursor: usize,
++    list_offset: usize,
++) {
++    let Some(row) = rendered_rows.get(cursor) else {
++        return;
++    };
++    let Some(marker_line) = row.lines.iter().position(|line| {
++        line.spans
++            .iter()
++            .any(|span| span.content.contains("[ ]") || span.content.contains("[●]"))
++    }) else {
++        return;
++    };
++    let Some(rows_before_cursor) = rendered_rows.get(list_offset..cursor) else {
++        return;
++    };
++    let line_offset = rows_before_cursor
++        .iter()
++        .map(|row| row.lines.len())
++        .sum::<usize>()
++        + marker_line;
++    if line_offset >= usize::from(area.height) {
++        return;
++    }
++    let cursor_area = Rect::new(area.x, area.y + line_offset as u16, area.width, 1);
++    frame.buffer_mut().set_style(
++        cursor_area,
++        Style::default().add_modifier(Modifier::REVERSED),
++    );
++}
++
 +fn render_graph_rows(
 +    ui: &Ui,
 +    graph_style: GraphStyle,
@@ -407,18 +548,10 @@ index 0000000000000000000000000000000000000000..974c35f5f
 +            let mut message = vec![];
 +            {
 +                let mut formatter = ui.new_formatter(&mut message).into_labeled("redate");
-+                if state.cursor == index {
-+                    write!(formatter.labeled("cursor"), "› ")?;
++                if state.selected.contains(&index) {
++                    write!(formatter.labeled("selection selected"), "[●] ")?;
 +                } else {
-+                    write!(formatter, "  ")?;
-+                }
-+                {
-+                    let mut selection = formatter.labeled("selection");
-+                    if state.selected.contains(&index) {
-+                        write!(selection.labeled("selected"), "● ")?;
-+                    } else {
-+                        write!(selection.labeled("unselected"), "○ ")?;
-+                    }
++                    write!(formatter, "[ ] ")?;
 +                }
 +            }
 +            message.extend_from_slice(&row.text);
@@ -440,7 +573,13 @@ index 0000000000000000000000000000000000000000..974c35f5f
 +struct SelectorState {
 +    cursor: usize,
 +    selected: BTreeSet<usize>,
++    range: Option<SelectionRange>,
 +    invalid: bool,
++}
++
++struct SelectionRange {
++    anchor: usize,
++    selection_before_range: BTreeSet<usize>,
 +}
 +
 +#[derive(Debug, PartialEq, Eq)]
@@ -451,6 +590,27 @@ index 0000000000000000000000000000000000000000..974c35f5f
 +}
 +
 +impl SelectorState {
++    fn move_cursor(&mut self, cursor: usize) {
++        self.cursor = cursor;
++        self.range = None;
++    }
++
++    fn extend_range(&mut self, cursor: usize) {
++        if cursor == self.cursor {
++            return;
++        }
++        let range = self.range.get_or_insert_with(|| SelectionRange {
++            anchor: self.cursor,
++            selection_before_range: self.selected.clone(),
++        });
++        self.cursor = cursor;
++        self.selected.clone_from(&range.selection_before_range);
++        let start = range.anchor.min(cursor);
++        let end = range.anchor.max(cursor);
++        self.selected.extend(start..=end);
++        self.invalid = false;
++    }
++
 +    fn handle_key(
 +        &mut self,
 +        code: KeyCode,
@@ -460,24 +620,59 @@ index 0000000000000000000000000000000000000000..974c35f5f
 +        match (code, modifiers) {
 +            (KeyCode::Char('q') | KeyCode::Esc, KeyModifiers::NONE)
 +            | (KeyCode::Char('c'), KeyModifiers::CONTROL) => SelectorAction::Cancel,
-+            (KeyCode::Enter, KeyModifiers::NONE) if !self.selected.is_empty() => {
++            (KeyCode::Char('c'), KeyModifiers::NONE) if !self.selected.is_empty() => {
 +                SelectorAction::Submit(self.selected.iter().copied().collect())
 +            }
-+            (KeyCode::Enter, KeyModifiers::NONE) => {
++            (KeyCode::Char('c'), KeyModifiers::NONE) => {
 +                self.invalid = true;
 +                SelectorAction::Continue
 +            }
 +            (KeyCode::Down | KeyCode::Char('j'), KeyModifiers::NONE) => {
-+                self.cursor = (self.cursor + 1).min(row_count - 1);
++                self.move_cursor((self.cursor + 1).min(row_count - 1));
 +                SelectorAction::Continue
 +            }
 +            (KeyCode::Up | KeyCode::Char('k'), KeyModifiers::NONE) => {
-+                self.cursor = self.cursor.saturating_sub(1);
++                self.move_cursor(self.cursor.saturating_sub(1));
++                SelectorAction::Continue
++            }
++            (KeyCode::Down | KeyCode::Char('J' | 'j'), KeyModifiers::SHIFT) => {
++                self.extend_range((self.cursor + 1).min(row_count - 1));
++                SelectorAction::Continue
++            }
++            (KeyCode::Up | KeyCode::Char('K' | 'k'), KeyModifiers::SHIFT) => {
++                self.extend_range(self.cursor.saturating_sub(1));
++                SelectorAction::Continue
++            }
++            (KeyCode::Home, KeyModifiers::NONE) => {
++                self.move_cursor(0);
++                SelectorAction::Continue
++            }
++            (KeyCode::End, KeyModifiers::NONE) => {
++                self.move_cursor(row_count - 1);
++                SelectorAction::Continue
++            }
++            (KeyCode::Home, KeyModifiers::SHIFT) => {
++                self.extend_range(0);
++                SelectorAction::Continue
++            }
++            (KeyCode::End, KeyModifiers::SHIFT) => {
++                self.extend_range(row_count - 1);
 +                SelectorAction::Continue
 +            }
 +            (KeyCode::Char(' '), KeyModifiers::NONE) => {
++                self.range = None;
 +                if !self.selected.insert(self.cursor) {
 +                    self.selected.remove(&self.cursor);
++                }
++                self.invalid = false;
++                SelectorAction::Continue
++            }
++            (KeyCode::Char('a'), KeyModifiers::NONE) => {
++                self.range = None;
++                if self.selected.len() == row_count {
++                    self.selected.clear();
++                } else {
++                    self.selected.extend(0..row_count);
 +                }
 +                self.invalid = false;
 +                SelectorAction::Continue
@@ -489,9 +684,19 @@ index 0000000000000000000000000000000000000000..974c35f5f
 +
 +fn prompt_timestamp(ui: &Ui) -> Result<Timestamp, CommandError> {
 +    let now = Local::now();
-+    let initial = now.to_rfc3339_opts(SecondsFormat::Secs, false);
-+    let prompt = format!("Timestamp (default {initial})");
-+    Ok(ui.prompt_choice_with(&prompt, Some(&initial), parse_datetime)?)
++    writeln!(
++        ui.hint_default(),
++        "Enter a local date and time, such as `yesterday 5pm`, or an exact timestamp."
++    )?;
++    Ok(
++        ui.prompt_choice_with("Timestamp [now]", Some("now"), |input| {
++            parse_datetime_expression(input, now)
++        })?,
++    )
++}
++
++fn parse_timestamp_arg(input: &str) -> Result<Timestamp, String> {
++    parse_datetime_expression(input, Local::now()).map_err(|error| error.to_string())
 +}
 +
 +#[cfg(test)]
@@ -511,20 +716,107 @@ index 0000000000000000000000000000000000000000..974c35f5f
 +        state.handle_key(KeyCode::Char(' '), KeyModifiers::NONE, 3);
 +        assert_eq!(
 +            state.handle_key(KeyCode::Enter, KeyModifiers::NONE, 3),
++            SelectorAction::Continue
++        );
++        assert_eq!(
++            state.handle_key(KeyCode::Char('c'), KeyModifiers::NONE, 3),
 +            SelectorAction::Submit(vec![1, 2])
 +        );
++    }
++
++    #[test]
++    fn test_selector_bulk_and_boundary_navigation() {
++        let mut state = SelectorState::default();
++        state.handle_key(KeyCode::End, KeyModifiers::NONE, 3);
++        assert_eq!(state.cursor, 2);
++        state.handle_key(KeyCode::Home, KeyModifiers::NONE, 3);
++        assert_eq!(state.cursor, 0);
++
++        state.handle_key(KeyCode::Char('a'), KeyModifiers::NONE, 3);
++        assert_eq!(state.selected, BTreeSet::from([0, 1, 2]));
++        state.handle_key(KeyCode::Char('a'), KeyModifiers::NONE, 3);
++        assert!(state.selected.is_empty());
++
++        state.handle_key(KeyCode::Char(' '), KeyModifiers::NONE, 3);
++        assert_eq!(
++            state.handle_key(KeyCode::Char('c'), KeyModifiers::NONE, 3),
++            SelectorAction::Submit(vec![0])
++        );
++    }
++
++    #[test]
++    fn test_selector_extends_and_shrinks_ranges() {
++        let mut state = SelectorState::default();
++        state.handle_key(KeyCode::Char(' '), KeyModifiers::NONE, 5);
++        state.handle_key(KeyCode::Down, KeyModifiers::NONE, 5);
++        state.handle_key(KeyCode::Down, KeyModifiers::NONE, 5);
++
++        state.handle_key(KeyCode::Down, KeyModifiers::SHIFT, 5);
++        assert_eq!(state.cursor, 3);
++        assert_eq!(state.selected, BTreeSet::from([0, 2, 3]));
++        state.handle_key(KeyCode::Char('J'), KeyModifiers::SHIFT, 5);
++        assert_eq!(state.selected, BTreeSet::from([0, 2, 3, 4]));
++        state.handle_key(KeyCode::Up, KeyModifiers::SHIFT, 5);
++        assert_eq!(state.selected, BTreeSet::from([0, 2, 3]));
++        state.handle_key(KeyCode::Char('K'), KeyModifiers::SHIFT, 5);
++        assert_eq!(state.selected, BTreeSet::from([0, 2]));
++        state.handle_key(KeyCode::Home, KeyModifiers::SHIFT, 5);
++        assert_eq!(state.selected, BTreeSet::from([0, 1, 2]));
++
++        state.handle_key(KeyCode::End, KeyModifiers::NONE, 5);
++        state.handle_key(KeyCode::Up, KeyModifiers::SHIFT, 5);
++        assert_eq!(state.selected, BTreeSet::from([0, 1, 2, 3, 4]));
 +    }
 +
 +    #[test]
 +    fn test_selector_requires_selection() {
 +        let mut state = SelectorState::default();
 +        assert_eq!(
-+            state.handle_key(KeyCode::Enter, KeyModifiers::NONE, 1),
++            state.handle_key(KeyCode::Char('c'), KeyModifiers::NONE, 1),
 +            SelectorAction::Continue
 +        );
 +        assert!(state.invalid);
 +        state.handle_key(KeyCode::Char(' '), KeyModifiers::NONE, 1);
 +        assert!(!state.invalid);
++    }
++
++    #[test]
++    fn test_render_selector_keeps_tall_revision_visible() -> Result<(), CommandError> {
++        let rows = [RevisionRow {
++            commit_id: CommitId::from_hex("11"),
++            edges: vec![],
++            node_symbol: "o".to_owned(),
++            text: "long description\n".repeat(20).into_bytes(),
++            timestamp: "2004-01-01 00:00".to_owned(),
++        }];
++        let state = SelectorState::default();
++        let rendered = render_graph_rows(&Ui::null(), GraphStyle::Ascii, &rows, &state)?;
++        for height in 3..=6 {
++            let mut terminal =
++                Terminal::new(ratatui::backend::TestBackend::new(80, height)).unwrap();
++            let mut list_state = ListState::default().with_selected(Some(0));
++            terminal
++                .draw(|frame| {
++                    render_selector(
++                        frame,
++                        &rendered,
++                        &rows,
++                        &state,
++                        &mut list_state,
++                        &tui_util::key_help_line(SELECTOR_HELP),
++                        &tui_util::key_help_line(SELECTOR_HELP_COMPACT),
++                    );
++                })
++                .unwrap();
++            let buffer = terminal.backend().buffer();
++            let marker: String = (3..6).map(|x| buffer[(x, 1)].symbol()).collect();
++            assert_eq!(
++                marker, "[ ]",
++                "missing revision at terminal height {height}"
++            );
++            assert!(buffer[(0, 1)].modifier.contains(Modifier::REVERSED));
++        }
++        Ok(())
 +    }
 +
 +    #[test]
@@ -542,51 +834,115 @@ index 0000000000000000000000000000000000000000..974c35f5f
 +                ],
 +                node_symbol: "@".to_owned(),
 +                text: b"merge".to_vec(),
++                timestamp: "2004-01-01 00:00".to_owned(),
 +            },
 +            RevisionRow {
 +                commit_id: right_id,
 +                edges: vec![GraphEdge::direct(root_id.clone())],
 +                node_symbol: "o".to_owned(),
 +                text: b"right".to_vec(),
++                timestamp: "2003-01-01 00:00".to_owned(),
 +            },
 +            RevisionRow {
 +                commit_id: left_id,
 +                edges: vec![GraphEdge::direct(root_id.clone())],
 +                node_symbol: "o".to_owned(),
 +                text: b"left".to_vec(),
++                timestamp: "2002-01-01 00:00".to_owned(),
 +            },
 +            RevisionRow {
 +                commit_id: root_id,
 +                edges: vec![],
 +                node_symbol: "o".to_owned(),
 +                text: b"root".to_vec(),
++                timestamp: "2001-01-01 00:00".to_owned(),
 +            },
 +        ];
 +        let mut state = SelectorState::default();
 +        state.selected.insert(1);
 +        let rendered = render_graph_rows(&Ui::null(), GraphStyle::Ascii, &rows, &state)?;
 +        let mut output = String::new();
-+        for text in rendered {
-+            for line in text.lines {
-+                for span in line.spans {
++        for text in &rendered {
++            for line in &text.lines {
++                for span in &line.spans {
 +                    output.push_str(&span.content);
 +                }
 +                output.push('\n');
 +            }
 +        }
 +        insta::assert_snapshot!(output, @r"
-+        @    › ○ merge
++        @    [ ] merge
 +        |\
-+        | o    ● right
-+        o |    ○ left
++        | o  [●] right
++        o |  [ ] left
 +        |/
-+        o    ○ root
++        o  [ ] root
++        ");
++
++        let render_selector_snapshot = |width, height| {
++            let backend = ratatui::backend::TestBackend::new(width, height);
++            let mut terminal = Terminal::new(backend).unwrap();
++            let mut list_state = ListState::default().with_selected(Some(0));
++            terminal
++                .draw(|frame| {
++                    let help_line = tui_util::key_help_line(SELECTOR_HELP);
++                    let compact_help_line = tui_util::key_help_line(SELECTOR_HELP_COMPACT);
++                    render_selector(
++                        frame,
++                        &rendered,
++                        &rows,
++                        &state,
++                        &mut list_state,
++                        &help_line,
++                        &compact_help_line,
++                    );
++                })
++                .unwrap();
++            let buffer = terminal.backend().buffer();
++            assert!((0..width).all(|x| buffer[(x, 1)].modifier.contains(Modifier::REVERSED)));
++            assert!(!buffer[(0, 2)].modifier.contains(Modifier::REVERSED));
++            assert!(!buffer[(0, 3)].modifier.contains(Modifier::REVERSED));
++            let mut output = String::new();
++            for y in 0..buffer.area.height {
++                let mut line = String::new();
++                for x in 0..buffer.area.width {
++                    line.push_str(buffer[(x, y)].symbol());
++                }
++                output.push_str(line.trim_end());
++                output.push('\n');
++            }
++            output
++        };
++        let output = render_selector_snapshot(80, 9);
++        insta::assert_snapshot!(output, @r"
++         Redate revisions  1/4 selected                     committed  2004-01-01 00:00
++        @    [ ] merge
++        |\
++        | o  [●] right
++        o |  [ ] left
++        |/
++        o  [ ] root
++
++        ↑↓/jk move • ⇧↑↓ range • space toggle • a all/none • c confirm • q cancel
++        ");
++
++        let output = render_selector_snapshot(50, 9);
++        insta::assert_snapshot!(output, @r"
++         Redate revisions  1/4 selected
++        @    [ ] merge
++        |\
++        | o  [●] right
++        o |  [ ] left
++        |/
++        o  [ ] root
++
++        ↑↓ move • ⇧↑↓ range • space toggle • c confirm
 +        ");
 +        Ok(())
 +    }
 +}
 diff --git a/cli/src/config-schema.json b/cli/src/config-schema.json
-index d1ac5cbc8..14ffdac1b 100644
+index 1d91785..1ae27fd 100644
 --- a/cli/src/config-schema.json
 +++ b/cli/src/config-schema.json
 @@ -757,6 +757,11 @@
@@ -601,7 +957,7 @@ index d1ac5cbc8..14ffdac1b 100644
                  "simplify-parents": {
                      "type": "string",
                      "description": "Default set of revisions to simplify when no explicit revset is given for jj simplify-parents",
-@@ -1108,6 +1113,10 @@
+@@ -1095,6 +1100,10 @@
                      "type": "string",
                      "description": "`jj arrange``'s template for commits in the main view"
                  },
@@ -613,22 +969,19 @@ index d1ac5cbc8..14ffdac1b 100644
                      "type": "string",
                      "description": "`jj bookmark list`'s output"
 diff --git a/cli/src/config/colors.toml b/cli/src/config/colors.toml
-index 76e553428..6172ab441 100644
+index e479fa5..e9a211c 100644
 --- a/cli/src/config/colors.toml
 +++ b/cli/src/config/colors.toml
-@@ -118,3 +118,10 @@
- "signature status invalid" = "red"
+@@ -122,3 +122,7 @@
+ "workspace root" = "default"
  
  "arrange context commit" = { dim = true }
-+"redate cursor" = { fg = "magenta", bold = true }
 +"redate selection selected" = { fg = "magenta", bold = true }
-+"redate selection unselected" = "bright black"
 +"redate commit working_copy" = { fg = "magenta", bold = true }
 +"redate commit change" = { fg = "cyan", bold = true }
 +"redate commit empty" = { fg = "bright black", italic = true }
-+"redate commit timestamp" = "bright black"
 diff --git a/cli/src/config/revsets.toml b/cli/src/config/revsets.toml
-index f4a8dc6cb..c5fdb2d84 100644
+index f4a8dc6..c5fdb2d 100644
 --- a/cli/src/config/revsets.toml
 +++ b/cli/src/config/revsets.toml
 @@ -8,6 +8,7 @@ fix = "reachable(@, mutable())"
@@ -640,10 +993,10 @@ index f4a8dc6cb..c5fdb2d84 100644
  # evaluate, lengthy warning messages would be printed. Use present(expr) if
  # symbols in expr might not always exist.
 diff --git a/cli/src/config/templates.toml b/cli/src/config/templates.toml
-index a619b5bd3..46fe90e0b 100644
+index a619b5b..73ed741 100644
 --- a/cli/src/config/templates.toml
 +++ b/cli/src/config/templates.toml
-@@ -3,6 +3,13 @@ bookmark_list = 'format_commit_ref(self, "bookmark") ++ "\n"'
+@@ -3,6 +3,12 @@ bookmark_list = 'format_commit_ref(self, "bookmark") ++ "\n"'
  
  commit_summary = 'format_commit_summary_with_refs(self, format_commit_ref_names(bookmarks))'
  arrange = 'builtin_log_compact'
@@ -651,17 +1004,16 @@ index a619b5bd3..46fe90e0b 100644
 +separate("  ",
 +  label("change", change_id.shortest(8)),
 +  coalesce(description.first_line(), label("empty", "(no description set)")),
-+  label("timestamp", committer.timestamp().local().format("%Y-%m-%d %H:%M")),
 +)
 +'''
  
  file_annotate = '''
  join(" ",
 diff --git a/cli/tests/cli-reference@.md.snap b/cli/tests/cli-reference@.md.snap
-index 3d97432d8..574ea339d 100644
+index 0a83e0b..f3f8e50 100644
 --- a/cli/tests/cli-reference@.md.snap
 +++ b/cli/tests/cli-reference@.md.snap
-@@ -95,6 +95,7 @@ This document contains the help content for the `jj` command-line program.
+@@ -97,6 +97,7 @@ This document contains the help content for the `jj` command-line program.
  * [`jj parallelize`↴](#jj-parallelize)
  * [`jj prev`↴](#jj-prev)
  * [`jj rebase`↴](#jj-rebase)
@@ -669,7 +1021,7 @@ index 3d97432d8..574ea339d 100644
  * [`jj redo`↴](#jj-redo)
  * [`jj resolve`↴](#jj-resolve)
  * [`jj restore`↴](#jj-restore)
-@@ -184,6 +185,7 @@ To get started, see the tutorial [`jj help -k tutorial`].
+@@ -186,6 +187,7 @@ To get started, see the tutorial at [`jj help -k tutorial`][tutorial].
  * `parallelize` — Parallelize revisions by making them siblings
  * `prev` — Change the working copy revision relative to the parent revision
  * `rebase` — Move revisions to different parent(s)
@@ -677,7 +1029,7 @@ index 3d97432d8..574ea339d 100644
  * `redo` — Redo the most recently undone operation
  * `resolve` — Resolve conflicted files with an external merge tool
  * `restore` — Restore paths from another revision
-@@ -3116,6 +3118,22 @@ J           J
+@@ -3173,6 +3175,25 @@ J           J
  
  
  
@@ -693,6 +1045,9 @@ index 3d97432d8..574ea339d 100644
 +
 +###### **Options:**
 +
++* `--timestamp <TIMESTAMP>` — Set the timestamp without prompting
++
++   Accepts exact timestamps and local-time expressions such as `now`, `yesterday 5pm`, or `2026-08-28 14:30 +03:00`.
 +* `--sign` — Sign the rewritten revisions
 +
 +
@@ -701,10 +1056,10 @@ index 3d97432d8..574ea339d 100644
  
  Redo the most recently undone operation
 diff --git a/cli/tests/runner.rs b/cli/tests/runner.rs
-index b790cc57d..860410ad5 100644
+index 61645ea..d525c41 100644
 --- a/cli/tests/runner.rs
 +++ b/cli/tests/runner.rs
-@@ -69,6 +69,7 @@ mod test_op_revert_command;
+@@ -71,6 +71,7 @@ mod test_op_revert_command;
  mod test_operations;
  mod test_parallelize_command;
  mod test_rebase_command;
@@ -714,10 +1069,10 @@ index b790cc57d..860410ad5 100644
  mod test_restore_command;
 diff --git a/cli/tests/test_redate_command.rs b/cli/tests/test_redate_command.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..0f29d396f
+index 0000000..c265ee3
 --- /dev/null
 +++ b/cli/tests/test_redate_command.rs
-@@ -0,0 +1,143 @@
+@@ -0,0 +1,243 @@
 +// Copyright 2026 The Jujutsu Authors
 +//
 +// Licensed under the Apache License, Version 2.0 (the "License");
@@ -767,10 +1122,110 @@ index 0000000000000000000000000000000000000000..0f29d396f
 +        })
 +        .success();
 +    assert!(
-+        output.stderr.raw().contains("premature end of input"),
++        output
++            .stderr
++            .raw()
++            .contains("Couldn't understand `aaaaaa` as a date and time"),
 +        "unexpected prompt output: {output}"
 +    );
++    assert!(output.stderr.raw().contains("Timestamp [now]: "));
++    assert!(
++        output
++            .stderr
++            .raw()
++            .contains("Hint: Enter a local date and time")
++    );
 +    assert_eq!(work_dir.current_operation_id(), operation_id);
++}
++
++#[test]
++fn test_redate_timestamp_argument_does_not_prompt() {
++    let test_env = TestEnvironment::default();
++    test_env.run_jj_in(".", ["git", "init", "repo"]).success();
++    let work_dir = test_env.work_dir("repo");
++
++    let output = work_dir
++        .run_jj([
++            "redate",
++            "-r",
++            "@",
++            "--timestamp",
++            "2002-03-04 05:06 -07:00",
++        ])
++        .success();
++    assert!(!output.stderr.raw().contains("Timestamp"));
++    assert!(!output.stderr.raw().contains("Redate 1 revision"));
++    assert_eq!(
++        commit_metadata(&work_dir, "@"),
++        "2002-03-04 12:06:00|2002-03-04 12:06:00|unsigned\n"
++    );
++    assert_eq!(
++        work_dir
++            .run_jj([
++                "log",
++                "--no-graph",
++                "-r",
++                "@",
++                "-T",
++                r#"author.timestamp() ++ "\n""#,
++            ])
++            .success()
++            .stdout
++            .raw(),
++        "2002-03-04 05:06:00.000 -07:00\n"
++    );
++}
++
++#[test]
++fn test_redate_local_timestamp_observes_daylight_saving_transitions() {
++    let test_env = TestEnvironment::default();
++    test_env.run_jj_in(".", ["git", "init", "repo"]).success();
++    let work_dir = test_env.work_dir("repo");
++
++    for (expression, expected) in [
++        ("2024-03-10 03:30", "2024-03-10T03:30:00-04:00\n"),
++        ("10 March 2024 3:30am", "2024-03-10T03:30:00-04:00\n"),
++        ("2024-11-03 02:30", "2024-11-03T02:30:00-05:00\n"),
++        ("2024-11-03T01:30:00-04:00", "2024-11-03T01:30:00-04:00\n"),
++        ("2024-11-03T01:30:00-05:00", "2024-11-03T01:30:00-05:00\n"),
++    ] {
++        work_dir
++            .run_jj_with(|cmd| {
++                cmd.env("TZ", "America/New_York")
++                    .args(["redate", "--timestamp", expression])
++            })
++            .success();
++        assert_eq!(
++            work_dir
++                .run_jj([
++                    "log",
++                    "--no-graph",
++                    "-r",
++                    "@",
++                    "-T",
++                    r#"committer.timestamp().format("%Y-%m-%dT%H:%M:%S%:z") ++ "\n""#,
++                ])
++                .success()
++                .stdout
++                .raw(),
++            expected,
++            "wrong local offset for {expression}"
++        );
++    }
++
++    for expression in ["2024-03-10 02:30", "10 March 2024 2:30am"] {
++        let operation_id = work_dir.current_operation_id();
++        let output = work_dir.run_jj_with(|cmd| {
++            cmd.env("TZ", "America/New_York")
++                .args(["redate", "--timestamp", expression])
++        });
++        assert!(
++            !output.status.success(),
++            "accepted nonexistent time: {expression}"
++        );
++        assert!(output.stderr.raw().contains("Couldn't understand"));
++        assert_eq!(work_dir.current_operation_id(), operation_id);
++    }
 +}
 +
 +#[test]
@@ -862,10 +1317,10 @@ index 0000000000000000000000000000000000000000..0f29d396f
 +        .to_owned()
 +}
 diff --git a/docs/config.md b/docs/config.md
-index ef8d94cc4..9b43a817c 100644
+index 2d0537f..08daac4 100644
 --- a/docs/config.md
 +++ b/docs/config.md
-@@ -1623,6 +1623,32 @@ this setting for a single invocation:
+@@ -1655,6 +1655,32 @@ this setting for a single invocation:
  jj run -j 4 -- cargo fmt
  ```
  

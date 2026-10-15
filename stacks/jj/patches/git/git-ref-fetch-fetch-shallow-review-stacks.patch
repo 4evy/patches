@@ -1,6 +1,6 @@
-From f7041509c7f7bb28b061be8ed711519c38b9dfed Mon Sep 17 00:00:00 2001
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Sat, 5 Sep 2026 13:00:00 +0300
+Date: Thu, 1 Jan 1970 00:00:00 +0000
 Subject: git ref fetch: fetch shallow review stacks
 
 Expose depth and shallow-exclusion controls on `jj git ref fetch`. Fetch
@@ -8,14 +8,15 @@ through the excluded base and deepen one more generation so the oldest
 review commit has a usable diff parent, while refreshing the index on
 every boundary change
 ---
- cli/src/commands/git/ref/fetch.rs | 196 +++++++++++++++++++-----------
+ cli/src/commands/git/ref/fetch.rs | 200 ++++++++++++++++++++----------
  cli/tests/cli-reference@.md.snap  |   6 +
  cli/tests/test_git_fetch.rs       |  92 ++++++++++++++
- lib/src/git.rs                    | 124 +++++++++++++++----
- 4 files changed, 328 insertions(+), 90 deletions(-)
+ docs/git-compatibility.md         |   7 ++
+ lib/src/git.rs                    | 124 ++++++++++++++----
+ 5 files changed, 339 insertions(+), 90 deletions(-)
 
 diff --git a/cli/src/commands/git/ref/fetch.rs b/cli/src/commands/git/ref/fetch.rs
-index 75f37b430..16eb5b982 100644
+index 75f37b4..6545a16 100644
 --- a/cli/src/commands/git/ref/fetch.rs
 +++ b/cli/src/commands/git/ref/fetch.rs
 @@ -12,11 +12,14 @@
@@ -61,7 +62,7 @@ index 75f37b430..16eb5b982 100644
  }
  
  #[tracing::instrument(skip(ui, command))]
-@@ -93,65 +110,98 @@ pub async fn cmd_git_ref_fetch(
+@@ -93,65 +110,102 @@ pub async fn cmd_git_ref_fetch(
              "--new, --edit, and --bookmark require exactly one fetch target",
          ));
      }
@@ -77,7 +78,11 @@ index 75f37b430..16eb5b982 100644
 -        );
 +
 +    let git_repo = get_git_backend(workspace_command.repo().store())?.git_repo();
-+    if args.shallow_exclude.is_some() && !git_repo.is_shallow() {
++    if args.shallow_exclude.is_some()
++        && !git_repo
++            .is_shallow()
++            .map_err(git::GitFetchError::ShallowCommits)?
++    {
 +        return Err(user_error(
 +            "--shallow-exclude is only supported in an existing shallow repository",
 +        ));
@@ -213,7 +218,7 @@ index 75f37b430..16eb5b982 100644
  }
  
  fn get_default_fetch_remote(
-@@ -179,29 +229,39 @@ async fn do_fetch(
+@@ -179,29 +233,39 @@ async fn do_fetch(
      tx: &mut WorkspaceCommandTransaction<'_>,
      remote_name: &RemoteName,
      sources: &[String],
@@ -269,10 +274,10 @@ index 75f37b430..16eb5b982 100644
 +    (result, shallow_boundary_changed)
  }
 diff --git a/cli/tests/cli-reference@.md.snap b/cli/tests/cli-reference@.md.snap
-index 3793d6479..36793f0a9 100644
+index 023fff6..0a9a4db 100644
 --- a/cli/tests/cli-reference@.md.snap
 +++ b/cli/tests/cli-reference@.md.snap
-@@ -1940,6 +1940,12 @@ If a working-copy commit gets abandoned, it will be given a new, empty commit. T
+@@ -1993,6 +1993,12 @@ If a working-copy commit gets abandoned, it will be given a new, empty commit. T
  * `--edit` — Edit the fetched commit directly
  * `--bookmark <NAME>` — Set a local bookmark to the fetched commit
  * `--replace` — Allow --bookmark to move an existing local bookmark
@@ -286,10 +291,10 @@ index 3793d6479..36793f0a9 100644
  
  
 diff --git a/cli/tests/test_git_fetch.rs b/cli/tests/test_git_fetch.rs
-index a3cf34e5d..1d7bd61f9 100644
+index d32b74d..1842f59 100644
 --- a/cli/tests/test_git_fetch.rs
 +++ b/cli/tests/test_git_fetch.rs
-@@ -337,6 +337,98 @@ fn test_git_ref_fetch_pull_request_ref() {
+@@ -338,6 +338,98 @@ fn test_git_ref_fetch_pull_request_ref() {
      ");
  }
  
@@ -388,8 +393,26 @@ index a3cf34e5d..1d7bd61f9 100644
  #[test]
  fn test_git_ref_fetch_default_remote_from_config_glob() {
      let test_env = TestEnvironment::default();
+diff --git a/docs/git-compatibility.md b/docs/git-compatibility.md
+index 40bccb7..0db838c 100644
+--- a/docs/git-compatibility.md
++++ b/docs/git-compatibility.md
+@@ -142,6 +142,13 @@ commit can be selected as `refs/pull/123/head@origin` or with
+ `fetched_git_refs('refs/pull/123/head', remote='origin')`. Use `jj git ref list`
+ and `jj git ref forget` to inspect and remove fetched refs.
+ 
++`jj git ref fetch --depth <depth>` limits the history fetched from each target.
++In an existing shallow repository, the `git.fetch-depth` setting supplies the
++default depth for both `jj git fetch` and `jj git ref fetch`.
++`--shallow-exclude <ref>` instead fetches the complete stack after the specified
++remote ref and one additional parent generation for use as the oldest commit's
++diff base.
++
+ Use `jj git ref push` to push one revision to an application-specific ref such
+ as Gerrit's `refs/for/main`. Unlike `jj git push`, this low-level command does
+ not create or track a bookmark. It also does not check for private commits,
 diff --git a/lib/src/git.rs b/lib/src/git.rs
-index d9f33bcb8..d32d6eef6 100644
+index 0a8625d..863f59c 100644
 --- a/lib/src/git.rs
 +++ b/lib/src/git.rs
 @@ -50,6 +50,7 @@ use crate::file_util::is_empty_dir;
@@ -400,7 +423,7 @@ index d9f33bcb8..d32d6eef6 100644
  pub use crate::git_subprocess::GitSidebandLineTerminator;
  pub use crate::git_subprocess::GitSubprocessCallback;
  use crate::git_subprocess::GitSubprocessContext;
-@@ -3571,23 +3572,78 @@ pub fn fetch_commits(
+@@ -3546,23 +3547,78 @@ pub fn fetch_commits(
      callback: &mut dyn GitSubprocessCallback,
      depth: Option<NonZeroU32>,
  ) -> Result<Vec<CommitId>, GitFetchError> {
@@ -486,7 +509,7 @@ index d9f33bcb8..d32d6eef6 100644
      }
      let git_ctx = GitSubprocessContext::from_git_backend(git_backend, subprocess_options);
  
-@@ -3610,17 +3666,22 @@ pub fn fetch_commits(
+@@ -3585,17 +3641,22 @@ pub fn fetch_commits(
          .map(|(&source, temporary_ref_name)| RefSpec::forced(source, temporary_ref_name.as_str()))
          .collect_vec();
      let no_negative_refspecs = [];
@@ -519,7 +542,7 @@ index d9f33bcb8..d32d6eef6 100644
              GitFetchStatus::NoRemoteRef(fetch_source) => {
                  return Err(GitFetchError::NoSuchSource {
                      remote: remote_name.to_owned(),
-@@ -3628,9 +3689,27 @@ pub fn fetch_commits(
+@@ -3603,9 +3664,27 @@ pub fn fetch_commits(
                  });
              }
          };
@@ -550,7 +573,7 @@ index d9f33bcb8..d32d6eef6 100644
          }
  
          sources
-@@ -3657,11 +3736,12 @@ pub fn fetch_commits(
+@@ -3632,11 +3711,12 @@ pub fn fetch_commits(
      let cleanup_result = temporary_ref_names
          .iter()
          .try_for_each(|ref_name| delete_temporary_fetch_ref(&git_repo, ref_name));

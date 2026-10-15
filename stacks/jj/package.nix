@@ -12,7 +12,7 @@ let
     owner = "jj-vcs";
     repo = "jj";
     rev = revision;
-    hash = "sha256-oHrTueW2fb0n6tY9GjHx9NEcvhc+MRLM5YO7bmr2xws=";
+    hash = "sha256-8BuxLn6nl/iaPmeGDZf+BFvNdqMXKYbDMBGoORBAHps=";
   };
 in
 jujutsu.overrideAttrs (oldAttrs: {
@@ -22,7 +22,8 @@ jujutsu.overrideAttrs (oldAttrs: {
   patches = (oldAttrs.patches or [ ]) ++ patches;
   cargoDeps = rustPlatform.fetchCargoVendor {
     src = source;
-    hash = "sha256-Hv/cHlbpo41uhVHDxkI7tURfDjjBnxbjx7hzsnESCSw=";
+    inherit patches;
+    hash = "sha256-V9sQiAWVAzaSE909n+5M8U3z4MbLYfxF+DkCo6erVOE=";
   };
 
   # Release packages compile only. Avoid both the Rust test suite and the

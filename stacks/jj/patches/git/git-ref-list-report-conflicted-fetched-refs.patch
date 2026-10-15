@@ -1,0 +1,154 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: 4evy <git@evy.pink>
+Date: Thu, 1 Jan 1970 00:00:00 +0000
+Subject: git ref list: report conflicted fetched refs
+
+---
+ cli/src/commands/git/ref/list.rs | 49 +++++++++++++++++++++++---------
+ cli/tests/test_git_fetch.rs      | 48 +++++++++++++++++++++++++++++++
+ 2 files changed, 84 insertions(+), 13 deletions(-)
+
+diff --git a/cli/src/commands/git/ref/list.rs b/cli/src/commands/git/ref/list.rs
+index 5690781..fbc2856 100644
+--- a/cli/src/commands/git/ref/list.rs
++++ b/cli/src/commands/git/ref/list.rs
+@@ -15,9 +15,9 @@
+ use std::io::Write as _;
+ 
+ use clap_complete::ArgValueCandidates;
+-use itertools::Itertools as _;
+ use jj_lib::object_id::ObjectId as _;
+ use jj_lib::ref_name::RemoteNameBuf;
++use jj_lib::str_util::StringMatcher;
+ 
+ use super::canonicalize_git_ref_name;
+ use crate::cli_util::CommandHelper;
+@@ -45,34 +45,57 @@ pub async fn cmd_git_ref_list(
+ ) -> Result<(), CommandError> {
+     let workspace_command = command.workspace_helper(ui).await?;
+     let view = workspace_command.repo().view();
+-    let remote_filter = args.remote.as_deref();
++    let remote_matcher = args
++        .remote
++        .as_ref()
++        .map_or_else(StringMatcher::all, |remote| {
++            StringMatcher::exact(remote.as_str())
++        });
+     let ref_filter = args
+         .ref_name
+         .as_deref()
+         .map(canonicalize_git_ref_name)
+         .transpose()?;
++    let ref_matcher = ref_filter.as_ref().map_or_else(StringMatcher::all, |name| {
++        StringMatcher::exact(name.as_str())
++    });
+     let mut matched = 0;
+-    for (remote_name, refs) in view.fetched_git_refs() {
+-        if remote_filter.is_some_and(|remote| remote != remote_name) {
+-            continue;
+-        }
+-        for (ref_name, target) in refs {
+-            if ref_filter.as_ref().is_some_and(|name| name != ref_name) {
+-                continue;
+-            }
+-            matched += 1;
+-            let target_ids = target.present_adds().map(|id| id.hex()).join(", ");
++    let mut has_conflict = false;
++    for ((remote_name, ref_name), target) in
++        view.fetched_git_refs_matching(&ref_matcher, &remote_matcher)
++    {
++        matched += 1;
++        if let Some(id) = target.as_normal() {
+             writeln!(
+                 ui.stdout(),
+                 "{} {} {}",
+                 remote_name.as_symbol(),
+                 ref_name.as_symbol(),
+-                target_ids
++                id.hex()
++            )?;
++        } else {
++            has_conflict = true;
++            writeln!(
++                ui.stdout(),
++                "{} {} (conflicted):",
++                remote_name.as_symbol(),
++                ref_name.as_symbol()
+             )?;
++            for id in target.present_adds() {
++                writeln!(ui.stdout(), "  + {}", id.hex())?;
++            }
++            for id in target.present_removes() {
++                writeln!(ui.stdout(), "  - {}", id.hex())?;
++            }
+         }
+     }
+     if matched == 0 {
+         writeln!(ui.status(), "No fetched Git refs.")?;
++    } else if has_conflict {
++        writeln!(
++            ui.hint_default(),
++            "Some fetched Git refs have conflicts. Fetch them again or forget them to resolve."
++        )?;
+     }
+     Ok(())
+ }
+diff --git a/cli/tests/test_git_fetch.rs b/cli/tests/test_git_fetch.rs
+index 4ab7c00..bf8672b 100644
+--- a/cli/tests/test_git_fetch.rs
++++ b/cli/tests/test_git_fetch.rs
+@@ -1543,6 +1543,54 @@ fn test_git_ref_fetch_undo_and_op_restore() {
+     ");
+ }
+ 
++#[test]
++fn test_git_ref_list_conflicted() {
++    let test_env = TestEnvironment::default();
++    test_env.run_jj_in(".", ["git", "init", "repo"]).success();
++    let work_dir = test_env.work_dir("repo");
++    let git_repo = add_git_remote(&test_env, &work_dir, "origin");
++    let ref_name = "refs/pull/123/head";
++    let base_id = add_commit_to_ref(&git_repo, ref_name, "base", "base");
++
++    work_dir
++        .run_jj(["git", "ref", "fetch", "--remote=origin", ref_name])
++        .success();
++    let left_id = add_commit_to_ref(&git_repo, ref_name, "left", "left");
++    work_dir
++        .run_jj(["git", "ref", "fetch", "--remote=origin", ref_name])
++        .success();
++
++    git_repo
++        .reference(
++            ref_name,
++            base_id,
++            gix::refs::transaction::PreviousValue::Any,
++            "restore base ref",
++        )
++        .unwrap();
++    let right_id = add_commit_to_ref(&git_repo, ref_name, "right", "right");
++    work_dir
++        .run_jj([
++            "git",
++            "ref",
++            "fetch",
++            "--remote=origin",
++            ref_name,
++            "--at-op=@-",
++        ])
++        .success();
++
++    let output = work_dir.run_jj(["git", "ref", "list"]);
++    let stdout = output.stdout.raw();
++    assert!(stdout.contains("origin refs/pull/123/head (conflicted):\n"));
++    assert!(stdout.contains(&format!("  + {left_id}\n")));
++    assert!(stdout.contains(&format!("  + {right_id}\n")));
++    assert!(stdout.contains(&format!("  - {base_id}\n")));
++    assert!(output.stderr.raw().contains(
++        "Hint: Some fetched Git refs have conflicts. Fetch them again or forget them to resolve."
++    ));
++}
++
+ #[test]
+ fn test_git_ref_fetch_keeps_rewritten_target_visible_after_undo() {
+     let test_env = TestEnvironment::default();

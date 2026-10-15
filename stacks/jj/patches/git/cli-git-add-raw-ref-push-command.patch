@@ -1,6 +1,6 @@
-From fea739258f5f57b53a1d7eece28e3118328269d2 Mon Sep 17 00:00:00 2001
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: 4evy <git@evy.pink>
-Date: Sat, 5 Sep 2026 13:00:00 +0300
+Date: Thu, 1 Jan 1970 00:00:00 +0000
 Subject: cli: git: add raw ref push command
 
 Code review systems and other Git applications accept commits through
@@ -30,10 +30,10 @@ Closes #4388
  create mode 100644 cli/src/commands/git/ref/push.rs
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index 47f56d9cf..59cbb7f1c 100644
+index 5937f39..7d66b63 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -172,6 +172,10 @@ None
+@@ -280,6 +280,10 @@ None
    remote. The fetched commits become visible without creating bookmarks or
    remote-tracking refs.
  
@@ -45,10 +45,10 @@ index 47f56d9cf..59cbb7f1c 100644
  
  * [The default `immutable_heads()` set](docs/config.md#set-of-immutable-commits)
 diff --git a/cli/src/commands/git/push.rs b/cli/src/commands/git/push.rs
-index 371996981..9b1dda15b 100644
+index de087ae..6a98d00 100644
 --- a/cli/src/commands/git/push.rs
 +++ b/cli/src/commands/git/push.rs
-@@ -1104,7 +1104,7 @@ async fn print_commits_ready_to_push(
+@@ -1134,7 +1134,7 @@ async fn print_commits_ready_to_push(
      Ok(())
  }
  
@@ -58,7 +58,7 @@ index 371996981..9b1dda15b 100644
      workspace_command: &WorkspaceCommandHelper,
  ) -> Result<StringExpression, CommandError> {
 diff --git a/cli/src/commands/git/ref/mod.rs b/cli/src/commands/git/ref/mod.rs
-index 6735e6792..ce9771fea 100644
+index 6735e67..ce9771f 100644
 --- a/cli/src/commands/git/ref/mod.rs
 +++ b/cli/src/commands/git/ref/mod.rs
 @@ -13,11 +13,14 @@
@@ -93,7 +93,7 @@ index 6735e6792..ce9771fea 100644
  }
 diff --git a/cli/src/commands/git/ref/push.rs b/cli/src/commands/git/ref/push.rs
 new file mode 100644
-index 0000000000000000000000000000000000000000..490d30866
+index 0000000..490d308
 --- /dev/null
 +++ b/cli/src/commands/git/ref/push.rs
 @@ -0,0 +1,216 @@
@@ -314,7 +314,7 @@ index 0000000000000000000000000000000000000000..490d30866
 +    Ok(())
 +}
 diff --git a/cli/src/git_util.rs b/cli/src/git_util.rs
-index 38e14aa3f..d85480a0f 100644
+index 38e14aa..d85480a 100644
 --- a/cli/src/git_util.rs
 +++ b/cli/src/git_util.rs
 @@ -548,6 +548,32 @@ pub fn print_git_export_stats(ui: &Ui, stats: &GitExportStats) -> Result<(), std
@@ -376,10 +376,10 @@ index 38e14aa3f..d85480a0f 100644
      if !stats.unexported_bookmarks.is_empty() {
          writeln!(
 diff --git a/cli/tests/cli-reference@.md.snap b/cli/tests/cli-reference@.md.snap
-index 74503f19a..2cdf38b6b 100644
+index fd90a54..ac8c5cf 100644
 --- a/cli/tests/cli-reference@.md.snap
 +++ b/cli/tests/cli-reference@.md.snap
-@@ -68,6 +68,7 @@ This document contains the help content for the `jj` command-line program.
+@@ -70,6 +70,7 @@ This document contains the help content for the `jj` command-line program.
  * [`jj git push`↴](#jj-git-push)
  * [`jj git ref`↴](#jj-git-ref)
  * [`jj git ref fetch`↴](#jj-git-ref-fetch)
@@ -387,7 +387,7 @@ index 74503f19a..2cdf38b6b 100644
  * [`jj git remote`↴](#jj-git-remote)
  * [`jj git remote add`↴](#jj-git-remote-add)
  * [`jj git remote list`↴](#jj-git-remote-list)
-@@ -1973,6 +1974,7 @@ Manage raw Git refs
+@@ -2026,6 +2027,7 @@ Manage raw Git refs
  ###### **Subcommands:**
  
  * `fetch` — Fetch raw refs or full commit IDs from a Git remote
@@ -395,7 +395,7 @@ index 74503f19a..2cdf38b6b 100644
  
  
  
-@@ -1996,6 +1998,35 @@ Each source can be a fully qualified remote ref such as GitHub's `refs/pull/123/
+@@ -2049,6 +2051,35 @@ Each source can be a fully qualified remote ref such as GitHub's `refs/pull/123/
  
  
  
@@ -432,7 +432,7 @@ index 74503f19a..2cdf38b6b 100644
  
  Manage Git remotes
 diff --git a/cli/tests/test_git_push.rs b/cli/tests/test_git_push.rs
-index aa54b2994..22c0fb822 100644
+index 04dd4c3..5cdf1cf 100644
 --- a/cli/tests/test_git_push.rs
 +++ b/cli/tests/test_git_push.rs
 @@ -63,6 +63,357 @@ fn set_up(test_env: &TestEnvironment) {
@@ -794,10 +794,10 @@ index aa54b2994..22c0fb822 100644
  fn test_git_push_nothing() {
      let test_env = TestEnvironment::default();
 diff --git a/docs/git-compatibility.md b/docs/git-compatibility.md
-index 862c69fe2..99f33a456 100644
+index ff88eed..b73a21b 100644
 --- a/docs/git-compatibility.md
 +++ b/docs/git-compatibility.md
-@@ -97,13 +97,31 @@ into a directory by the same name.
+@@ -128,13 +128,31 @@ into a directory by the same name.
  By default, the remote repository will be named `origin`. You can use a name of
  your choice by adding `--remote <remote name>` to the `jj git clone` command.
  
