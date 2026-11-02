@@ -31,10 +31,10 @@ Refs #3496
  11 files changed, 406 insertions(+), 52 deletions(-)
 
 diff --git a/include/ghostty.h b/include/ghostty.h
-index 9a12b9cad..b934ccaf0 100644
+index 9a12b9cad8..b934ccaf02 100644
 --- a/include/ghostty.h
 +++ b/include/ghostty.h
-@@ -884,6 +884,13 @@ typedef struct {
+@@ -884,6 +884,13 @@
    uintptr_t len;
  } ghostty_action_open_url_s;
  
@@ -48,7 +48,7 @@ index 9a12b9cad..b934ccaf0 100644
  // apprt.action.CloseTabMode
  typedef enum {
    GHOSTTY_ACTION_CLOSE_TAB_MODE_THIS,
-@@ -1016,6 +1023,7 @@ typedef enum {
+@@ -1016,6 +1023,7 @@
    GHOSTTY_ACTION_COPY_TITLE_TO_CLIPBOARD,
    GHOSTTY_ACTION_MOVE_TAB_TO_NEW_WINDOW,
    GHOSTTY_ACTION_RESIZE_WINDOW,
@@ -56,7 +56,7 @@ index 9a12b9cad..b934ccaf0 100644
  } ghostty_action_tag_e;
  
  typedef union {
-@@ -1060,6 +1068,7 @@ typedef union {
+@@ -1060,6 +1068,7 @@
    ghostty_action_search_selected_s search_selected;
    ghostty_action_readonly_e readonly;
    ghostty_action_open_config_e open_config;
@@ -65,7 +65,7 @@ index 9a12b9cad..b934ccaf0 100644
  
  typedef struct {
 diff --git a/macos/Sources/Features/Terminal/BaseTerminalController.swift b/macos/Sources/Features/Terminal/BaseTerminalController.swift
-index 79ca5b6e0..ebeeb8a4c 100644
+index 79ca5b6e01..ebeeb8a4c9 100644
 --- a/macos/Sources/Features/Terminal/BaseTerminalController.swift
 +++ b/macos/Sources/Features/Terminal/BaseTerminalController.swift
 @@ -541,7 +541,8 @@ class BaseTerminalController: NSWindowController,
@@ -88,7 +88,7 @@ index 79ca5b6e0..ebeeb8a4c 100644
              undoManager.setActionName(undoAction)
          }
 diff --git a/macos/Sources/Features/Terminal/TerminalController.swift b/macos/Sources/Features/Terminal/TerminalController.swift
-index 56d9647e9..67ec2c5b0 100644
+index d8e601174a..378bf58562 100644
 --- a/macos/Sources/Features/Terminal/TerminalController.swift
 +++ b/macos/Sources/Features/Terminal/TerminalController.swift
 @@ -190,7 +190,8 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
@@ -112,7 +112,7 @@ index 56d9647e9..67ec2c5b0 100644
  
      // MARK: Terminal Creation
 diff --git a/macos/Sources/Ghostty/Ghostty.App.swift b/macos/Sources/Ghostty/Ghostty.App.swift
-index b9dc4b298..81a5cea84 100644
+index b9dc4b2985..81a5cea84b 100644
 --- a/macos/Sources/Ghostty/Ghostty.App.swift
 +++ b/macos/Sources/Ghostty/Ghostty.App.swift
 @@ -290,6 +290,29 @@ extension Ghostty {
@@ -238,7 +238,7 @@ index b9dc4b298..81a5cea84 100644
              let target = UntrustedURL(value)
              switch target.decision {
 diff --git a/macos/Sources/Ghostty/Surface View/SurfaceView_AppKit.swift b/macos/Sources/Ghostty/Surface View/SurfaceView_AppKit.swift
-index edbbd61cd..91468bed6 100644
+index cbec3079ef..55bb89ba76 100644
 --- a/macos/Sources/Ghostty/Surface View/SurfaceView_AppKit.swift	
 +++ b/macos/Sources/Ghostty/Surface View/SurfaceView_AppKit.swift	
 @@ -180,6 +180,12 @@ extension Ghostty {
@@ -255,10 +255,10 @@ index edbbd61cd..91468bed6 100644
          override var surface: ghostty_surface_t? {
              surfaceModel?.unsafeCValue
 diff --git a/src/Surface.zig b/src/Surface.zig
-index 568b74d83..d057e398d 100644
+index 369bb2399e..80064bec58 100644
 --- a/src/Surface.zig
 +++ b/src/Surface.zig
-@@ -344,6 +344,7 @@ const DerivedConfig = struct {
+@@ -346,6 +346,7 @@ const DerivedConfig = struct {
      links: []DerivedConfig.Link,
      link_osc8: bool,
      link_previews: configpkg.LinkPreviews,
@@ -266,7 +266,7 @@ index 568b74d83..d057e398d 100644
      scroll_to_bottom: configpkg.Config.ScrollToBottom,
      notify_on_command_finish: configpkg.Config.NotifyOnCommandFinish,
      notify_on_command_finish_action: configpkg.Config.NotifyOnCommandFinishAction,
-@@ -425,6 +426,10 @@ const DerivedConfig = struct {
+@@ -427,6 +428,10 @@ const DerivedConfig = struct {
              .links = links,
              .link_osc8 = config.@"link-osc8",
              .link_previews = config.@"link-previews",
@@ -277,7 +277,7 @@ index 568b74d83..d057e398d 100644
              .scroll_to_bottom = config.@"scroll-to-bottom",
              .notify_on_command_finish = config.@"notify-on-command-finish",
              .notify_on_command_finish_action = config.@"notify-on-command-finish-action",
-@@ -5808,6 +5813,24 @@ const WriteScreenLoc = enum {
+@@ -5839,6 +5844,24 @@ const WriteScreenLoc = enum {
      selection, // Selected text
  };
  
@@ -302,7 +302,7 @@ index 568b74d83..d057e398d 100644
  fn writeScreenFile(
      self: *Surface,
      loc: WriteScreenLoc,
-@@ -5852,43 +5875,6 @@ fn writeScreenFile(
+@@ -5883,43 +5906,6 @@ fn writeScreenFile(
          self.renderer_state.mutex.lockUncancelable(global.io());
          defer self.renderer_state.mutex.unlock(global.io());
  
@@ -346,7 +346,7 @@ index 568b74d83..d057e398d 100644
          const ScreenFormatter = terminal.formatter.ScreenFormatter;
          var formatter: ScreenFormatter = .init(self.io.terminal.screens.active, .{
              .emit = switch (write_screen.emit) {
-@@ -5902,10 +5888,17 @@ fn writeScreenFile(
+@@ -5933,10 +5919,17 @@ fn writeScreenFile(
              .foreground = self.io.terminal.colors.foreground.get(),
              .palette = &self.io.terminal.colors.palette.current,
          });
@@ -368,7 +368,7 @@ index 568b74d83..d057e398d 100644
          try formatter.format(buf_writer);
      }
      try buf_writer.flush();
-@@ -5927,13 +5920,42 @@ fn writeScreenFile(
+@@ -5958,13 +5951,42 @@ fn writeScreenFile(
                  .data = pathZ,
              }}, false);
          },
@@ -418,7 +418,7 @@ index 568b74d83..d057e398d 100644
          .paste => self.queueIo(try termio.Message.writeReq(
              self.alloc,
              path,
-@@ -5944,6 +5966,32 @@ fn writeScreenFile(
+@@ -5975,6 +5997,32 @@ fn writeScreenFile(
      retain_tmp_dir = true;
  }
  
@@ -452,7 +452,7 @@ index 568b74d83..d057e398d 100644
  /// completeClipboardRequest.
  pub const CompleteClipboard = struct {
 diff --git a/src/apprt/action.zig b/src/apprt/action.zig
-index e58260cfb..7b46007ab 100644
+index 708898e768..43402ad85d 100644
 --- a/src/apprt/action.zig
 +++ b/src/apprt/action.zig
 @@ -363,6 +363,10 @@ pub const Action = union(Key) {
@@ -508,7 +508,7 @@ index e58260cfb..7b46007ab 100644
  // runtime. The small size cost doesn't make a difference in our union.
  pub const SplitDirection = enum(c_int) {
 diff --git a/src/apprt/gtk/class/application.zig b/src/apprt/gtk/class/application.zig
-index cd07efaec..4d1149ebc 100644
+index 08d5d7c303..919430593c 100644
 --- a/src/apprt/gtk/class/application.zig
 +++ b/src/apprt/gtk/class/application.zig
 @@ -750,6 +750,8 @@ pub const Application = extern struct {
@@ -520,7 +520,7 @@ index cd07efaec..4d1149ebc 100644
              .pwd => Action.pwd(target, value),
  
              .present_terminal => return Action.presentTerminal(target),
-@@ -2736,6 +2738,20 @@ const Action = struct {
+@@ -2689,6 +2691,20 @@ const Action = struct {
          };
      }
  
@@ -542,10 +542,10 @@ index cd07efaec..4d1149ebc 100644
          target: apprt.Target,
          value: apprt.action.Pwd,
 diff --git a/src/apprt/gtk/class/split_tree.zig b/src/apprt/gtk/class/split_tree.zig
-index b2190ec91..64022f9d6 100644
+index c2574d0d68..71af6b83e4 100644
 --- a/src/apprt/gtk/class/split_tree.zig
 +++ b/src/apprt/gtk/class/split_tree.zig
-@@ -449,6 +449,30 @@ pub const SplitTree = extern struct {
+@@ -477,6 +477,30 @@ pub const SplitTree = extern struct {
          }
      }
  
@@ -577,10 +577,10 @@ index b2190ec91..64022f9d6 100644
          const tree = self.getTree() orelse return;
          var it = tree.iterator();
 diff --git a/src/apprt/gtk/class/surface.zig b/src/apprt/gtk/class/surface.zig
-index d80fba3da..c63dce6fb 100644
+index be93300a97..d6485dd597 100644
 --- a/src/apprt/gtk/class/surface.zig
 +++ b/src/apprt/gtk/class/surface.zig
-@@ -652,6 +652,10 @@ pub const Surface = extern struct {
+@@ -665,6 +665,10 @@ pub const Surface = extern struct {
          /// then be realized when the widget itself is realized.
          core_surface: ?*CoreSurface = null,
  
@@ -591,7 +591,7 @@ index d80fba3da..c63dce6fb 100644
          /// Cached metrics for libghostty callbacks
          size: apprt.SurfaceSize,
          cursor_pos: apprt.CursorPos,
-@@ -1511,7 +1515,76 @@ pub const Surface = extern struct {
+@@ -1516,7 +1520,76 @@ pub const Surface = extern struct {
      //---------------------------------------------------------------
      // Libghostty Callbacks
  
@@ -668,7 +668,7 @@ index d80fba3da..c63dce6fb 100644
          signals.@"close-request".impl.emit(
              self,
              null,
-@@ -1831,6 +1904,7 @@ pub const Surface = extern struct {
+@@ -1828,6 +1901,7 @@ pub const Surface = extern struct {
          priv.size = .{ .width = 0, .height = 0 };
          priv.vadj_signal_group = null;
          priv.desktop_notifications = .{};
@@ -676,7 +676,7 @@ index d80fba3da..c63dce6fb 100644
  
          // If our configuration is null then we get the configuration
          // from the application.
-@@ -1984,6 +2058,10 @@ pub const Surface = extern struct {
+@@ -1981,6 +2055,10 @@ pub const Surface = extern struct {
  
              priv.core_surface = null;
          }
@@ -688,7 +688,7 @@ index d80fba3da..c63dce6fb 100644
              glib.free(@ptrCast(@constCast(v)));
              priv.mouse_hover_url = null;
 diff --git a/src/config/Config.zig b/src/config/Config.zig
-index 83a1322c8..219a08df6 100644
+index 19667ab70e..d93cf83606 100644
 --- a/src/config/Config.zig
 +++ b/src/config/Config.zig
 @@ -1435,6 +1435,24 @@ input: RepeatableReadableIO = .{},
@@ -716,7 +716,7 @@ index 83a1322c8..219a08df6 100644
  /// Control when the scrollbar is shown to scroll the scrollback buffer.
  ///
  /// The default value is `system`.
-@@ -11249,6 +11267,26 @@ test "clipboard write limit" {
+@@ -11239,6 +11257,26 @@ test "clipboard write limit" {
      );
  }
  

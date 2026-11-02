@@ -13,7 +13,7 @@ override so transient command surfaces can close when their process exits.
  3 files changed, 9 insertions(+), 3 deletions(-)
 
 diff --git a/src/apprt/embedded.zig b/src/apprt/embedded.zig
-index 3c6b2c1..eec67a6 100644
+index 697f0a786b..402bbdc5c8 100644
 --- a/src/apprt/embedded.zig
 +++ b/src/apprt/embedded.zig
 @@ -478,8 +478,8 @@ pub const Surface = struct {
@@ -37,10 +37,10 @@ index 3c6b2c1..eec67a6 100644
          }
  
 diff --git a/src/apprt/gtk/class/Overrides.zig b/src/apprt/gtk/class/Overrides.zig
-index e346492..51d4d61 100644
+index 17f3b2aa27..36249e396a 100644
 --- a/src/apprt/gtk/class/Overrides.zig
 +++ b/src/apprt/gtk/class/Overrides.zig
-@@ -15,6 +15,7 @@ command: ?configpkg.Command,
+@@ -15,6 +15,7 @@ shell_integration: ?configpkg.Config.ShellIntegration,
  shell_integration: ?configpkg.Config.ShellIntegration,
  working_directory: ?[:0]const u8,
  title: ?[:0]const u8,
@@ -49,10 +49,10 @@ index e346492..51d4d61 100644
  pub const none: Overrides = .{
      .command = null,
 diff --git a/src/apprt/gtk/class/surface.zig b/src/apprt/gtk/class/surface.zig
-index c3b028e..d80fba3 100644
+index 92cd597843..be93300a97 100644
 --- a/src/apprt/gtk/class/surface.zig
 +++ b/src/apprt/gtk/class/surface.zig
-@@ -742,6 +742,7 @@ pub const Surface = extern struct {
+@@ -755,6 +755,7 @@ pub const Surface = extern struct {
              command: ?configpkg.Command = null,
              shell_integration: ?configpkg.Config.ShellIntegration = null,
              working_directory: ?[:0]const u8 = null,
@@ -60,15 +60,15 @@ index c3b028e..d80fba3 100644
  
              pub const none: @This() = .{};
          } = .none,
-@@ -759,6 +760,7 @@ pub const Surface = extern struct {
+@@ -772,6 +773,7 @@ pub const Surface = extern struct {
              .command = if (overrides.command) |c| c.clone(alloc) catch null else null,
              .shell_integration = overrides.shell_integration,
-             .working_directory = if (overrides.working_directory) |wd| alloc.dupeZ(u8, wd) catch null else null,
+             .working_directory = if (overrides.working_directory) |wd| alloc.dupeSentinel(u8, wd, 0) catch null else null,
 +            .wait_after_command = overrides.wait_after_command,
          };
          return self;
      }
-@@ -3491,6 +3493,9 @@ pub const Surface = extern struct {
+@@ -3582,6 +3584,9 @@ pub const Surface = extern struct {
              priv.overrides.command,
              priv.overrides.shell_integration,
          );

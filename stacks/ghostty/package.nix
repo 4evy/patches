@@ -15,11 +15,11 @@ else
       owner = "ghostty-org";
       repo = "ghostty";
       rev = revision;
-      hash = "sha256-fXghoRnPzYZ2OZvydGnRSESM9tkLZ8J1912wRip78qY=";
+      hash = "sha256-ywmIjwix0P5TC8kD/zTmt82CNrLXMFETaWZj0NirpoM=";
     };
   in
   (callPackage (source + "/nix/package.nix") {
-    optimize = "ReleaseFast";
+    optimize = "fast";
     revision = builtins.substring 0 12 revision;
   }).overrideAttrs
     (oldAttrs: {

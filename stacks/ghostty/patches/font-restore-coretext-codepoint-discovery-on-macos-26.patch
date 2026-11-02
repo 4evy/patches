@@ -15,7 +15,7 @@ codepoints without force-unwrapping the iterator.
  1 file changed, 61 insertions(+), 37 deletions(-)
 
 diff --git a/src/font/discovery.zig b/src/font/discovery.zig
-index f74b426..b4e765c 100644
+index 4d76af8c04..223a90aea6 100644
 --- a/src/font/discovery.zig
 +++ b/src/font/discovery.zig
 @@ -183,19 +183,6 @@ pub const Descriptor = struct {
@@ -38,7 +38,7 @@ index f74b426..b4e765c 100644
          // Set our size attribute if set
          if (self.size > 0) {
              const size32: i32 = @intFromFloat(@round(self.size));
-@@ -387,7 +374,7 @@ pub const CoreText = struct {
+@@ -391,7 +378,7 @@ pub const CoreText = struct {
          defer list.release();
  
          // Sort our descriptors
@@ -47,7 +47,7 @@ index f74b426..b4e765c 100644
          errdefer alloc.free(zig_list);
          sortMatchingDescriptors(&desc, zig_list);
  
-@@ -617,17 +604,51 @@ pub const CoreText = struct {
+@@ -621,17 +608,51 @@ pub const CoreText = struct {
      fn copyMatchingDescriptors(
          alloc: Allocator,
          list: *macos.foundation.Array,
@@ -104,7 +104,7 @@ index f74b426..b4e765c 100644
      }
  
      fn sortMatchingDescriptors(
-@@ -712,20 +733,7 @@ pub const CoreText = struct {
+@@ -716,20 +737,7 @@ pub const CoreText = struct {
              // If we're searching for a codepoint, then we
              // prioritize fonts that have that codepoint.
              if (desc.codepoint > 0) {
@@ -126,7 +126,7 @@ index f74b426..b4e765c 100644
              }
  
              // Get our symbolic traits for the descriptor so we can
-@@ -1297,16 +1305,32 @@ test "coretext codepoint" {
+@@ -1300,16 +1308,32 @@ test "coretext codepoint" {
  
      var ct = CoreText.init(lib);
      defer ct.deinit();

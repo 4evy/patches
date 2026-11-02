@@ -11,7 +11,7 @@ now swap a leaf without rebuilding the tree by hand.
  1 file changed, 49 insertions(+)
 
 diff --git a/src/datastruct/split_tree.zig b/src/datastruct/split_tree.zig
-index 012f107..87664e7 100644
+index d49dbf137f..3c4917281a 100644
 --- a/src/datastruct/split_tree.zig
 +++ b/src/datastruct/split_tree.zig
 @@ -624,6 +624,29 @@ pub fn SplitTree(comptime V: type) type {

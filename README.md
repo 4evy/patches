@@ -29,6 +29,10 @@ Jujutsu and Kanata are exposed on Apple Silicon macOS, aarch64 Linux, and
 x86_64 Linux. Ghostty is exposed on Linux. The flake also exports each
 stack's pinned source metadata as `stackSources`.
 
+The Ghostty stack targets the
+[1.4.0 release](https://ghostty.org/docs/install/release-notes/1-4-0).
+Its in-pane scrollback editor remains a local patch and requires a custom build.
+
 ## Format and evaluate
 
 ```sh
